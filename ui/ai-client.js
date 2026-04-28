@@ -5,8 +5,8 @@
  *              `start.sh`/`start.bat`) i wystawia funkcję `generate(prompt)`.
  *
  *              Gdy proxy jest niedostępne, `isAvailable()` zwraca false —
- *              `manager.js` i `executor.js` używają wtedy fallbacku
- *              z hardcoded tekstami (tryb demo).
+ *              `manager.js` i `executor.js` używają wtedy przeglądarkowego
+ *              fallbacku z tekstami operacyjnymi.
  *
  *              Health-check ponawiany jest co 10 s aby UX wykrywał
  *              uruchomienie/zatrzymanie proxy bez przeładowania strony.
@@ -162,9 +162,9 @@ function renderBadge() {
     badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>AI lokalny: ${escapeHtml(state.modelName)}`
     badge.title = `Backend: ${state.backend}`
   } else {
-    badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800'
-    badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>Tryb demo (symulacja)'
-    badge.title = 'Uruchom ./start.sh aby włączyć lokalny AI'
+    badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-700 border border-sky-200'
+    badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>Panel online'
+    badge.title = 'Uruchom ./start.sh, aby podłączyć lokalny model do panelu'
   }
 }
 

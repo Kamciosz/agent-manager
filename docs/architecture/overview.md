@@ -137,7 +137,7 @@ Gdy agent jest niedostępny, zadanie trafia do kolejki Upstash Redis. Gdy agent 
 
 ## Lokalny runtime AI (opcjonalny)
 
-Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) generują odpowiedzi z hardcoded tekstów (tryb demo). Można jednak podpiąć **lokalny model językowy** (llama.cpp + GGUF), który działa w tle na komputerze użytkownika i zastępuje symulację prawdziwymi odpowiedziami.
+Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) działają w trybie przeglądarkowym i używają krótkich tekstów operacyjnych. Można jednak podpiąć **lokalny model językowy** (llama.cpp + GGUF), który działa w tle na komputerze użytkownika i zastępuje te teksty odpowiedziami modelu.
 
 ```
 ┌──────────────────────────────┐
@@ -175,7 +175,7 @@ Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) generują odpowiedzi z har
 
 - **Brak mixed-content workaround** — `127.0.0.1` to secure context wg W3C, więc HTTPS Pages może wołać `http://127.0.0.1:3001` bezpośrednio.
 - **Zero zależności w proxy** — tylko `node:http`, `node:fs`, `node:path`. Nie wymaga `npm install`, działa na każdej instalacji Node 18+.
-- **Fallback to symulacja, nie błąd** — gdy proxy padnie, UI dalej działa (tryb demo). Migracja AI ↔ symulacja jest płynna i widoczna w badge.
+- **Tryb przeglądarkowy to nie błąd** — gdy proxy padnie, UI dalej działa jako panel online. Przejście między lokalnym AI a trybem przeglądarkowym jest płynne i widoczne w badge.
 - **Model wybiera użytkownik raz** — pierwsze uruchomienie pyta o URL HF lub ścieżkę. Kolejne starty są ciche; `--change-model` resetuje.
 - **Tylko lokalnie** — proxy nasłuchuje wyłącznie na `127.0.0.1`, nie jest udostępniane w sieci.
 

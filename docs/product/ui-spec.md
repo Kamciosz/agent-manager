@@ -65,7 +65,7 @@ Po wysłaniu: toast + przycisk `Przejdź do zadania`.
 
 ### 4a. Słownik pojęć
 
-- Przycisk `Co to znaczy?` w górnym pasku otwiera modal wyjaśniający pojęcia: polecenie/zadanie, stacja robocza, model, tryb demo.
+- Przycisk `Co to znaczy?` w górnym pasku otwiera modal wyjaśniający pojęcia: polecenie/zadanie, stacja robocza, model, panel online.
 - Ten sam modal wyjaśnia statusy techniczne: `pending`, `analyzing`, `in_progress`, `done`, `failed`.
 - Słownik ma być krótki i operacyjny; bez marketingowego onboardingu.
 

@@ -479,5 +479,12 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 - **Gdzie:** GitHub Pages + Supabase + lokalne smoke testy
 - **Gotowe gdy:** Repo jest czyste, Pages zwraca aktualne assety, JS/shell przechodzą checki, RLS nie zwraca zadań anonimowo, a doradcy nie pokazują blockerów poza leaked password protection
 - **Nie rób:** Nie oznaczaj jako gotowe, jeśli zostają błędy security inne niż panelowe ustawienie Auth leaked password protection
-- [x] Gotowe — sprawdzono deploy i bazę; dodano migrację optymalizującą RLS/indeksy. Jedyny security WARN to `auth_leaked_password_protection` w panelu Supabase.
+- [x] Gotowe — sprawdzono deploy i bazę; dodano migrację optymalizującą RLS/indeksy. Jedyny security WARN to `auth_leaked_password_protection`, który jest ograniczeniem darmowego planu Supabase.
+
+### 7.5 Frontend polish i profile startowe
+- **Co:** Usunąć starą etykietę trybu przeglądarkowego, dodać profile startowe agentów i delikatnie poprawić warstwy UI bez zmiany architektury
+- **Gdzie:** `ui/`, `supabase/migrations/`, dokumentacja produktu
+- **Gotowe gdy:** Header pokazuje `Panel online`, widok profili ma startowe rekordy, a UI ma subtelniejszą głębię bez nowego frameworka
+- **Nie rób:** Nie dodawaj bundlera, bibliotek UI ani marketingowego landing page
+- [x] Gotowe — dodano profile startowe, zmieniono komunikaty na `Panel online` i dopracowano warstwy wizualne.
 

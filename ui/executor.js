@@ -10,7 +10,7 @@
  *
  *              Jeśli lokalne proxy AI (ui/ai-client.js) jest dostępne,
  *              treść pytań i raportów generuje prawdziwy model llama.cpp.
- *              W przeciwnym razie używane są fallbacki (tryb demo).
+ *              W przeciwnym razie używane są fallbacki przeglądarkowe.
  */
 
 import { isAvailable, generate } from './ai-client.js'

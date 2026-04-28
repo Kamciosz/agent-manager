@@ -1,6 +1,6 @@
 # Lokalny runtime AI
 
-Opcjonalny moduł, który pozwala uruchomić Agent Manager z **prawdziwym, lokalnym modelem językowym** (llama.cpp + GGUF) zamiast trybu demo (sztywne teksty). Wszystko działa offline, bez API i bez kosztów.
+Opcjonalny moduł, który pozwala uruchomić Agent Manager z **prawdziwym, lokalnym modelem językowym** (llama.cpp + GGUF) zamiast przeglądarkowego trybu operacyjnego ze stałymi tekstami. Wszystko działa offline, bez API i bez kosztów.
 
 ```
 przeglądarka (GitHub Pages)
@@ -51,7 +51,7 @@ Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub śc
 
 Po starcie otwórz aplikację (GitHub Pages albo `ui/index.html`). W headerze pojawi się badge:
 - 🟢 **AI lokalny: <nazwa-modelu>** — proxy działa, manager/executor używają prawdziwego LLM.
-- 🟡 **Tryb demo (symulacja)** — proxy nieosiągalne, używane są sztywne odpowiedzi.
+- 🔵 **Panel online** — proxy nieosiągalne, panel nadal obsługuje kolejkę i używa tekstów operacyjnych.
 
 Aplikacja sprawdza dostępność co 30 s — możesz włączać i wyłączać `start.sh` bez przeładowania strony.
 
@@ -94,9 +94,9 @@ Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci.
 
 **Pobieranie binary kończy się 404.** Nazwy assetów llama.cpp w GitHub Releases czasem się zmieniają. Otwórz [stronę releasów](https://github.com/ggerganov/llama.cpp/releases/latest), pobierz właściwy ZIP ręcznie, rozpakuj do `bin/` i uruchom z `--no-pull`.
 
-**Frontend wciąż pokazuje „Tryb demo".** Sprawdź `curl http://127.0.0.1:3001/health` — powinno zwracać `"ok": true`. Jeśli zwraca `"llama": "down"`, to proxy działa ale `llama-server` padł — restart `./start.sh`.
+**Frontend wciąż pokazuje „Panel online".** Sprawdź `curl http://127.0.0.1:3001/health` — powinno zwracać `"ok": true`. Jeśli zwraca `"llama": "down"`, to proxy działa ale `llama-server` padł — restart `./start.sh`.
 
-**Aplikacja działa wolniej niż „demo".** AI generuje tekst dłużej niż sleep w symulacji. To normalne — większy kontekst i większy model = wolniej. Pomiar w `logs/proxy.log` (Xms na request).
+**Aplikacja działa wolniej po podłączeniu lokalnego modelu.** AI generuje tekst dłużej niż tryb przeglądarkowy. To normalne — większy kontekst i większy model = wolniej. Pomiar w `logs/proxy.log` (Xms na request).
 
 ## Zatrzymywanie
 

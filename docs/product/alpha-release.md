@@ -23,7 +23,7 @@ Architektura pozostaje prosta:
 
 - Model bezpieczeństwa jest team-space: zalogowani użytkownicy współdzielą zadania i stacje robocze.
 - Migracje z `supabase/migrations/` trzeba stosować jawnie przez Supabase tools lub SQL editor.
-- Ochronę Supabase Auth przed leaked passwords trzeba włączyć w panelu Supabase.
+- Ochrona Supabase Auth przed leaked passwords nie jest dostępna w darmowym planie; w alpha jest świadomie zaakceptowanym ograniczeniem planu, a nie blockerem kodu.
 - Stacje robocze wymagają lokalnego konta operatora Supabase zapisanego w `local-ai-proxy/config.json`.
 - Local AI zależy od modelu GGUF i wydajności komputera; ciężkie modele mogą startować długo.
 - Usunięcie polecenia usuwa rekord zadania oraz rozmowy AI przypięte do tego zadania. Historia jobów i wiadomości stacji roboczych zostaje zachowana, ale bez linku do usuniętego zadania.
@@ -34,6 +34,7 @@ Architektura pozostaje prosta:
 - GitHub Pages odpowiada HTTP 200.
 - Deployed `app.js` nie zawiera placeholderów `__SUPABASE_URL__` ani `__SUPABASE_ANON_KEY__`.
 - Supabase ma tabele `tasks`, `assignments`, `agents`, `messages`, `workstations`, `workstation_models`, `workstation_messages`, `workstation_jobs`.
+- Supabase ma startowe profile agentów: `AI Kierownik`, `Executor Kodujący`, `Tester Weryfikator`.
 - Utworzenie zadania w UI zapisuje rekord w `tasks`.
 - Usunięcie zadania z listy lub szczegółów usuwa rekord z `tasks` i odświeża widok bez błędów RLS.
 - Przycisk `Co to znaczy?` pokazuje słownik pojęć oraz znaczenie statusów `pending`, `analyzing`, `in_progress`, `done`, `failed`.
@@ -43,9 +44,9 @@ Architektura pozostaje prosta:
 - `start.command` przechodzi przez konfigurację modelu i stacji bez cichego zakończenia.
 - Stacja robocza publikuje heartbeat i model w UI.
 - Job skierowany do stacji kończy się wpisem result albo error w `workstation_messages`.
-- Supabase Security Advisor poza `auth_leaked_password_protection` nie zgłasza ostrzeżeń security.
+- Supabase Security Advisor poza `auth_leaked_password_protection` nie zgłasza ostrzeżeń security; ten alert wynika z ograniczeń darmowego planu.
 - Supabase Performance Advisor nie zgłasza WARN/ERROR po stronie RLS i brakujących indeksów FK; pozostałe wpisy `unused_index` są informacyjne.
 
 ## Kryterium wyjścia z alpha
 
-Projekt może przejść z alpha do beta, gdy testy z `todo.md` 6.2, 6.3 i 6.4 są wykonane na deployu GitHub Pages, a ograniczenia team-space/RLS są świadomie zaakceptowane albo zastąpione izolacją per użytkownik.
+Projekt może przejść z alpha do beta, gdy testy z `todo.md` 6.2, 6.3 i 6.4 są wykonane na deployu GitHub Pages, a ograniczenia team-space/RLS oraz ograniczenia darmowego planu Supabase są świadomie zaakceptowane albo zastąpione mocniejszą konfiguracją.

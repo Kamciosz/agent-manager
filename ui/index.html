@@ -6,7 +6,31 @@
   <title>Agent Manager</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    /* Drobne style pomocnicze poza Tailwind: animacja kropki "w toku" w timeline. */
+    body {
+      background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 52%, #f8fafc 100%);
+    }
+    .sidebar-layer {
+      box-shadow: 1px 0 0 rgba(148, 163, 184, 0.18), 20px 0 48px -42px rgba(15, 23, 42, 0.45);
+    }
+    .header-layer {
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 1px 0 rgba(148, 163, 184, 0.18);
+    }
+    .surface-card {
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 20px 45px -34px rgba(15, 23, 42, 0.45);
+    }
+    .stat-card {
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 3px;
+      background: var(--accent, #2563eb);
+    }
     @keyframes pulse-ring {
       0%   { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.6); }
       70%  { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
@@ -15,7 +39,7 @@
     .timeline-current { animation: pulse-ring 1.5s infinite; }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen font-sans antialiased">
+<body class="text-slate-900 min-h-screen font-sans antialiased">
 
   <!-- ============================================================== -->
   <!-- TOAST CONTAINER — globalne powiadomienia (success/error/info)  -->
@@ -26,7 +50,7 @@
   <!-- AUTH SCREEN — ekran logowania / rejestracji                    -->
   <!-- ============================================================== -->
   <div id="auth-screen" class="min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+    <div class="w-full max-w-md bg-white/95 rounded-2xl surface-card border border-white/80 p-8">
       <div class="text-center mb-8">
         <h1 class="text-3xl font-bold text-slate-900">Agent Manager</h1>
         <p class="text-slate-500 mt-2">Zaloguj się, aby zarządzać zadaniami AI</p>
@@ -89,7 +113,7 @@
   <div id="app-screen" class="hidden min-h-screen flex">
 
     <!-- Sidebar nawigacyjny -->
-    <aside class="w-64 bg-white border-r border-slate-200 flex flex-col">
+    <aside class="w-64 bg-white/95 border-r border-slate-200/80 sidebar-layer flex flex-col">
       <div class="p-6 border-b border-slate-200">
         <h1 class="text-xl font-bold text-slate-900">Agent Manager</h1>
       </div>
@@ -124,7 +148,7 @@
     <div class="flex-1 flex flex-col">
 
       <!-- Górny pasek ze statusem połączenia -->
-      <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between">
+      <header class="header-layer border-b border-slate-200/80 px-8 py-4 flex items-center justify-between sticky top-0 z-20">
         <h2 id="page-title" class="text-2xl font-bold text-slate-900">Dashboard</h2>
         <div class="flex items-center gap-3">
           <button id="btn-open-help"
@@ -132,8 +156,8 @@
             Co to znaczy?
           </button>
           <!-- Badge statusu lokalnego AI (renderowany przez ai-client.js) -->
-          <span id="ai-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-            <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>Tryb demo (symulacja)
+          <span id="ai-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-700 border border-sky-200">
+            <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>Panel online
           </span>
           <span id="connection-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
           <span id="connection-text" class="text-sm text-slate-600">Połączono</span>
@@ -146,22 +170,22 @@
         <section id="view-dashboard" class="view-section">
           <!-- Karty statystyk -->
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#64748b">
               <div class="text-sm text-slate-500 font-medium">Oczekujące</div>
               <div id="stat-pending" class="text-3xl font-bold text-slate-900 mt-2">0</div>
             </div>
-            <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#2563eb">
               <div class="text-sm text-slate-500 font-medium">W toku</div>
               <div id="stat-in-progress" class="text-3xl font-bold text-blue-600 mt-2">0</div>
             </div>
-            <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#059669">
               <div class="text-sm text-slate-500 font-medium">Ukończone</div>
               <div id="stat-done" class="text-3xl font-bold text-emerald-600 mt-2">0</div>
             </div>
           </div>
 
           <!-- Akcja + tabela ostatnich zadań -->
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80">
             <div class="p-6 border-b border-slate-200 flex items-center justify-between">
               <h3 class="text-lg font-semibold text-slate-900">Ostatnie zadania</h3>
               <button id="btn-add-task"
@@ -191,7 +215,7 @@
 
         <!-- ========== TASKS VIEW (pełna lista) ========== -->
         <section id="view-tasks" class="view-section hidden">
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80">
             <div class="p-6 border-b border-slate-200 flex items-center justify-between">
               <h3 class="text-lg font-semibold text-slate-900">Wszystkie zadania</h3>
               <button id="btn-add-task-2"
@@ -225,7 +249,7 @@
             ← Wróć do listy
           </button>
 
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6 mb-6">
             <div class="flex items-start justify-between gap-4">
               <div>
                 <h2 id="detail-title" class="text-2xl font-bold text-slate-900">—</h2>
@@ -253,14 +277,14 @@
           </div>
 
           <!-- Timeline -->
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6 mb-6">
             <h3 class="text-lg font-semibold text-slate-900 mb-6">Postęp</h3>
             <ol id="timeline" class="relative border-l-2 border-slate-200 ml-4 space-y-6">
               <!-- Wypełniane przez renderTimeline() -->
             </ol>
           </div>
 
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6 mb-6">
             <div class="flex items-center justify-between gap-4 mb-4">
               <div>
                 <h3 class="text-lg font-semibold text-slate-900">Komunikacja ze stacją</h3>
@@ -277,7 +301,7 @@
           </div>
 
           <!-- Wiadomości AI -->
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6">
             <h3 class="text-lg font-semibold text-slate-900 mb-4">Wiadomości AI</h3>
             <div id="messages-list" class="space-y-3">
               <p class="text-slate-500 text-sm">Brak wiadomości</p>
@@ -287,7 +311,7 @@
 
         <!-- ========== AGENTS VIEW ========== -->
         <section id="view-agents" class="view-section hidden">
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80">
             <div class="p-6 border-b border-slate-200 flex items-center justify-between">
               <h3 class="text-lg font-semibold text-slate-900">Profile agentów</h3>
               <button id="btn-add-agent"
@@ -316,7 +340,7 @@
 
         <!-- ========== WORKSTATIONS VIEW ========== -->
         <section id="view-workstations" class="view-section hidden">
-          <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80">
             <div class="p-6 border-b border-slate-200 flex items-center justify-between gap-4">
               <div>
                 <h3 class="text-lg font-semibold text-slate-900">Stacje robocze</h3>
@@ -606,8 +630,8 @@
               <p class="mt-1 text-slate-600">Lokalny model GGUF uruchamiany przez stację. Wybór modelu mówi, czym dana stacja ma kodować.</p>
             </div>
             <div class="border border-slate-200 rounded-lg p-3">
-              <div class="font-medium text-slate-900">Tryb demo</div>
-              <p class="mt-1 text-slate-600">Panel działa bez lokalnego proxy/modelu i używa symulacji w przeglądarce.</p>
+              <div class="font-medium text-slate-900">Panel online</div>
+              <p class="mt-1 text-slate-600">Panel obsługuje kolejkę, profile i statusy w przeglądarce. Lokalny model można podłączyć przez start.command albo start.sh.</p>
             </div>
           </div>
         </section>

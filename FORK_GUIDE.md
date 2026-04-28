@@ -116,7 +116,7 @@ Po zakończeniu deploy:
 
 ## Krok 9 — (opcjonalnie) Włącz lokalny AI
 
-Domyślnie manager i executor odpowiadają sztywnymi tekstami (tryb demo). Aby włączyć **prawdziwy lokalny model** (llama.cpp + GGUF) na swoim komputerze:
+Domyślnie manager i executor działają w trybie przeglądarkowym ze stałymi tekstami operacyjnymi. Aby włączyć **prawdziwy lokalny model** (llama.cpp + GGUF) na swoim komputerze:
 
 1. Sklonuj swojego forka lokalnie (`git clone …`).
 2. Uruchom skrypt **właściwy dla Twojego systemu**:

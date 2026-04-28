@@ -194,7 +194,7 @@ async function handleAuthenticated(user) {
   initAiClient()
 
   // Krok 4: uruchom AI kierownika i agenta wykonawczego
-  // (używają ai-client gdy proxy dostępne, fallback symulacja gdy nie)
+  // (używają ai-client gdy proxy dostępne, inaczej trybu przeglądarkowego)
   initManager(supabase)
   initExecutor(supabase)
 }
@@ -1457,13 +1457,13 @@ async function refreshAgents() {
 function renderAgentsTable(agents) {
   const tbody = document.getElementById('agents-table-body')
   if (!agents.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak profili</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak profili agentów. Dodaj profil, aby pojawił się w tym widoku.</td></tr>'
     return
   }
   tbody.innerHTML = agents.map((a) => `
     <tr class="hover:bg-slate-50">
       <td class="px-6 py-3 font-medium">${escapeHtml(a.name || '')}</td>
-      <td class="px-6 py-3">${escapeHtml(a.role || '')}</td>
+      <td class="px-6 py-3">${agentRoleBadge(a.role)}</td>
       <td class="px-6 py-3">${(a.skills || []).map(s => `<span class="inline-block bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs mr-1">${escapeHtml(s)}</span>`).join('')}</td>
       <td class="px-6 py-3">${a.concurrency_limit ?? 1}</td>
       <td class="px-6 py-3 space-x-2">
@@ -1479,6 +1479,27 @@ function renderAgentsTable(agents) {
     const ok = await deleteAgent(b.dataset.id)
     if (ok) { showToast('Profil usunięty.', TOAST_TYPE.SUCCESS); refreshAgents() }
   }))
+}
+
+/**
+ * Zwraca badge roli profilu agenta.
+ * @param {string} role
+ * @returns {string}
+ */
+function agentRoleBadge(role) {
+  const styles = {
+    manager: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    executor: 'bg-blue-100 text-blue-700 border-blue-200',
+    specialist: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  }
+  const labels = {
+    manager: 'Manager',
+    executor: 'Executor',
+    specialist: 'Specialist',
+  }
+  const cls = styles[role] || 'bg-slate-100 text-slate-700 border-slate-200'
+  const label = labels[role] || role || '—'
+  return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${cls}">${escapeHtml(label)}</span>`
 }
 
 /**

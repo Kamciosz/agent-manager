@@ -8,8 +8,9 @@ Status: aktualne po przejściu z MVP do alpha
 | Brak | Ryzyko | Decyzja |
 |------|--------|---------|
 | Brak usuwania poleceń | Kolejka szybko robi się nieczytelna, a błędnie wysłane zadania zostają w systemie | Dodano usuwanie z listy i widoku szczegółów oraz politykę RLS DELETE dla `tasks` |
-| Niejasne pojęcia i statusy | Użytkownik nie wie czym różni się polecenie, stacja, model, tryb demo i statusy techniczne | Dodano modal `Co to znaczy?` z krótkim słownikiem |
+| Niejasne pojęcia i statusy | Użytkownik nie wie czym różni się polecenie, stacja, model, panel online i statusy techniczne | Dodano modal `Co to znaczy?` z krótkim słownikiem |
 | Ostrzeżenia performance RLS | Stare polityki per-role nakładały się z team-space alpha, a wybrane FK nie miały indeksów | Dodano indeksy FK i uproszczono polityki do jednej polityki per operacja/tabela |
+| Pusta lista profili agentów | Widok `Profile agentów` wyglądał jak niedokończony, bo tabela `agents` nie miała rekordów | Dodano seed startowych profili: kierownik, executor i tester |
 
 ## Nadal brakujące elementy przed beta
 
