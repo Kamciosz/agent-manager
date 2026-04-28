@@ -9,6 +9,7 @@ Status: aktualne po przejściu z MVP do alpha
 |------|--------|---------|
 | Brak usuwania poleceń | Kolejka szybko robi się nieczytelna, a błędnie wysłane zadania zostają w systemie | Dodano usuwanie z listy i widoku szczegółów oraz politykę RLS DELETE dla `tasks` |
 | Niejasne pojęcia i statusy | Użytkownik nie wie czym różni się polecenie, stacja, model, tryb demo i statusy techniczne | Dodano modal `Co to znaczy?` z krótkim słownikiem |
+| Ostrzeżenia performance RLS | Stare polityki per-role nakładały się z team-space alpha, a wybrane FK nie miały indeksów | Dodano indeksy FK i uproszczono polityki do jednej polityki per operacja/tabela |
 
 ## Nadal brakujące elementy przed beta
 
@@ -18,7 +19,7 @@ Status: aktualne po przejściu z MVP do alpha
 | Anulowanie / ponowienie | Akcje `Anuluj` i `Ponów` dla zadań i jobów stacji | Usunięcie jest dobre do porządkowania, ale nie zastępuje kontroli procesu |
 | Filtrowanie listy | Filtry po statusie, priorytecie, stacji i tekście | Przy większej liczbie poleceń tabela bez filtrów przestaje być operacyjna |
 | Historia zmian | Audit log: kto utworzył, usunął, zmienił status, wysłał wiadomość | Potrzebne przy współdzielonym team-space i wielu komputerach |
-| Izolacja danych | Decyzja: team-space zostaje albo przejście na widoczność per użytkownik/zespół | Obecne RLS jest proste i dobre dla alpha, ale wymaga świadomej decyzji przed beta |
+| Izolacja danych | Decyzja: team-space zostaje albo przejście na widoczność per użytkownik/zespół | Obecne RLS jest zoptymalizowane pod alpha team-space, ale wymaga świadomej decyzji przed beta |
 | Testy E2E | Test logowania, tworzenia, usuwania, komunikacji ze stacją i statusów na deployu | Ręczna walidacja jest za słaba dla wydania beta |
 
 ## Znaczenie usunięcia polecenia

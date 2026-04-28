@@ -27,6 +27,7 @@ Architektura pozostaje prosta:
 - Stacje robocze wymagają lokalnego konta operatora Supabase zapisanego w `local-ai-proxy/config.json`.
 - Local AI zależy od modelu GGUF i wydajności komputera; ciężkie modele mogą startować długo.
 - Usunięcie polecenia usuwa rekord zadania oraz rozmowy AI przypięte do tego zadania. Historia jobów i wiadomości stacji roboczych zostaje zachowana, ale bez linku do usuniętego zadania.
+- Supabase Performance Advisor może pokazywać `unused_index` jako INFO przy świeżych indeksach i małym ruchu; nie jest to blokada wdrożenia.
 
 ## Checklist alpha smoke test
 
@@ -42,6 +43,8 @@ Architektura pozostaje prosta:
 - `start.command` przechodzi przez konfigurację modelu i stacji bez cichego zakończenia.
 - Stacja robocza publikuje heartbeat i model w UI.
 - Job skierowany do stacji kończy się wpisem result albo error w `workstation_messages`.
+- Supabase Security Advisor poza `auth_leaked_password_protection` nie zgłasza ostrzeżeń security.
+- Supabase Performance Advisor nie zgłasza WARN/ERROR po stronie RLS i brakujących indeksów FK; pozostałe wpisy `unused_index` są informacyjne.
 
 ## Kryterium wyjścia z alpha
 

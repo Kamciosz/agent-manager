@@ -474,3 +474,10 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 - **Nie rób:** Nie wprowadzaj nowego backendu ani zmiany modelu bezpieczeństwa poza team-space alpha
 - [x] Gotowe — dodano politykę DELETE dla `tasks`, akcje usuwania poleceń oraz słownik pojęć/statusów.
 
+### 7.4 Release readiness sweep
+- **Co:** Sprawdzić przed wdrożeniem repo, deploy Pages, składnię, Supabase schema/RLS/advisors, publiczne assety i podstawowe RLS anon
+- **Gdzie:** GitHub Pages + Supabase + lokalne smoke testy
+- **Gotowe gdy:** Repo jest czyste, Pages zwraca aktualne assety, JS/shell przechodzą checki, RLS nie zwraca zadań anonimowo, a doradcy nie pokazują blockerów poza leaked password protection
+- **Nie rób:** Nie oznaczaj jako gotowe, jeśli zostają błędy security inne niż panelowe ustawienie Auth leaked password protection
+- [x] Gotowe — sprawdzono deploy i bazę; dodano migrację optymalizującą RLS/indeksy. Jedyny security WARN to `auth_leaked_password_protection` w panelu Supabase.
+
