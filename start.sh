@@ -239,31 +239,52 @@ download_binary() {
 # --- Konfiguracja modelu ----------------------------------------------------
 
 prompt_model() {
-  echo
-  echo "=========================================================="
-  echo "  Wybierz model GGUF do uruchomienia"
-  echo "=========================================================="
-  echo "  Opcja A: wklej URL .gguf z HuggingFace"
-  echo "          (np. https://huggingface.co/.../model.gguf)"
-  echo "  Opcja B: wklej ścieżkę do lokalnego pliku .gguf"
-  echo
+  {
+    echo
+    echo "=========================================================="
+    echo "  Wybierz model GGUF do uruchomienia"
+    echo "=========================================================="
+    echo "  Opcja A: wklej URL .gguf z HuggingFace"
+    echo "          (np. https://huggingface.co/.../model.gguf)"
+    echo "  Opcja B: wklej ścieżkę do lokalnego pliku .gguf"
+    echo
+  } >&2
   read -r -p "Twój wybór: " input
   if [ -z "$input" ]; then
     err "Pusty wybór. Anulowane."
     exit 1
   fi
 
+  case "$input" in
+    "ollama run "*|"ollama pull "*|"ollama "*)
+      err "To wygląda jak komenda Ollama, a nie plik GGUF. Wklej bezpośredni URL do pliku .gguf albo lokalną ścieżkę do pliku .gguf."
+      exit 1
+      ;;
+  esac
+
+  if [[ "$input" == https://huggingface.co/*\?show_file_info=*.gguf ]]; then
+    local repo_url gguf_name
+    repo_url="${input%%\?*}"
+    gguf_name="${input##*=}"
+    input="$repo_url/resolve/main/$gguf_name"
+    log "Zamieniam link Hugging Face na bezpośredni URL do pliku: $gguf_name" >&2
+  fi
+
   local model_path
   if [[ "$input" == http*://* ]]; then
     local filename
     filename="$(basename "${input%%\?*}")"
+    if [[ "$filename" != *.gguf ]]; then
+      err "URL musi wskazywać bezpośrednio na plik .gguf, nie na stronę modelu."
+      exit 1
+    fi
     model_path="$MODELS_DIR/$filename"
     if [ -f "$model_path" ] && [ "$NO_PULL" = "0" ]; then
-      log "Plik $filename już istnieje — pomijam pobieranie."
+      log "Plik $filename już istnieje — pomijam pobieranie." >&2
     elif [ "$NO_PULL" = "1" ]; then
-      log "[--no-pull] Pomijam pobieranie modelu."
+      log "[--no-pull] Pomijam pobieranie modelu." >&2
     else
-      log "Pobieram model do $model_path (to może chwilę potrwać)…"
+      log "Pobieram model do $model_path (to może chwilę potrwać)…" >&2
       curl -L --progress-bar -o "$model_path" "$input"
     fi
   else
@@ -272,11 +293,11 @@ prompt_model() {
       exit 1
     fi
     if [[ "$input" != *.gguf ]]; then
-      warn "Plik nie ma rozszerzenia .gguf — kontynuuję mimo to."
+      warn "Plik nie ma rozszerzenia .gguf — kontynuuję mimo to." >&2
     fi
     model_path="$MODELS_DIR/$(basename "$input")"
     ln -sf "$input" "$model_path"
-    log "Utworzono symlink: $model_path -> $input"
+    log "Utworzono symlink: $model_path -> $input" >&2
   fi
 
   echo "$model_path"
@@ -387,7 +408,15 @@ ensure_workstation_config() {
 
 ensure_config() {
   local gpu="$1"
-  if [ "$CHANGE_MODEL" = "1" ] || [ ! -f "$CONFIG_FILE" ]; then
+  local saved_model_path=""
+  if [ -f "$CONFIG_FILE" ]; then
+    saved_model_path="$(read_config_value modelPath)"
+  fi
+
+  if [ "$CHANGE_MODEL" = "1" ] || [ ! -f "$CONFIG_FILE" ] || [ -z "$saved_model_path" ]; then
+    if [ -f "$CONFIG_FILE" ] && [ -z "$saved_model_path" ]; then
+      warn "config.json nie zawiera modelPath — wybierz model ponownie."
+    fi
     local model_path
     model_path="$(prompt_model)"
     cat > "$CONFIG_FILE" <<JSON
@@ -413,7 +442,7 @@ read_config_value() {
   # Bardzo prosty parser — wyciąga wartość prostego klucza string/number.
   local key="$1"
   grep -Eo "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" "$CONFIG_FILE" 2>/dev/null \
-    | head -n1 | sed -E "s/.*:[[:space:]]*\"([^\"]*)\"/\1/"
+    | head -n1 | sed -E "s/.*:[[:space:]]*\"([^\"]*)\"/\1/" || true
 }
 
 # --- Sprawdzenie portów -----------------------------------------------------
