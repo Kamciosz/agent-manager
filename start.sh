@@ -58,8 +58,8 @@ for arg in "$@"; do
 done
 
 # --- Pomocnicze logowanie ---------------------------------------------------
-log()  { printf '\033[1;34m[start]\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
+log()  { printf '\033[1;34m[start]\033[0m %s\n' "$*" >&2; }
+warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
 err()  { printf '\033[1;31m[err]\033[0m %s\n' "$*" >&2; }
 
 require_command() {
@@ -141,29 +141,42 @@ detect_gpu() {
   echo "cpu"
 }
 
-# Mapuje (os,arch,gpu) → wzorzec nazwy assetu w GitHub Releases llama.cpp.
-# Nazewnictwo bywa zmienne — tabela jest celowo przybliżona; skrypt wybiera
-# pierwszy asset z tagu `latest` którego nazwa zawiera wszystkie tokeny.
-asset_tokens() {
+# Mapuje (os,arch,gpu) na listę preferowanych grup tokenów assetu llama.cpp.
+# Kolejne wiersze są fallbackami, bo upstream zmienia nazwy i dostępne backendy.
+asset_token_groups() {
   local os="$1" arch="$2" gpu="$3"
   case "$os" in
     macos)
-      if [ "$arch" = "arm64" ]; then echo "macos arm64"
-      else                            echo "macos x64"; fi ;;
+      if [ "$arch" = "arm64" ]; then
+        echo "macos arm64.tar.gz"
+        echo "macos arm64"
+      else
+        echo "macos x64"
+      fi ;;
     linux)
       case "$gpu" in
-        cuda)   echo "ubuntu x64 cuda" ;;
-        rocm)   echo "ubuntu x64 hip" ;;
-        vulkan) echo "ubuntu x64 vulkan" ;;
-        *)      if [ "$arch" = "arm64" ]; then echo "ubuntu arm64"; else echo "ubuntu x64"; fi ;;
+        cuda)
+          echo "ubuntu x64 cuda"
+          echo "ubuntu x64 vulkan"
+          echo "ubuntu x64" ;;
+        rocm)
+          echo "ubuntu rocm x64"
+          echo "ubuntu x64 rocm"
+          echo "ubuntu x64 vulkan"
+          echo "ubuntu x64" ;;
+        vulkan)
+          if [ "$arch" = "arm64" ]; then echo "ubuntu vulkan arm64"; else echo "ubuntu vulkan x64"; fi
+          if [ "$arch" = "arm64" ]; then echo "ubuntu arm64"; else echo "ubuntu x64"; fi ;;
+        *)
+          if [ "$arch" = "arm64" ]; then echo "ubuntu arm64"; else echo "ubuntu x64"; fi ;;
       esac ;;
     *)
       echo "ubuntu x64" ;;
   esac
 }
 
-extract_release_zip_urls() {
-  grep -Eo '"browser_download_url": *"[^"]+\.zip"' \
+extract_release_package_urls() {
+  grep -Eo '"browser_download_url": *"[^"]+(\.zip|\.tar\.gz)"' \
     | sed 's/.*"\(https:[^"]*\)".*/\1/'
 }
 
@@ -183,6 +196,31 @@ pick_matching_url() {
     fi
   done
   return 1
+}
+
+pick_matching_url_from_groups() {
+  local urls="$1" raw_tokens asset_url
+  while IFS= read -r raw_tokens; do
+    [ -z "$raw_tokens" ] && continue
+    IFS=' ' read -r -a tokens <<< "$raw_tokens"
+    asset_url="$(printf '%s\n' "$urls" | grep -vi '/cudart-' | pick_matching_url "${tokens[@]}")" || asset_url=""
+    if [ -n "$asset_url" ]; then
+      printf '%s|%s\n' "$asset_url" "$raw_tokens"
+      return 0
+    fi
+  done
+  return 1
+}
+
+backend_for_asset_url() {
+  local detected_gpu="$1" asset_url="$2"
+  case "$asset_url" in
+    *cuda*) echo "cuda" ;;
+    *rocm*|*hip*) echo "rocm" ;;
+    *vulkan*) echo "vulkan" ;;
+    *macos*) echo "$detected_gpu" ;;
+    *) echo "cpu" ;;
+  esac
 }
 
 # --- Pobieranie binary llama-server -----------------------------------------
@@ -213,32 +251,50 @@ download_binary() {
     return
   fi
 
-  require_command unzip "Zainstaluj unzip albo ręcznie rozpakuj llama.cpp do $BIN_DIR i uruchom z --no-pull."
-
-  local tokens raw_tokens
-  raw_tokens="$(asset_tokens "$os" "$arch" "$gpu")"
-  IFS=' ' read -r -a tokens <<< "$raw_tokens"
-  log "Szukam najnowszego releasu llama.cpp dla: ${tokens[*]}"
+  local token_groups
+  token_groups="$(asset_token_groups "$os" "$arch" "$gpu")"
+  log "Szukam najnowszego releasu llama.cpp dla: $(printf '%s' "$token_groups" | paste -sd ' -> ' -)"
 
   local api="https://api.github.com/repos/ggerganov/llama.cpp/releases/latest"
-  local asset_url
-  asset_url="$(curl -fsSL "$api" \
-    | extract_release_zip_urls \
-    | pick_matching_url "${tokens[@]}")" || asset_url=""
+  local release_urls picked asset_url matched_tokens effective_gpu
+  release_urls="$(curl -fsSL "$api" | extract_release_package_urls)"
+  picked="$(pick_matching_url_from_groups "$release_urls" <<< "$token_groups")" || picked=""
+  asset_url="${picked%%|*}"
+  matched_tokens="${picked#*|}"
 
   if [ -z "$asset_url" ]; then
-    err "Nie znalazłem assetu pasującego do tokenów: ${tokens[*]}"
+    err "Nie znalazłem assetu pasującego do żadnego fallbacku: $(printf '%s' "$token_groups" | paste -sd ' | ' -)"
     err "Sprawdź ręcznie: https://github.com/ggerganov/llama.cpp/releases"
     exit 1
   fi
 
+  effective_gpu="$(backend_for_asset_url "$gpu" "$asset_url")"
+  if [ "$effective_gpu" != "$gpu" ]; then
+    warn "Brak dokładnej paczki dla backendu $gpu — używam paczki $effective_gpu ($matched_tokens)."
+  fi
+
   log "Pobieram: $asset_url"
-  local tmpzip="$BIN_DIR/_llama.zip"
-  curl -fsSL --progress-bar -o "$tmpzip" "$asset_url"
+  local tmp_package
+  case "$asset_url" in
+    *.zip) tmp_package="$BIN_DIR/_llama.zip" ;;
+    *.tar.gz) tmp_package="$BIN_DIR/_llama.tar.gz" ;;
+    *)
+      err "Nieobsługiwany format paczki llama.cpp: $asset_url"
+      exit 1
+      ;;
+  esac
+  curl -fsSL --progress-bar -o "$tmp_package" "$asset_url"
 
   log "Rozpakowuję do $BIN_DIR"
-  ( cd "$BIN_DIR" && unzip -oq "$tmpzip" )
-  rm -f "$tmpzip"
+  case "$tmp_package" in
+    *.zip)
+      require_command unzip "Zainstaluj unzip albo ręcznie rozpakuj llama.cpp do $BIN_DIR i uruchom z --no-pull."
+      ( cd "$BIN_DIR" && unzip -oq "$tmp_package" ) ;;
+    *.tar.gz)
+      require_command tar "Zainstaluj tar albo ręcznie rozpakuj llama.cpp do $BIN_DIR i uruchom z --no-pull."
+      ( cd "$BIN_DIR" && tar -xzf "$tmp_package" ) ;;
+  esac
+  rm -f "$tmp_package"
 
   # Znajdź wykonywalny llama-server gdziekolwiek po rozpakowaniu i zlinkuj
   local found
@@ -256,7 +312,7 @@ download_binary() {
   fi
 
   log "Binary gotowy: $target"
-  echo "$gpu"
+  echo "$effective_gpu"
 }
 
 # --- Konfiguracja modelu ----------------------------------------------------

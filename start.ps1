@@ -273,10 +273,10 @@ function Configure-Schedule {
 
 function Detect-Backend {
   if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
-    try { & nvidia-smi | Out-Null; return 'cuda' } catch {}
+    try { & nvidia-smi 1>$null 2>$null; return 'cuda' } catch {}
   }
   if (Get-Command vulkaninfo -ErrorAction SilentlyContinue) {
-    try { & vulkaninfo | Out-Null; return 'vulkan' } catch {}
+    try { & vulkaninfo 1>$null 2>$null; return 'vulkan' } catch {}
   }
   return 'cpu'
 }
@@ -285,33 +285,84 @@ function Get-LlamaBinaryPath {
   return (Join-Path $BinDir 'llama-server.exe')
 }
 
-function Select-AssetTokens([string] $Backend) {
-  if ($Backend -eq 'cuda') { return @('win', 'cuda') }
-  if ($Backend -eq 'vulkan') { return @('win', 'vulkan') }
-  return @('win', 'x64')
+function Select-AssetTokenGroups([string] $Backend) {
+  if ($Backend -eq 'cuda') {
+    return @(
+      'llama,bin,win,cuda,x64',
+      'bin,win,cuda,x64',
+      'llama,bin,win-vulkan,x64',
+      'llama,bin,win,cpu,x64',
+      'bin,win,cpu,x64'
+    )
+  }
+  if ($Backend -eq 'vulkan') {
+    return @(
+      'llama,bin,win-vulkan,x64',
+      'llama,bin,win,vulkan,x64',
+      'llama,bin,win,cpu,x64',
+      'bin,win,cpu,x64'
+    )
+  }
+  return @(
+    'llama,bin,win,cpu,x64',
+    'bin,win,cpu,x64',
+    'llama,bin,win,x64'
+  )
+}
+
+function Test-AssetNameMatches([string] $Name, [string] $TokenGroup) {
+  foreach ($token in ($TokenGroup -split ',')) {
+    if (-not $Name.Contains($token)) { return $false }
+  }
+  return $true
+}
+
+function Find-LlamaReleaseAsset([object[]] $Assets, [string[]] $TokenGroups) {
+  foreach ($tokenGroup in $TokenGroups) {
+    $matches = @($Assets | Where-Object {
+      $name = $_.name.ToLowerInvariant()
+      ($_.browser_download_url -match '\.zip$') -and (-not $name.StartsWith('cudart-')) -and (Test-AssetNameMatches $name $tokenGroup)
+    })
+    if ($matches.Count -gt 0) { return $matches[0] }
+  }
+  return $null
+}
+
+function Get-BackendFromAssetName([string] $AssetName, [string] $FallbackBackend) {
+  $name = $AssetName.ToLowerInvariant()
+  if ($name.Contains('cuda')) { return 'cuda' }
+  if ($name.Contains('vulkan')) { return 'vulkan' }
+  if ($name.Contains('hip') -or $name.Contains('radeon')) { return 'vulkan' }
+  if ($name.Contains('cpu')) { return 'cpu' }
+  return $FallbackBackend
 }
 
 function Download-LlamaBinary([string] $Backend) {
   $target = Get-LlamaBinaryPath
   if ((Test-Path -LiteralPath $target) -and -not $NoPull) {
     Write-StartLog "llama-server already exists: $target"
-    return
+    return $Backend
   }
   if ($NoPull) {
     Write-StartLog '[--no-pull] Skipping llama-server download.'
-    return
+    return $Backend
   }
 
-  $tokens = Select-AssetTokens $Backend
-  Write-StartLog "Looking for llama.cpp release asset: $($tokens -join ' ')"
+  $tokenGroups = @(Select-AssetTokenGroups $Backend)
+  Write-StartLog "Looking for llama.cpp release asset: $($tokenGroups -join ' -> ')"
   $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/ggerganov/llama.cpp/releases/latest' -Headers @{ 'User-Agent' = 'AgentManagerLauncher' }
-  $asset = $release.assets | Where-Object {
-    $name = $_.name.ToLowerInvariant()
-    $_.browser_download_url -match '\.zip$' -and ($tokens | ForEach-Object { $name.Contains($_) }) -notcontains $false
-  } | Select-Object -First 1
+  $asset = Find-LlamaReleaseAsset $release.assets $tokenGroups
 
   if (-not $asset) {
-    throw "Could not find a llama.cpp Windows zip for tokens: $($tokens -join ', '). Download manually from https://github.com/ggerganov/llama.cpp/releases and use --no-pull."
+    $available = (($release.assets | Where-Object { $_.name -match 'bin-win.*\.zip$' -and $_.name -notmatch '^cudart-' } | ForEach-Object { $_.name }) -join ', ')
+    throw "Could not find a llama.cpp Windows zip. Tried: $($tokenGroups -join ' | '). Available: $available. Download manually from https://github.com/ggerganov/llama.cpp/releases and use --no-pull."
+  }
+
+  $selectedBackend = Get-BackendFromAssetName $asset.name $Backend
+  if ($selectedBackend -ne $Backend) {
+    Write-StartWarn "No exact $Backend asset matched; using $selectedBackend package: $($asset.name)"
+  } else {
+    Write-StartLog "Selected package: $($asset.name)"
   }
 
   $zip = Join-Path $BinDir '_llama.zip'
@@ -322,10 +373,14 @@ function Download-LlamaBinary([string] $Backend) {
 
   $found = Get-ChildItem -LiteralPath $BinDir -Recurse -File -Filter 'llama-server.exe' | Select-Object -First 1
   if (-not $found) { throw "After extracting the release, llama-server.exe was not found under $BinDir" }
+  if ($found.Directory.FullName -ne $BinDir) {
+    Copy-Item -Path (Join-Path $found.Directory.FullName '*') -Destination $BinDir -Recurse -Force
+  }
   if ($found.FullName -ne $target) {
     Copy-Item -LiteralPath $found.FullName -Destination $target -Force
   }
   Write-StartLog "Binary ready: $target"
+  return $selectedBackend
 }
 
 function Convert-HfInfoUrl([string] $InputValue) {
@@ -716,7 +771,7 @@ try {
 
   $backend = Detect-Backend
   Write-StartLog "Detected backend: $backend"
-  if (-not $ReuseLlama) { Download-LlamaBinary $backend }
+  if (-not $ReuseLlama) { $backend = Download-LlamaBinary $backend }
 
   Ensure-Config $backend
   Sync-RuntimeConfig

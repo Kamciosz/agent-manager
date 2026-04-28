@@ -49,7 +49,15 @@ start.bat
 
 Po dwukliku w Windows okno `start.bat` powinno zostać otwarte. Plik BAT nie pyta już o dane i nie uruchamia procesów przez zagnieżdżone `cmd /c`; przekazuje sterowanie do `start.ps1`. Jeśli launcher trafi na błąd, pokaże komunikat i poczeka na klawisz, żeby dało się przeczytać przyczynę. Po poprawnym starcie zostaw okno otwarte — zamknięcie konsoli może zatrzymać lokalne procesy AI.
 
-Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Zapyta też jednorazowo o dane stacji roboczej dla Supabase, żeby `workstation-agent.js` mógł odbierać joby z aplikacji. Kolejne uruchomienia są bez pytań.
+Jeśli uruchamiasz bezpośrednio z PowerShella, użyj ścieżki względnej:
+
+```powershell
+.\start.ps1
+```
+
+Samo `start.ps1` nie działa w Windows PowerShell, bo PowerShell domyślnie nie uruchamia skryptów z bieżącego katalogu bez `./` lub `.\`.
+
+Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Launcher dobiera paczkę do backendu GPU, ale jeśli upstream nie publikuje dokładnego wariantu, używa bezpiecznego fallbacku CPU zamiast przerywać start. Zapyta też jednorazowo o dane stacji roboczej dla Supabase, żeby `workstation-agent.js` mógł odbierać joby z aplikacji. Kolejne uruchomienia są bez pytań.
 
 Po starcie otwórz aplikację (GitHub Pages albo `ui/index.html`). W headerze pojawi się badge:
 - 🟢 **AI lokalny: <nazwa-modelu>** — proxy działa, manager/executor używają prawdziwego LLM.
@@ -150,11 +158,13 @@ Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci.
 
 **Brak GPU mimo karty NVIDIA / AMD.** Skrypt patrzy na obecność `nvidia-smi` / `rocm-smi` / `vulkaninfo` w PATH. Doinstaluj sterowniki + odpowiednie SDK.
 
-**Pobieranie binary kończy się 404.** Nazwy assetów llama.cpp w GitHub Releases czasem się zmieniają. Otwórz [stronę releasów](https://github.com/ggerganov/llama.cpp/releases/latest), pobierz właściwy ZIP ręcznie, rozpakuj do `bin/` i uruchom z `--no-pull`.
+**Pobieranie binary kończy się 404 albo nie ma paczki GPU.** Nazwy assetów llama.cpp w GitHub Releases czasem się zmieniają. Launcher próbuje wariant GPU i fallback CPU. Jeśli upstream znowu zmieni nazwy, otwórz [stronę releasów](https://github.com/ggerganov/llama.cpp/releases/latest), pobierz właściwy ZIP lub `tar.gz` ręcznie, rozpakuj do `bin/` i uruchom z `--no-pull`.
 
 **Frontend wciąż pokazuje „Panel online".** Sprawdź `curl http://127.0.0.1:3001/health` — powinno zwracać `"ok": true`. Jeśli zwraca `"llama": "down"`, to proxy działa ale `llama-server` padł — restart `./start.sh`.
 
 **Windows: okno znika od razu.** Obecny `start.bat` powinien zawsze zostać na końcu z komunikatem. Jeśli nadal znika, uruchom z `cmd.exe` ręcznie: `start.bat --no-pull`, a potem sprawdź `local-ai-proxy\logs\start-windows.log`, `llama-server.err.log`, `proxy.err.log` i `workstation-agent.err.log`.
+
+**PowerShell mówi, że `start.ps1` nie jest rozpoznany.** To normalne zachowanie Windows PowerShell. Uruchom `.\start.ps1` albo prościej `.\start.bat` z katalogu repo.
 
 **Launcher czeka i nie ładuje modelu.** To może być poprawne, jeśli ustawiony jest harmonogram i aktualna godzina jest poza oknem. Zmień ustawienie przez `./start.sh --schedule` albo `start.bat --schedule`.
 
@@ -162,8 +172,6 @@ Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci.
 
 ## Zatrzymywanie
 
-- macOS / Linux: `Ctrl+C` w oknie z `start.sh` (skrypt sam ubija oba procesy).
-- Windows: zamknij okno `cmd`, potem:
   ```cmd
   taskkill /F /IM llama-server.exe
   taskkill /F /IM node.exe
