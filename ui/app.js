@@ -351,9 +351,9 @@ async function createTask({ title, description, priority, repo, context, templat
       description,
       priority,
       status: STATUS.PENDING,
-      repo: repo || null,
+      git_repo: repo || null,
       context: { template: template || null, raw: context || null },
-      requester_id: state.user?.id || null,
+      user_id: state.user?.id || null,
     }
     const { data, error } = await supabase.from('tasks').insert(row).select().single()
     if (error) throw error
@@ -538,7 +538,7 @@ function renderTaskDetail(task) {
   document.getElementById('detail-title').textContent = task.title || ''
   document.getElementById('detail-description').textContent = task.description || ''
   document.getElementById('detail-priority').textContent = task.priority || '—'
-  document.getElementById('detail-repo').textContent = task.repo || '—'
+  document.getElementById('detail-repo').textContent = task.git_repo || '—'
   document.getElementById('detail-created').textContent = formatDate(task.created_at)
   document.getElementById('detail-id').textContent = task.id
   const badge = document.getElementById('detail-status-badge')
