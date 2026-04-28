@@ -39,13 +39,28 @@ jobs:
           }
 
       - name: PowerShell help path
-        shell: pwsh
-        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --help
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts\windows-launcher | Out-Null
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --help 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-ps1-help.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Batch wrapper help path
-        shell: cmd
-        run: start.bat --help --no-pause
+        shell: powershell
+        run: |
+          cmd.exe /c "start.bat --help --no-pause" 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-bat-help.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Safe doctor path
-        shell: pwsh
-        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --doctor
+        shell: powershell
+        run: |
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --doctor 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-ps1-doctor.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-launcher-smoke-${{ github.run_number }}
+          path: artifacts/windows-launcher/
+          if-no-files-found: warn
