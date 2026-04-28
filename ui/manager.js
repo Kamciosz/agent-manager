@@ -140,9 +140,14 @@ async function handleNewTask(task) {
   await sleep(DELAY.ANALYZE)
   await updateTaskStatus(task.id, STATUS.ANALYZING)
 
-  // Krok 2: po kolejnych 1200 ms — utwórz przydział dla executor-1
+  // Krok 2: po kolejnych 1200 ms — utwórz przydział lub job dla stacji
   await sleep(DELAY.ASSIGN)
-  await createAssignment(task)
+  const instructions = await generateInstructions(task)
+  if (task.requested_workstation_id) {
+    await createWorkstationJob(task, instructions)
+  } else {
+    await createAssignment(task, instructions)
+  }
 
   // Krok 3: natychmiast — zmień status zadania na `in_progress`
   await updateTaskStatus(task.id, STATUS.IN_PROGRESS)
@@ -196,23 +201,52 @@ async function updateTaskStatus(taskId, newStatus) {
  * @param {string} task.title - Tytuł zadania
  * @returns {Promise<void>}
  */
-async function createAssignment(task) {
-  // Spróbuj wygenerować instrukcję przez lokalny AI; fallback = sztywny tekst.
-  const instructions = await generateInstructions(task)
+async function createAssignment(task, instructions) {
   try {
     const { error } = await supabaseClient
       .from('assignments')
-      .insert({
+      .upsert({
         task_id: task.id,
         agent_id: AGENT.EXECUTOR_1,
         instructions,
         profile: 'programista',
         status: ASSIGNMENT_STATUS.ASSIGNED,
-      })
+      }, { onConflict: 'task_id,agent_id' })
     if (error) throw error
     console.log('[manager.js] Przydzielono zadanie', task.id, 'do', AGENT.EXECUTOR_1)
   } catch (error) {
     console.error('[manager.js] createAssignment failed:', error)
+  }
+}
+
+/**
+ * Tworzy job dla wskazanej stacji roboczej.
+ * @param {Object} task
+ * @param {string} instructions
+ * @returns {Promise<void>}
+ */
+async function createWorkstationJob(task, instructions) {
+  try {
+    const { error } = await supabaseClient
+      .from('workstation_jobs')
+      .upsert({
+        task_id: task.id,
+        workstation_id: task.requested_workstation_id,
+        requested_by_user_id: task.user_id || null,
+        model_name: task.requested_model_name || null,
+        status: 'queued',
+        payload: {
+          title: task.title || '',
+          description: task.description || '',
+          git_repo: task.git_repo || null,
+          context: task.context || {},
+          instructions,
+        },
+      }, { onConflict: 'task_id,workstation_id' })
+    if (error) throw error
+    console.log('[manager.js] Zadanie', task.id, 'zakolejkowane dla stacji', task.requested_workstation_id)
+  } catch (error) {
+    console.error('[manager.js] createWorkstationJob failed:', error)
   }
 }
 

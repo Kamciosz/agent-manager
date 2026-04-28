@@ -106,6 +106,10 @@
           class="nav-link w-full text-left px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">
           Profile Agentów
         </button>
+        <button data-view="workstations"
+          class="nav-link w-full text-left px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">
+          Stacje robocze
+        </button>
       </nav>
       <div class="p-4 border-t border-slate-200">
         <div id="user-email" class="text-sm text-slate-600 mb-2 truncate"></div>
@@ -226,9 +230,11 @@
                 pending
               </span>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 text-sm">
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6 text-sm">
               <div><div class="text-slate-500">Priorytet</div><div id="detail-priority" class="font-medium">—</div></div>
               <div><div class="text-slate-500">Repo</div><div id="detail-repo" class="font-medium">—</div></div>
+              <div><div class="text-slate-500">Stacja</div><div id="detail-workstation" class="font-medium">—</div></div>
+              <div><div class="text-slate-500">Model</div><div id="detail-model" class="font-medium">—</div></div>
               <div><div class="text-slate-500">Utworzono</div><div id="detail-created" class="font-medium">—</div></div>
               <div><div class="text-slate-500">ID</div><div id="detail-id" class="font-mono text-xs">—</div></div>
             </div>
@@ -240,6 +246,22 @@
             <ol id="timeline" class="relative border-l-2 border-slate-200 ml-4 space-y-6">
               <!-- Wypełniane przez renderTimeline() -->
             </ol>
+          </div>
+
+          <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+            <div class="flex items-center justify-between gap-4 mb-4">
+              <div>
+                <h3 class="text-lg font-semibold text-slate-900">Komunikacja ze stacją</h3>
+                <p class="text-sm text-slate-500 mt-1">Wyślij polecenie lub doprecyzowanie do wybranej stacji roboczej.</p>
+              </div>
+              <button id="btn-task-send-workstation-message"
+                class="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-medium px-4 py-2 rounded-lg transition">
+                Wyślij wiadomość do stacji
+              </button>
+            </div>
+            <div id="workstation-messages-list" class="space-y-3">
+              <p class="text-slate-500 text-sm">Brak wiadomości do stacji roboczej</p>
+            </div>
           </div>
 
           <!-- Wiadomości AI -->
@@ -274,6 +296,39 @@
                 </thead>
                 <tbody id="agents-table-body" class="divide-y divide-slate-100">
                   <tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak profili</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== WORKSTATIONS VIEW ========== -->
+        <section id="view-workstations" class="view-section hidden">
+          <div class="bg-white rounded-xl shadow-sm border border-slate-200">
+            <div class="p-6 border-b border-slate-200 flex items-center justify-between gap-4">
+              <div>
+                <h3 class="text-lg font-semibold text-slate-900">Stacje robocze</h3>
+                <p class="text-sm text-slate-500 mt-1">Każda stacja rejestruje się lokalnie przez start.command/start.sh i publikuje swoje modele do Supabase.</p>
+              </div>
+              <button id="btn-refresh-workstations"
+                class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition">
+                Odśwież
+              </button>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-600 text-left">
+                  <tr>
+                    <th class="px-6 py-3 font-medium">Nazwa</th>
+                    <th class="px-6 py-3 font-medium">Platforma</th>
+                    <th class="px-6 py-3 font-medium">Model</th>
+                    <th class="px-6 py-3 font-medium">Status</th>
+                    <th class="px-6 py-3 font-medium">Ostatnio widziana</th>
+                    <th class="px-6 py-3 font-medium">Akcje</th>
+                  </tr>
+                </thead>
+                <tbody id="workstations-table-body" class="divide-y divide-slate-100">
+                  <tr><td colspan="6" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -361,6 +416,22 @@
                 <label class="block text-sm font-medium text-slate-700 mb-1">Repozytorium (opcjonalnie)</label>
                 <input type="text" id="task-repo" placeholder="owner/repo"
                   class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Stacja robocza</label>
+                <select id="task-workstation"
+                  class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <option value="">Bez przypisania stacji</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Model</label>
+                <select id="task-model" disabled
+                  class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400">
+                  <option value="">Brak przypisanego modelu</option>
+                </select>
               </div>
             </div>
 
@@ -457,6 +528,40 @@
           <button type="submit"
             class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">
             Zapisz
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: Wiadomość do stacji roboczej                            -->
+  <!-- ============================================================== -->
+  <div id="modal-workstation-message" class="hidden fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+      <div class="p-6 border-b border-slate-200 flex items-center justify-between">
+        <div>
+          <h3 class="text-xl font-semibold text-slate-900">Wiadomość do stacji</h3>
+          <p class="text-sm text-slate-500 mt-1">Cel: <span id="workstation-message-target">Stacja robocza</span></p>
+        </div>
+        <button class="modal-close text-slate-500 hover:text-slate-900 text-2xl leading-none">×</button>
+      </div>
+      <form id="form-workstation-message" class="p-6 space-y-4">
+        <input type="hidden" id="workstation-message-workstation-id" />
+        <input type="hidden" id="workstation-message-task-id" />
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Treść</label>
+          <textarea id="workstation-message-content" rows="5" required
+            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            placeholder="Np. uruchom model Qwen, wygeneruj plan naprawy błędu i odeślij wynik do zadania."></textarea>
+        </div>
+        <div class="flex justify-end gap-2 pt-4 border-t border-slate-200">
+          <button type="button" class="modal-close px-4 py-2 text-slate-600 hover:text-slate-900 font-medium">
+            Anuluj
+          </button>
+          <button type="submit"
+            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">
+            Wyślij
           </button>
         </div>
       </form>

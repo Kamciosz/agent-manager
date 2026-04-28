@@ -44,6 +44,7 @@ const VIEW = {
   TASKS: 'tasks',
   TASK_DETAIL: 'task-detail',
   AGENTS: 'agents',
+  WORKSTATIONS: 'workstations',
 }
 
 const TOAST_TYPE = {
@@ -79,8 +80,11 @@ const state = {
   currentTaskId: null,
   agentSkills: [],
   editingAgentId: null,
+  workstations: [],
   detailSubscription: null,
   messagesSubscription: null,
+  taskWorkstationMessagesSubscription: null,
+  workstationsSubscription: null,
 }
 
 // ============================================================================
@@ -166,10 +170,11 @@ async function handleAuthenticated(user) {
   document.getElementById('user-email').textContent = user.email
 
   // Krok 1: załaduj dane do widoków
-  await Promise.all([refreshTasks(), refreshAgents()])
+  await Promise.all([refreshTasks(), refreshAgents(), refreshWorkstations()])
 
   // Krok 2: subskrybuj globalne zmiany w `tasks` aby odświeżać dashboard
   subscribeToAllTasks()
+  subscribeToWorkstationsBoard()
 
   // Krok 3: sprawdź dostępność lokalnego AI proxy (badge w headerze)
   initAiClient()
@@ -303,6 +308,7 @@ function navigateTo(viewName) {
     tasks: 'Zadania',
     'task-detail': 'Szczegóły zadania',
     agents: 'Profile agentów',
+    workstations: 'Stacje robocze',
   }
   document.getElementById('page-title').textContent = titles[viewName] || ''
 
@@ -344,7 +350,7 @@ function bindNavigation() {
  * @param {string} [payload.template]
  * @returns {Promise<Object|null>} Utworzony rekord lub null przy błędzie
  */
-async function createTask({ title, description, priority, repo, context, template }) {
+async function createTask({ title, description, priority, repo, context, template, workstationId, modelName }) {
   try {
     const row = {
       title,
@@ -354,6 +360,8 @@ async function createTask({ title, description, priority, repo, context, templat
       git_repo: repo || null,
       context: { template: template || null, raw: context || null },
       user_id: state.user?.id || null,
+      requested_workstation_id: workstationId || null,
+      requested_model_name: modelName || null,
     }
     const { data, error } = await supabase.from('tasks').insert(row).select().single()
     if (error) throw error
@@ -430,6 +438,253 @@ async function refreshTasks() {
   renderTasksTable('tasks-table-body', tasks.slice(0, 10))
   renderTasksTable('tasks-table-body-full', tasks)
   renderStats(tasks)
+}
+
+// ============================================================================
+// CRUD: WORKSTATIONS
+// ============================================================================
+
+/**
+ * Pobiera listę stacji roboczych wraz z modelami.
+ * @returns {Promise<Array>}
+ */
+async function getWorkstations() {
+  try {
+    const { data, error } = await supabase
+      .from('workstations')
+      .select('*, workstation_models(*)')
+      .order('display_name')
+    if (error) throw error
+    return data || []
+  } catch (error) {
+    console.error('[app.js] getWorkstations failed:', error)
+    showToast('Błąd pobierania stacji roboczych.', TOAST_TYPE.ERROR)
+    return []
+  }
+}
+
+/**
+ * Odświeża widok stacji i opcje w formularzu zadania.
+ * @returns {Promise<void>}
+ */
+async function refreshWorkstations() {
+  const workstations = await getWorkstations()
+  state.workstations = workstations
+  renderWorkstationsTable(workstations)
+  populateTaskWorkstationSelects()
+}
+
+/**
+ * Renderuje tabelę stacji roboczych.
+ * @param {Array} workstations
+ * @returns {void}
+ */
+function renderWorkstationsTable(workstations) {
+  const tbody = document.getElementById('workstations-table-body')
+  if (!tbody) return
+  if (!workstations.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>'
+    return
+  }
+
+  tbody.innerHTML = workstations.map((workstation) => {
+    const models = getWorkstationModelLabels(workstation)
+    return `
+      <tr class="hover:bg-slate-50">
+        <td class="px-6 py-3 font-medium">${escapeHtml(workstation.display_name || workstation.hostname || '—')}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(formatWorkstationPlatform(workstation))}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(workstation.current_model_name || models[0] || '—')}</td>
+        <td class="px-6 py-3">${workstationStatusBadge(workstation.status)}</td>
+        <td class="px-6 py-3 text-slate-500">${formatDate(workstation.last_seen_at)}</td>
+        <td class="px-6 py-3 space-x-2">
+          <button class="workstation-message text-blue-600 hover:underline text-sm" data-id="${workstation.id}">Wyślij wiadomość</button>
+        </td>
+      </tr>
+    `
+  }).join('')
+
+  tbody.querySelectorAll('.workstation-message').forEach((button) => {
+    button.addEventListener('click', () => openWorkstationMessageModal(button.dataset.id, null))
+  })
+}
+
+/**
+ * Zwraca badge statusu stacji roboczej.
+ * @param {string} status
+ * @returns {string}
+ */
+function workstationStatusBadge(status) {
+  const styles = {
+    online: 'bg-emerald-100 text-emerald-700',
+    busy: 'bg-blue-100 text-blue-700',
+    offline: 'bg-slate-200 text-slate-700',
+    error: 'bg-red-100 text-red-700',
+  }
+  const cls = styles[status] || styles.offline
+  return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${cls}">${escapeHtml(status || 'offline')}</span>`
+}
+
+/**
+ * Skleja platformę stacji roboczej do czytelnej etykiety.
+ * @param {Object} workstation
+ * @returns {string}
+ */
+function formatWorkstationPlatform(workstation) {
+  const parts = [workstation.os, workstation.arch, workstation.gpu_backend].filter(Boolean)
+  return parts.length ? parts.join(' / ') : '—'
+}
+
+/**
+ * Zwraca listę etykiet modeli stacji.
+ * @param {Object} workstation
+ * @returns {string[]}
+ */
+function getWorkstationModelLabels(workstation) {
+  return (workstation.workstation_models || []).map((model) => model.model_label).filter(Boolean)
+}
+
+/**
+ * Szuka stacji po ID w aktualnym stanie aplikacji.
+ * @param {string} workstationId
+ * @returns {Object|null}
+ */
+function findWorkstation(workstationId) {
+  return state.workstations.find((workstation) => workstation.id === workstationId) || null
+}
+
+/**
+ * Uzupełnia select stacji i modeli w wizardzie zadania.
+ * @returns {void}
+ */
+function populateTaskWorkstationSelects() {
+  const workstationSelect = document.getElementById('task-workstation')
+  const modelSelect = document.getElementById('task-model')
+  if (!workstationSelect || !modelSelect) return
+
+  workstationSelect.innerHTML = [
+    '<option value="">Bez przypisania stacji</option>',
+    ...state.workstations.map((workstation) => `<option value="${workstation.id}">${escapeHtml(workstation.display_name || workstation.hostname || 'Stacja')} (${escapeHtml(workstation.status || 'offline')})</option>`),
+  ].join('')
+
+  populateTaskModelSelect(workstationSelect.value)
+}
+
+/**
+ * Uzupełnia select modeli dla wybranej stacji.
+ * @param {string} workstationId
+ * @returns {void}
+ */
+function populateTaskModelSelect(workstationId) {
+  const modelSelect = document.getElementById('task-model')
+  if (!modelSelect) return
+
+  if (!workstationId) {
+    modelSelect.innerHTML = '<option value="">Brak przypisanego modelu</option>'
+    modelSelect.disabled = true
+    return
+  }
+
+  const workstation = findWorkstation(workstationId)
+  const models = workstation ? getWorkstationModelLabels(workstation) : []
+  modelSelect.disabled = models.length === 0
+  modelSelect.innerHTML = models.length
+    ? models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join('')
+    : '<option value="">Brak wykrytych modeli</option>'
+}
+
+/**
+ * Pobiera wiadomości do/z stacji roboczej powiązane z zadaniem.
+ * @param {string} taskId
+ * @returns {Promise<Array>}
+ */
+async function getWorkstationMessagesForTask(taskId) {
+  try {
+    const { data, error } = await supabase
+      .from('workstation_messages')
+      .select('*')
+      .eq('task_id', taskId)
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    return data || []
+  } catch (error) {
+    console.error('[app.js] getWorkstationMessagesForTask failed:', error)
+    return []
+  }
+}
+
+/**
+ * Wysyła wiadomość do stacji roboczej.
+ * @param {Object} payload
+ * @param {string} payload.workstationId
+ * @param {string|null} payload.taskId
+ * @param {string} payload.content
+ * @returns {Promise<boolean>}
+ */
+async function sendWorkstationMessage({ workstationId, taskId, content }) {
+  try {
+    const { error } = await supabase
+      .from('workstation_messages')
+      .insert({
+        workstation_id: workstationId,
+        task_id: taskId || null,
+        sender_kind: 'user',
+        sender_label: state.user?.email || 'user',
+        message_type: 'note',
+        content,
+      })
+    if (error) throw error
+    return true
+  } catch (error) {
+    console.error('[app.js] sendWorkstationMessage failed:', error)
+    showToast('Nie udało się wysłać wiadomości do stacji.', TOAST_TYPE.ERROR)
+    return false
+  }
+}
+
+/**
+ * Renderuje wiadomości do/z przypisanej stacji w Task Detail.
+ * @param {Array} messages
+ * @returns {void}
+ */
+function renderTaskWorkstationMessages(messages) {
+  const list = document.getElementById('workstation-messages-list')
+  if (!list) return
+  if (!messages.length) {
+    list.innerHTML = '<p class="text-slate-500 text-sm">Brak wiadomości do stacji roboczej</p>'
+    return
+  }
+  list.innerHTML = messages.map((message) => workstationMessageHtml(message)).join('')
+}
+
+/**
+ * Dopisuje pojedynczą wiadomość stacji na koniec listy.
+ * @param {Object} message
+ * @returns {void}
+ */
+function appendTaskWorkstationMessage(message) {
+  const list = document.getElementById('workstation-messages-list')
+  if (!list) return
+  if (list.querySelector('p.text-slate-500')) list.innerHTML = ''
+  list.insertAdjacentHTML('beforeend', workstationMessageHtml(message))
+}
+
+/**
+ * Generuje HTML wiadomości do/z stacji.
+ * @param {Object} message
+ * @returns {string}
+ */
+function workstationMessageHtml(message) {
+  const isUser = message.sender_kind === 'user'
+  const cls = isUser ? 'border-blue-300 bg-blue-50' : 'border-emerald-300 bg-emerald-50'
+  return `
+    <div class="border-l-4 ${cls} px-4 py-2 rounded-r-lg">
+      <div class="text-xs text-slate-500 mb-1">
+        <span class="font-semibold">${escapeHtml(message.sender_label || message.sender_kind || 'system')}</span>
+        <span class="ml-2 uppercase">[${escapeHtml(message.message_type || 'note')}]</span>
+      </div>
+      <div class="text-sm text-slate-800">${escapeHtml(message.content || '')}</div>
+    </div>
+  `
 }
 
 /**
@@ -519,6 +774,9 @@ async function openTaskDetail(taskId) {
   const messages = await getMessagesForTask(taskId)
   renderMessages(messages)
 
+  const workstationMessages = await getWorkstationMessagesForTask(taskId)
+  renderTaskWorkstationMessages(workstationMessages)
+
   // Subskrybuj zmiany zadania (UPDATE) i nowe wiadomości (INSERT)
   state.detailSubscription = subscribeToTask(taskId, (updated) => {
     renderTaskDetail(updated)
@@ -526,6 +784,9 @@ async function openTaskDetail(taskId) {
   })
   state.messagesSubscription = subscribeToTaskMessages(taskId, (msg) => {
     appendMessage(msg)
+  })
+  state.taskWorkstationMessagesSubscription = subscribeToTaskWorkstationMessages(taskId, (message) => {
+    appendTaskWorkstationMessage(message)
   })
 }
 
@@ -539,10 +800,25 @@ function renderTaskDetail(task) {
   document.getElementById('detail-description').textContent = task.description || ''
   document.getElementById('detail-priority').textContent = task.priority || '—'
   document.getElementById('detail-repo').textContent = task.git_repo || '—'
+  document.getElementById('detail-workstation').textContent = resolveWorkstationName(task.requested_workstation_id)
+  document.getElementById('detail-model').textContent = task.requested_model_name || '—'
   document.getElementById('detail-created').textContent = formatDate(task.created_at)
   document.getElementById('detail-id').textContent = task.id
+  document.getElementById('btn-task-send-workstation-message').disabled = !task.requested_workstation_id
+  document.getElementById('btn-task-send-workstation-message').dataset.workstationId = task.requested_workstation_id || ''
   const badge = document.getElementById('detail-status-badge')
   badge.outerHTML = `<span id="detail-status-badge">${statusBadge(task.status)}</span>`
+}
+
+/**
+ * Rozwiązuje nazwę stacji roboczej na podstawie ID.
+ * @param {string|null} workstationId
+ * @returns {string}
+ */
+function resolveWorkstationName(workstationId) {
+  if (!workstationId) return '—'
+  const workstation = findWorkstation(workstationId)
+  return workstation?.display_name || workstation?.hostname || workstationId
 }
 
 /**
@@ -672,6 +948,24 @@ function subscribeToTaskMessages(taskId, callback) {
 }
 
 /**
+ * Subskrybuje nowe wiadomości do/z stacji dla wskazanego zadania.
+ * @param {string} taskId
+ * @param {Function} callback
+ * @returns {Object}
+ */
+function subscribeToTaskWorkstationMessages(taskId, callback) {
+  return supabase
+    .channel(`task-${taskId}-workstation-messages`)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'workstation_messages',
+      filter: `task_id=eq.${taskId}`,
+    }, (payload) => callback(payload.new))
+    .subscribe()
+}
+
+/**
  * Subskrybuje wszystkie zmiany w `tasks` aby trzymać dashboard świeży.
  * @returns {void}
  */
@@ -682,6 +976,26 @@ function subscribeToAllTasks() {
       refreshTasks()
     })
     .subscribe((status) => updateConnectionIndicator(status))
+}
+
+/**
+ * Subskrybuje zmiany w stacjach, modelach i jobach.
+ * @returns {void}
+ */
+function subscribeToWorkstationsBoard() {
+  if (state.workstationsSubscription) return
+  state.workstationsSubscription = supabase
+    .channel('workstations-board')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'workstations' }, () => {
+      refreshWorkstations()
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'workstation_models' }, () => {
+      refreshWorkstations()
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'workstation_jobs' }, () => {
+      refreshWorkstations()
+    })
+    .subscribe()
 }
 
 /**
@@ -711,6 +1025,10 @@ function cleanupTaskSubscriptions() {
     supabase.removeChannel(state.messagesSubscription)
     state.messagesSubscription = null
   }
+  if (state.taskWorkstationMessagesSubscription) {
+    supabase.removeChannel(state.taskWorkstationMessagesSubscription)
+    state.taskWorkstationMessagesSubscription = null
+  }
 }
 
 // ============================================================================
@@ -730,6 +1048,7 @@ function openTaskModal() {
   wizard.step = 1
   wizard.template = null
   document.getElementById('form-task').reset()
+  populateTaskWorkstationSelects()
   renderWizardStep()
   document.getElementById('modal-submit-task').classList.remove('hidden')
 }
@@ -741,6 +1060,7 @@ function openTaskModal() {
 function closeAllModals() {
   document.getElementById('modal-submit-task').classList.add('hidden')
   document.getElementById('modal-agent').classList.add('hidden')
+  document.getElementById('modal-workstation-message').classList.add('hidden')
 }
 
 /**
@@ -772,6 +1092,8 @@ function renderReviewSummary() {
     <div><span class="text-slate-500">Opis:</span> ${escapeHtml(data.description)}</div>
     <div><span class="text-slate-500">Priorytet:</span> <strong>${escapeHtml(data.priority)}</strong></div>
     <div><span class="text-slate-500">Repo:</span> ${escapeHtml(data.repo || '—')}</div>
+    <div><span class="text-slate-500">Stacja:</span> ${escapeHtml(resolveWorkstationName(data.workstationId))}</div>
+    <div><span class="text-slate-500">Model:</span> ${escapeHtml(data.modelName || '—')}</div>
     ${data.context ? `<div><span class="text-slate-500">Kontekst:</span> <code class="text-xs">${escapeHtml(data.context)}</code></div>` : ''}
   `
 }
@@ -787,6 +1109,8 @@ function collectTaskFormData() {
     priority: document.getElementById('task-priority').value,
     repo: document.getElementById('task-repo').value.trim(),
     context: document.getElementById('task-context').value.trim(),
+    workstationId: document.getElementById('task-workstation').value,
+    modelName: document.getElementById('task-model').value,
     template: wizard.template,
   }
 }
@@ -801,6 +1125,10 @@ function validateTaskForm() {
     showToast('Wypełnij tytuł i opis.', TOAST_TYPE.ERROR)
     return false
   }
+  if (data.workstationId && !data.modelName) {
+    showToast('Wybierz model dla wskazanej stacji.', TOAST_TYPE.ERROR)
+    return false
+  }
   return true
 }
 
@@ -811,7 +1139,34 @@ function validateTaskForm() {
 function bindTaskModal() {
   document.getElementById('btn-add-task').addEventListener('click', openTaskModal)
   document.getElementById('btn-add-task-2').addEventListener('click', openTaskModal)
+  document.getElementById('btn-refresh-workstations').addEventListener('click', refreshWorkstations)
   document.querySelectorAll('.modal-close').forEach((b) => b.addEventListener('click', closeAllModals))
+  document.getElementById('task-workstation').addEventListener('change', (event) => {
+    populateTaskModelSelect(event.target.value)
+  })
+  document.getElementById('btn-task-send-workstation-message').addEventListener('click', () => {
+    const workstationId = document.getElementById('btn-task-send-workstation-message').dataset.workstationId || ''
+    if (!workstationId) {
+      showToast('To zadanie nie ma przypisanej stacji.', TOAST_TYPE.INFO)
+      return
+    }
+    openWorkstationMessageModal(workstationId, state.currentTaskId)
+  })
+  document.getElementById('form-workstation-message').addEventListener('submit', async (event) => {
+    event.preventDefault()
+    const workstationId = document.getElementById('workstation-message-workstation-id').value
+    const taskId = document.getElementById('workstation-message-task-id').value || null
+    const content = document.getElementById('workstation-message-content').value.trim()
+    if (!workstationId || !content) {
+      showToast('Wybierz stację i wpisz wiadomość.', TOAST_TYPE.ERROR)
+      return
+    }
+    const ok = await sendWorkstationMessage({ workstationId, taskId, content })
+    if (!ok) return
+    document.getElementById('workstation-message-content').value = ''
+    closeAllModals()
+    showToast('Wiadomość wysłana do stacji.', TOAST_TYPE.SUCCESS)
+  })
 
   // Wybór szablonu w kroku 1
   document.querySelectorAll('.template-card').forEach((card) => {
@@ -852,6 +1207,20 @@ async function submitTaskForm() {
     closeAllModals()
     await refreshTasks()
   }
+}
+
+/**
+ * Otwiera modal wiadomości do stacji roboczej.
+ * @param {string} workstationId
+ * @param {string|null} taskId
+ * @returns {void}
+ */
+function openWorkstationMessageModal(workstationId, taskId) {
+  const workstation = findWorkstation(workstationId)
+  document.getElementById('workstation-message-workstation-id').value = workstationId || ''
+  document.getElementById('workstation-message-task-id').value = taskId || ''
+  document.getElementById('workstation-message-target').textContent = workstation?.display_name || workstation?.hostname || 'Stacja robocza'
+  document.getElementById('modal-workstation-message').classList.remove('hidden')
 }
 
 // ============================================================================

@@ -39,6 +39,8 @@ Maksymalnie prosty interfejs dla użytkowników nietechnicznych. Każdy kluczowy
 - `Short description`* (wymagane)
 - `Priority` (domyślnie: Medium)
 - `Repo` (opcjonalne)
+- `Stacja robocza` (opcjonalne, lista online/offline)
+- `Model` (opcjonalne; aktywuje się po wyborze stacji)
 - `Context` (lista klucz:wartość, dynamiczna)
 
 **Krok 3 — Przegląd i wyślij.** Przyciski: `Wyślij` (primary), `Zapisz jako szkic`.
@@ -57,6 +59,8 @@ Po wysłaniu: toast + przycisk `Przejdź do zadania`.
 
 - Nagłówek z tytułem i statusem, timeline statusów, log preview, debug summary.
 - Duży przycisk `Uruchom diagnostykę` (jeśli dostępny) i `Przypisz` (jeśli brak przypisania).
+- Sekcja `Komunikacja ze stacją` z przyciskiem `Wyślij wiadomość do stacji`.
+- Meta pola: przypisana `Stacja` i `Model`.
 
 ### 5. Assign modal
 
@@ -75,6 +79,18 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 
 - **Połączenie:** auto-detect gateway (domyślnie ON) — nie wymaga konfiguracji sieciowej od użytkownika.
 - **Admin** (tylko managerzy): advanced network, export/import config.
+
+### 9. Stacje robocze
+
+- Tabela: Nazwa | Platforma | Model | Status | Ostatnio widziana | Akcje.
+- Główna akcja w wierszu: `Wyślij wiadomość`.
+- Widok ma charakter operacyjny: pokazuje komputery uruchomione przez `start.command` / `start.sh`, a nie ręcznie tworzone rekordy.
+
+### 10. Wiadomość do stacji
+
+- Mały modal z nazwą celu i jednym polem tekstowym.
+- Użycie: doprecyzowanie zadania, wymuszenie konkretnego modelu, prośba o raport.
+- Po wysłaniu: toast `Wiadomość wysłana do stacji` i dopisanie do sekcji komunikacji w Task Detail.
 
 ## Copy & Tone
 

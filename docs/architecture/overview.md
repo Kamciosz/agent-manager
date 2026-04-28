@@ -178,4 +178,42 @@ Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) generują odpowiedzi z har
 - **Model wybiera użytkownik raz** — pierwsze uruchomienie pyta o URL HF lub ścieżkę. Kolejne starty są ciche; `--change-model` resetuje.
 - **Tylko lokalnie** — proxy nasłuchuje wyłącznie na `127.0.0.1`, nie jest udostępniane w sieci.
 
+## Wspólne stacje robocze (MVP)
+
+Gdy chcemy, aby AI działało na innym komputerze niż laptop użytkownika, sama przeglądarka nie wystarcza. Dlatego każda szkolna / firmowa stacja uruchamia lokalny proces `workstation-agent.js` razem z `llama-server` i `proxy.js`.
+
+```
+Laptop użytkownika (GitHub Pages)
+  └─ zapisuje task + requested_workstation_id + requested_model_name
+       │
+       ▼
+Supabase (443)
+  ├─ public.workstations
+  ├─ public.workstation_models
+  ├─ public.workstation_messages
+  └─ public.workstation_jobs
+       │
+       ▼
+Szkolny komputer
+  ├─ start.command / start.sh
+  ├─ proxy.js          (127.0.0.1:3001)
+  ├─ llama-server      (127.0.0.1:8080)
+  └─ workstation-agent.js
+```
+
+### Co robi workstation-agent
+
+- loguje się do Supabase kontem operatora stacji,
+- rejestruje komputer w tabeli `workstations`,
+- publikuje listę lokalnych modeli GGUF do `workstation_models`,
+- odbiera wiadomości i joby przez Supabase,
+- wykonuje prompt przez lokalny `proxy.js`,
+- odsyła wynik do `workstation_jobs` i `workstation_messages`.
+
+### Ważne ograniczenia
+
+- Nadal **nie ma bezpośredniego połączenia LAN** między komputerami. Wszystko idzie przez Supabase na porcie 443.
+- `proxy.js` **nie jest wystawiany do sieci**. Zdalny komputer nie dotyka `127.0.0.1` innej maszyny.
+- Harmonogram pracy AI (`schedule_enabled`, `schedule_start`, `schedule_end`) jest lokalną opcją operatora stacji i domyślnie pozostaje wyłączony.
+
 Szczegóły uruchomienia, flagi i troubleshooting: [local-ai-proxy/README.md](../../local-ai-proxy/README.md).
