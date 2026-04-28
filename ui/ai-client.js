@@ -8,7 +8,7 @@
  *              `manager.js` i `executor.js` używają wtedy fallbacku
  *              z hardcoded tekstami (tryb demo).
  *
- *              Health-check ponawiany jest co 30 s aby UX wykrywał
+ *              Health-check ponawiany jest co 10 s aby UX wykrywał
  *              uruchomienie/zatrzymanie proxy bez przeładowania strony.
  */
 
@@ -21,7 +21,7 @@ const HEALTH_PATH = '/health'
 const GENERATE_PATH = '/generate'
 const HEALTH_TIMEOUT_MS = 1500
 const GENERATE_TIMEOUT_MS = 30000
-const RECHECK_INTERVAL_MS = 30000
+const RECHECK_INTERVAL_MS = 10000
 
 // ============================================================================
 // STAN MODUŁU

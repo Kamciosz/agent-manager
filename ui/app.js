@@ -11,8 +11,8 @@
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { initManager } from './manager.js'
-import { initExecutor } from './executor.js'
+import { initManager, stopManager } from './manager.js'
+import { initExecutor, stopExecutor } from './executor.js'
 import { initAiClient } from './ai-client.js'
 
 // ============================================================================
@@ -81,6 +81,7 @@ const state = {
   agentSkills: [],
   editingAgentId: null,
   workstations: [],
+  allTasksSubscription: null,
   detailSubscription: null,
   messagesSubscription: null,
   taskWorkstationMessagesSubscription: null,
@@ -99,6 +100,10 @@ const state = {
  */
 function showToast(message, type = TOAST_TYPE.INFO) {
   const container = document.getElementById('toast-container')
+  if (!container) {
+    console.warn('[app.js] toast-container missing:', message)
+    return
+  }
   const colors = {
     success: 'bg-emerald-600',
     error: 'bg-red-600',
@@ -139,7 +144,7 @@ async function initAuth() {
     if (event === 'SIGNED_IN' && session) {
       handleAuthenticated(session.user)
     } else if (event === 'SIGNED_OUT') {
-      state.user = null
+      cleanupAppSession()
       showAuthScreen()
     }
   })
@@ -164,6 +169,7 @@ function showAuthScreen() {
  * @returns {Promise<void>}
  */
 async function handleAuthenticated(user) {
+  cleanupGlobalSubscriptions()
   state.user = user
   document.getElementById('auth-screen').classList.add('hidden')
   document.getElementById('app-screen').classList.remove('hidden')
@@ -280,6 +286,7 @@ async function handleRegister(email, password) {
  */
 async function handleLogout() {
   try {
+    cleanupAppSession()
     await supabase.auth.signOut()
     showToast('Wylogowano', TOAST_TYPE.INFO)
   } catch (error) {
@@ -298,9 +305,14 @@ async function handleLogout() {
  * @returns {void}
  */
 function navigateTo(viewName) {
+  const target = document.getElementById(`view-${viewName}`)
+  if (!target) {
+    console.warn('[app.js] missing view:', viewName)
+    return
+  }
   state.currentView = viewName
   document.querySelectorAll('.view-section').forEach((el) => el.classList.add('hidden'))
-  document.getElementById(`view-${viewName}`).classList.remove('hidden')
+  target.classList.remove('hidden')
 
   // Aktualizuj tytuł strony i podświetlenie linków sidebar
   const titles = {
@@ -699,9 +711,9 @@ function renderStats(tasks) {
     else if (t.status === STATUS.IN_PROGRESS) counts.in_progress++
     else if (t.status === STATUS.DONE) counts.done++
   }
-  document.getElementById('stat-pending').textContent = counts.pending
-  document.getElementById('stat-in-progress').textContent = counts.in_progress
-  document.getElementById('stat-done').textContent = counts.done
+  setText('stat-pending', counts.pending)
+  setText('stat-in-progress', counts.in_progress)
+  setText('stat-done', counts.done)
 }
 
 /**
@@ -712,6 +724,10 @@ function renderStats(tasks) {
  */
 function renderTasksTable(tbodyId, tasks) {
   const tbody = document.getElementById(tbodyId)
+  if (!tbody) {
+    console.warn('[app.js] missing tasks table body:', tbodyId)
+    return
+  }
   if (!tasks.length) {
     tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak zadań</td></tr>'
     return
@@ -970,7 +986,8 @@ function subscribeToTaskWorkstationMessages(taskId, callback) {
  * @returns {void}
  */
 function subscribeToAllTasks() {
-  supabase
+  if (state.allTasksSubscription) return
+  state.allTasksSubscription = supabase
     .channel('tasks-dashboard')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
       refreshTasks()
@@ -1006,6 +1023,7 @@ function subscribeToWorkstationsBoard() {
 function updateConnectionIndicator(status) {
   const dot = document.getElementById('connection-dot')
   const text = document.getElementById('connection-text')
+  if (!dot || !text) return
   const ok = status === 'SUBSCRIBED'
   dot.classList.toggle('bg-emerald-500', ok)
   dot.classList.toggle('bg-red-500', !ok)
@@ -1029,6 +1047,49 @@ function cleanupTaskSubscriptions() {
     supabase.removeChannel(state.taskWorkstationMessagesSubscription)
     state.taskWorkstationMessagesSubscription = null
   }
+}
+
+/**
+ * Odpisuje globalne subskrypcje Realtime.
+ * @returns {void}
+ */
+function cleanupGlobalSubscriptions() {
+  if (state.allTasksSubscription) {
+    supabase.removeChannel(state.allTasksSubscription)
+    state.allTasksSubscription = null
+  }
+  if (state.workstationsSubscription) {
+    supabase.removeChannel(state.workstationsSubscription)
+    state.workstationsSubscription = null
+  }
+}
+
+/**
+ * Czyści stan sesji aplikacji po wylogowaniu lub utracie auth.
+ * @returns {void}
+ */
+function cleanupAppSession() {
+  cleanupTaskSubscriptions()
+  cleanupGlobalSubscriptions()
+  stopManager()
+  stopExecutor()
+  state.user = null
+  state.currentTaskId = null
+}
+
+/**
+ * Bezpiecznie ustawia textContent, jeśli element istnieje.
+ * @param {string} id
+ * @param {string|number} value
+ * @returns {void}
+ */
+function setText(id, value) {
+  const element = document.getElementById(id)
+  if (!element) {
+    console.warn('[app.js] missing element:', id)
+    return
+  }
+  element.textContent = value
 }
 
 // ============================================================================

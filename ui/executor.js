@@ -54,6 +54,8 @@ const DELAY = {
 
 let supabaseClient = null
 let initialized = false
+let assignmentsSubscription = null
+let answersSubscription = null
 
 // Mapuje task_id → callback do wywołania gdy odpowiedź managera dotrze.
 // Pozwala kontynuować przepływ asynchronicznie po otrzymaniu wiadomości.
@@ -78,10 +80,25 @@ export function initExecutor(supabase) {
   initialized = true
   supabaseClient = supabase
 
-  subscribeToNewAssignments()
-  subscribeToManagerAnswers()
+  assignmentsSubscription = subscribeToNewAssignments()
+  answersSubscription = subscribeToManagerAnswers()
 
   console.log('[executor.js] Agent wykonawczy', AGENT.EXECUTOR_1, 'uruchomiony.')
+}
+
+/**
+ * Zatrzymuje subskrypcje executora po wylogowaniu.
+ * @returns {void}
+ */
+export function stopExecutor() {
+  if (!supabaseClient) return
+  if (assignmentsSubscription) supabaseClient.removeChannel(assignmentsSubscription)
+  if (answersSubscription) supabaseClient.removeChannel(answersSubscription)
+  assignmentsSubscription = null
+  answersSubscription = null
+  pendingAnswers.clear()
+  taskCache.clear()
+  initialized = false
 }
 
 // ============================================================================
@@ -93,7 +110,7 @@ export function initExecutor(supabase) {
  * @returns {void}
  */
 function subscribeToNewAssignments() {
-  supabaseClient
+  return supabaseClient
     .channel('executor-assignments')
     .on('postgres_changes', {
       event: 'INSERT',
@@ -111,7 +128,7 @@ function subscribeToNewAssignments() {
  * @returns {void}
  */
 function subscribeToManagerAnswers() {
-  supabaseClient
+  return supabaseClient
     .channel('executor-answers')
     .on('postgres_changes', {
       event: 'INSERT',

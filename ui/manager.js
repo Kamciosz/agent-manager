@@ -57,6 +57,8 @@ const DELAY = {
 
 let supabaseClient = null
 let initialized = false
+let tasksSubscription = null
+let messagesSubscription = null
 
 // ============================================================================
 // PUBLIC API
@@ -74,10 +76,23 @@ export function initManager(supabase) {
   initialized = true
   supabaseClient = supabase
 
-  subscribeToNewTasks()
-  subscribeToManagerMessages()
+  tasksSubscription = subscribeToNewTasks()
+  messagesSubscription = subscribeToManagerMessages()
 
   console.log('[manager.js] AI kierownik uruchomiony.')
+}
+
+/**
+ * Zatrzymuje subskrypcje managera po wylogowaniu.
+ * @returns {void}
+ */
+export function stopManager() {
+  if (!supabaseClient) return
+  if (tasksSubscription) supabaseClient.removeChannel(tasksSubscription)
+  if (messagesSubscription) supabaseClient.removeChannel(messagesSubscription)
+  tasksSubscription = null
+  messagesSubscription = null
+  initialized = false
 }
 
 // ============================================================================
@@ -89,7 +104,7 @@ export function initManager(supabase) {
  * @returns {void}
  */
 function subscribeToNewTasks() {
-  supabaseClient
+  return supabaseClient
     .channel('manager-tasks')
     .on('postgres_changes', {
       event: 'INSERT',
@@ -106,7 +121,7 @@ function subscribeToNewTasks() {
  * @returns {void}
  */
 function subscribeToManagerMessages() {
-  supabaseClient
+  return supabaseClient
     .channel('manager-messages')
     .on('postgres_changes', {
       event: 'INSERT',
@@ -138,7 +153,11 @@ async function handleNewTask(task) {
 
   // Krok 1: po 800 ms — przejdź do statusu `analyzing`
   await sleep(DELAY.ANALYZE)
-  await updateTaskStatus(task.id, STATUS.ANALYZING)
+  const claimed = await claimPendingTask(task.id)
+  if (!claimed) {
+    console.log('[manager.js] Zadanie już przejęte przez inną kartę:', task.id)
+    return
+  }
 
   // Krok 2: po kolejnych 1200 ms — utwórz przydział lub job dla stacji
   await sleep(DELAY.ASSIGN)
@@ -151,6 +170,28 @@ async function handleNewTask(task) {
 
   // Krok 3: natychmiast — zmień status zadania na `in_progress`
   await updateTaskStatus(task.id, STATUS.IN_PROGRESS)
+}
+
+/**
+ * Atomowo przejmuje zadanie pending, aby wiele kart nie dublowało pracy.
+ * @param {string} taskId - UUID zadania
+ * @returns {Promise<boolean>}
+ */
+async function claimPendingTask(taskId) {
+  try {
+    const { data, error } = await supabaseClient
+      .from('tasks')
+      .update({ status: STATUS.ANALYZING })
+      .eq('id', taskId)
+      .eq('status', STATUS.PENDING)
+      .select('id')
+      .maybeSingle()
+    if (error) throw error
+    return Boolean(data?.id)
+  } catch (error) {
+    console.error('[manager.js] claimPendingTask failed:', error)
+    return false
+  }
 }
 
 /**

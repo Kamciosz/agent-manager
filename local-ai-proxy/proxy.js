@@ -143,7 +143,8 @@ async function forwardToLlama(prompt, opts, llamaUrl) {
       signal: controller.signal,
     })
     if (!response.ok) {
-      throw new Error(`llama-server HTTP ${response.status}`)
+      const detail = await response.text().catch(() => '')
+      throw new Error(`llama-server HTTP ${response.status} ${detail.slice(0, 300)}`)
     }
     const data = await response.json()
     return (data.content ?? '').trim()
@@ -185,6 +186,7 @@ async function handleHealth(cfg, res) {
     ok: llamaOk,
     proxy: 'up',
     llama: llamaOk ? 'up' : 'down',
+    llamaUrl: cfg.llamaUrl,
     model: cfg.modelName,
     backend: cfg.backend,
   })
@@ -202,6 +204,7 @@ async function handleGenerate(cfg, req, res) {
   try {
     body = JSON.parse(await readBody(req))
   } catch (error) {
+    console.warn('[proxy] Invalid JSON body:', error.message)
     sendJson(res, 400, { error: 'Invalid JSON body' })
     return
   }
@@ -217,7 +220,7 @@ async function handleGenerate(cfg, req, res) {
     )
     sendJson(res, 200, { text })
   } catch (error) {
-    console.error('[proxy] forwardToLlama failed:', error.message)
+    console.error('[proxy] forwardToLlama failed:', cfg.llamaUrl, error.message)
     sendJson(res, 502, { error: 'llama-server unreachable', detail: error.message })
   }
 }

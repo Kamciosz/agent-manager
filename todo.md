@@ -447,9 +447,23 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 
 ---
 
-## Faza 7 — MVP 1.0.0 ✅ WYDANIE
+## Faza 7 — Alpha
 
 - [ ] Wszystkie zadania faz 2–6 odznaczone
 - [ ] Link aplikacji publiczny na GitHub Pages
 - [ ] README zaktualizowane o link do działającej aplikacji
+
+### 7.1 Alpha hardening runtime i UI
+- **Co:** Utwardzić projekt po MVP: subskrypcje Realtime, lokalny runtime, stacje robocze i dokumentację wydania alpha
+- **Gdzie:** `ui/`, `local-ai-proxy/`, `start.sh`, `docs/`, `supabase/migrations/`
+- **Gotowe gdy:** Składnia przechodzi, Supabase advisor nie zgłasza `function_search_path_mutable`, launcher ma jasne błędy dla Ollama/HF, proxy ma diagnostykę, README wskazuje status alpha
+- **Nie rób:** Nie dodawaj bundlera, własnego backendu ani zdalnego terminala live
+- [x] Gotowe — wykonano hardening UI/runtime, dodano dokument alpha, poprawiono migracją `public.update_updated_at` i uruchomiono smoke testy składni/proxy/launchera.
+
+### 7.2 Testy alpha wymagające sesji użytkownika
+- **Co:** Przejść testy w prawdziwej sesji przeglądarki i na realnej stacji roboczej
+- **Gdzie:** GitHub Pages + Supabase + lokalny `start.command`
+- **Gotowe gdy:** 6.2, 6.3, 6.4 przechodzą na deployu, a stacja robocza rejestruje heartbeat i wykonuje job
+- **Nie rób:** Nie oznaczaj jako gotowe bez ręcznego logowania i potwierdzenia wyników
+- [ ] Gotowe
 

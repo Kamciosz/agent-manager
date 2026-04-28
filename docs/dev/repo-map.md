@@ -9,7 +9,7 @@ Gdzie co leży i co zmieniać.
 Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa zewnętrzna. W repozytorium żyje tylko:
 
 - **interfejs webowy** (pliki HTML/JS/CSS) — budowany i hostowany przez GitHub Pages
-- **schemat bazy danych** (pliki SQL) — stosowany automatycznie przez GitHub Actions do Supabase
+- **schemat bazy danych** (pliki SQL) — wersjonowany w repo i stosowany przez Supabase tools / ręczną migrację
 - **dokumentacja** — wszystko w `docs/`
 
 ## Struktura katalogów
@@ -30,7 +30,7 @@ Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa
 │   │   ├── 001_tasks.sql   — tabela zadań
 │   │   ├── 002_agents.sql  — tabela agentów i profili
 │   │   └── 003_rls.sql     — polityki bezpieczeństwa (RLS)
-│   └── config.toml         — konfiguracja Supabase CLI
+│   └── migrations/         — migracje SQL stosowane poza workflow Pages
 │
 ├── .github/
 │   └── workflows/
@@ -61,8 +61,11 @@ Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa
 
 Każdy `git push` do gałęzi `main`:
 1. GitHub Actions uruchamia `deploy.yml`
-2. Stosuje migracje SQL do Supabase (`supabase db push`)
-3. Buduje i publikuje `ui/` na GitHub Pages
+2. Podmienia placeholdery Supabase w `ui/app.js`
+3. Publikuje `ui/` na GitHub Pages
+
+Migracje SQL z `supabase/migrations/` nie są wykonywane przez workflow Pages.
+Stosuj je przez Supabase tools albo panel SQL przed wdrożeniem funkcji zależnych od nowego schematu.
 
 Szczegółowy setup: [FORK_GUIDE.md](../../FORK_GUIDE.md)
 | Infrastruktura (nginx, TLS) | `infra/` |

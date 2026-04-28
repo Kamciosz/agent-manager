@@ -20,11 +20,12 @@ Aplikacja żyje na **GitHub** i korzysta z **Supabase** jako gotowego backendu.
 - Supabase dostarcza: bazę danych, autentykację, kanały real-time (WebSocket) — darmowe, bez konfiguracji serwera
 - Agenci i użytkownicy łączą się do Supabase przez zwykły HTTPS/WebSocket na porcie 443
 
-Nikt nigdy nie uruchamia żadnego serwera. Każdy otwiera tylko przeglądarkę.
+Podstawowy panel działa bez własnego serwera — każdy otwiera tylko przeglądarkę.
+Opcjonalny lokalny runtime AI uruchamia `llama-server`, `proxy.js` i `workstation-agent.js` tylko na komputerze, który ma wykonywać zadania modelem GGUF.
 
 ## Czy Supabase trzeba ustawić ręcznie?
 
-**Jednorazowo: tak — 5 minut klikania. Potem: w pełni automatyczne.**
+**Jednorazowo: tak — 5 minut klikania. Potem UI deployuje się automatycznie, a migracje bazy stosujemy jawnie.**
 
 ### Jednorazowy setup (robi tylko właściciel projektu, raz na zawsze)
 
@@ -39,11 +40,11 @@ Nikt nigdy nie uruchamia żadnego serwera. Każdy otwiera tylko przeglądarkę.
 ```
 git push → GitHub Actions uruchamia się automatycznie
     │
-    ├─ supabase db push   ← aplikuje tabele i polityki bezpieczeństwa z plików SQL w repo
-    └─ deploy na GitHub Pages ← publikuje nową wersję UI
+  ├─ sed w ui/app.js    ← podmienia SUPABASE_URL i SUPABASE_ANON_KEY
+  └─ deploy na GitHub Pages ← publikuje nową wersję UI
 ```
 
-Schemat bazy danych (tabele, RLS, kanały) jest przechowywany jako pliki SQL w repozytorium. GitHub Actions stosuje je automatycznie — nie trzeba ręcznie klikać w panelu Supabase przy każdej zmianie.
+Schemat bazy danych (tabele, RLS, kanały) jest przechowywany jako pliki SQL w repozytorium, ale obecny workflow Pages go nie stosuje. Migracje wykonujemy osobno przez Supabase tools albo SQL editor, a potem commitujemy plik migracji jako zapis źródła prawdy.
 
 ### Co robią nowi użytkownicy / agenci (zero konfiguracji)
 

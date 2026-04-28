@@ -17,6 +17,7 @@ const DEFAULTS = {
   POLL_MS: 8000,
   HEARTBEAT_MS: 15000,
   MESSAGE_POLL_MS: 6000,
+  AUTH_RETRY_MS: [3000, 7000, 15000, 30000],
 }
 
 let busy = false
@@ -30,6 +31,7 @@ function log(...args) {
 
 function loadConfig() {
   const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+  const schedule = normalizeSchedule(raw.scheduleEnabled, raw.scheduleStart, raw.scheduleEnd)
   return {
     supabaseUrl: raw.supabaseUrl,
     supabaseAnonKey: raw.supabaseAnonKey,
@@ -42,10 +44,23 @@ function loadConfig() {
     proxyPort: Number(raw.proxyPort) || 3001,
     llamaPort: Number(raw.llamaPort) || 8080,
     acceptsJobs: raw.acceptsJobs !== false,
-    scheduleEnabled: raw.scheduleEnabled === true,
-    scheduleStart: raw.scheduleStart || null,
-    scheduleEnd: raw.scheduleEnd || null,
+    scheduleEnabled: schedule.enabled,
+    scheduleStart: schedule.start,
+    scheduleEnd: schedule.end,
   }
+}
+
+function normalizeSchedule(enabled, start, end) {
+  if (enabled !== true) return { enabled: false, start: null, end: null }
+  if (!isTimeValue(start) || !isTimeValue(end)) {
+    log('Niepoprawny harmonogram w config.json — wyłączam schedule dla tej sesji.', start, end)
+    return { enabled: false, start: null, end: null }
+  }
+  return { enabled: true, start, end }
+}
+
+function isTimeValue(value) {
+  return typeof value === 'string' && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(value)
 }
 
 function ensureRequiredConfig(cfg) {
@@ -101,7 +116,27 @@ async function signIn(cfg) {
   return response.json()
 }
 
-async function restUpsert(cfg, session, table, rows, onConflict) {
+async function signInWithRetry(cfg, attempts = 5) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await signIn(cfg)
+    } catch (error) {
+      if (attempt === attempts) throw error
+      const waitMs = DEFAULTS.AUTH_RETRY_MS[Math.min(attempt - 1, DEFAULTS.AUTH_RETRY_MS.length - 1)]
+      log(`Logowanie do Supabase nieudane (${attempt}/${attempts}): ${error.message}. Ponawiam za ${waitMs}ms.`)
+      await sleep(waitMs)
+    }
+  }
+  throw new Error('Supabase auth retry exhausted')
+}
+
+async function refreshSession(cfg) {
+  log('Odświeżam sesję Supabase po błędzie 401.')
+  authSession = await signInWithRetry(cfg, 2)
+  return authSession
+}
+
+async function restUpsert(cfg, session, table, rows, onConflict, retry = true) {
   const response = await fetch(`${cfg.supabaseUrl}/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
     method: 'POST',
     headers: buildHeaders(session.access_token, cfg.supabaseAnonKey, {
@@ -110,13 +145,16 @@ async function restUpsert(cfg, session, table, rows, onConflict) {
     }),
     body: JSON.stringify(rows),
   })
+  if (response.status === 401 && retry) {
+    return restUpsert(cfg, await refreshSession(cfg), table, rows, onConflict, false)
+  }
   if (!response.ok) {
-    throw new Error(`${table} upsert failed: HTTP ${response.status}`)
+    throw new Error(`${table} upsert failed: HTTP ${response.status} ${await responseDetail(response)}`)
   }
   return response.json()
 }
 
-async function restInsert(cfg, session, table, rows) {
+async function restInsert(cfg, session, table, rows, retry = true) {
   const response = await fetch(`${cfg.supabaseUrl}/rest/v1/${table}`, {
     method: 'POST',
     headers: buildHeaders(session.access_token, cfg.supabaseAnonKey, {
@@ -125,13 +163,16 @@ async function restInsert(cfg, session, table, rows) {
     }),
     body: JSON.stringify(rows),
   })
+  if (response.status === 401 && retry) {
+    return restInsert(cfg, await refreshSession(cfg), table, rows, false)
+  }
   if (!response.ok) {
-    throw new Error(`${table} insert failed: HTTP ${response.status}`)
+    throw new Error(`${table} insert failed: HTTP ${response.status} ${await responseDetail(response)}`)
   }
   return response.json()
 }
 
-async function restPatch(cfg, session, table, filter, payload) {
+async function restPatch(cfg, session, table, filter, payload, retry = true) {
   const response = await fetch(`${cfg.supabaseUrl}/rest/v1/${table}?${filter}`, {
     method: 'PATCH',
     headers: buildHeaders(session.access_token, cfg.supabaseAnonKey, {
@@ -140,21 +181,36 @@ async function restPatch(cfg, session, table, filter, payload) {
     }),
     body: JSON.stringify(payload),
   })
+  if (response.status === 401 && retry) {
+    return restPatch(cfg, await refreshSession(cfg), table, filter, payload, false)
+  }
   if (!response.ok) {
-    throw new Error(`${table} patch failed: HTTP ${response.status}`)
+    throw new Error(`${table} patch failed: HTTP ${response.status} ${await responseDetail(response)}`)
   }
   return response.json()
 }
 
-async function restSelect(cfg, session, table, query) {
+async function restSelect(cfg, session, table, query, retry = true) {
   const response = await fetch(`${cfg.supabaseUrl}/rest/v1/${table}?${query}`, {
     method: 'GET',
     headers: buildHeaders(session.access_token, cfg.supabaseAnonKey),
   })
+  if (response.status === 401 && retry) {
+    return restSelect(cfg, await refreshSession(cfg), table, query, false)
+  }
   if (!response.ok) {
-    throw new Error(`${table} select failed: HTTP ${response.status}`)
+    throw new Error(`${table} select failed: HTTP ${response.status} ${await responseDetail(response)}`)
   }
   return response.json()
+}
+
+async function responseDetail(response) {
+  try {
+    const text = await response.text()
+    return text ? text.slice(0, 300) : ''
+  } catch {
+    return ''
+  }
 }
 
 function scanModels(cfg) {
@@ -375,7 +431,7 @@ async function shutdown(cfg, session) {
 async function main() {
   const cfg = loadConfig()
   ensureRequiredConfig(cfg)
-  authSession = await signIn(cfg)
+  authSession = await signInWithRetry(cfg)
   log('Zalogowano do Supabase jako:', authSession.user.email)
 
   await upsertWorkstation(cfg, authSession)
@@ -405,6 +461,10 @@ async function main() {
     if (shuttingDown) return
     processIncomingMessages(cfg, authSession).catch((error) => log('pollMessages failed:', error.message))
   }, DEFAULTS.MESSAGE_POLL_MS)
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 process.on('SIGINT', () => {

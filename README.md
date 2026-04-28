@@ -1,5 +1,7 @@
 # Agent Manager
 
+Status: **alpha**. Webowy przepływ zadań działa przez GitHub Pages + Supabase, a lokalny runtime GGUF/stacje robocze są funkcją eksperymentalną alpha.
+
 System zarządzania agentami AI — AI kierownik przyjmuje zadania od użytkownika, rozkłada je na części, rozdziela między agenty wykonawcze, monitoruje postęp i raportuje wyniki. Wszystko działa przez przeglądarkę, bez instalacji czegokolwiek.
 
 ## Jak to działa (prosto)
@@ -15,7 +17,7 @@ Nie ma żadnej instalacji, terminala, ani serwera do uruchamiania. Każdy komput
 
 ## Szybki start (dla użytkownika)
 
-1. Wejdź na link aplikacji (GitHub Pages — link w zakładce „About" repozytorium)
+1. Wejdź na aplikację: https://kamciosz.github.io/agent-manager/
 2. Zarejestruj się emailem i hasłem
 3. Manager przypisze Ci rolę
 4. Gotowe
@@ -53,8 +55,6 @@ Skrypt sam pobierze binary `llama-server`, wykryje GPU (Apple Metal / NVIDIA CUD
 
 Szczegóły, flagi i troubleshooting: [local-ai-proxy/README.md](local-ai-proxy/README.md).
 
-Szczegóły, flagi i troubleshooting: [local-ai-proxy/README.md](local-ai-proxy/README.md).
-
 ## Dokumentacja
 
 | Sekcja | Plik |
@@ -67,6 +67,7 @@ Szczegóły, flagi i troubleshooting: [local-ai-proxy/README.md](local-ai-proxy/
 | Profile agentów | [docs/architecture/agent-profiles.md](docs/architecture/agent-profiles.md) |
 | Ustawienia repo i autodebug | [docs/architecture/repo-settings.md](docs/architecture/repo-settings.md) |
 | Zakres MVP 1.0.0 | [docs/product/mvp-scope.md](docs/product/mvp-scope.md) |
+| Status alpha | [docs/product/alpha-release.md](docs/product/alpha-release.md) |
 | Specyfikacja UI/UX | [docs/product/ui-spec.md](docs/product/ui-spec.md) |
 | Struktura projektu | [docs/dev/repo-map.md](docs/dev/repo-map.md) |
 | Supabase — jak używać | [docs/dev/api-reference.md](docs/dev/api-reference.md) |

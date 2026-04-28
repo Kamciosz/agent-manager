@@ -286,6 +286,7 @@ prompt_model() {
     else
       log "Pobieram model do $model_path (to może chwilę potrwać)…" >&2
       curl -L --progress-bar -o "$model_path" "$input"
+      validate_downloaded_model "$model_path"
     fi
   else
     if [ ! -f "$input" ]; then
@@ -301,6 +302,21 @@ prompt_model() {
   fi
 
   echo "$model_path"
+}
+
+validate_downloaded_model() {
+  local model_path="$1" magic
+  if [ ! -s "$model_path" ]; then
+    err "Pobrany plik modelu jest pusty: $model_path"
+    exit 1
+  fi
+  magic="$(head -c 4 "$model_path" 2>/dev/null || true)"
+  if [ "$magic" != "GGUF" ]; then
+    err "Pobrany plik nie wygląda jak GGUF. To może być strona HTML zamiast modelu."
+    err "Usuń błędny plik i wklej bezpośredni URL do pliku .gguf: $model_path"
+    rm -f "$model_path"
+    exit 1
+  fi
 }
 
 prompt_with_default() {
@@ -373,6 +389,33 @@ fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
 NODE
 }
 
+write_model_config() {
+  local model_path="$1" gpu="$2"
+  CONFIG_FILE_ENV="$CONFIG_FILE" \
+  MODEL_PATH_VALUE="$model_path" \
+  MODEL_NAME_VALUE="$(basename "$model_path")" \
+  BACKEND_VALUE="$gpu" \
+  LLAMA_PORT_VALUE="$LLAMA_PORT" \
+  PROXY_PORT_VALUE="$PROXY_PORT" \
+  node <<'NODE'
+const fs = require('node:fs')
+const file = process.env.CONFIG_FILE_ENV
+let cfg = {}
+try {
+  cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
+} catch {
+  cfg = {}
+}
+cfg.proxyPort = Number(process.env.PROXY_PORT_VALUE || 3001)
+cfg.llamaPort = Number(process.env.LLAMA_PORT_VALUE || 8080)
+cfg.llamaUrl = `http://127.0.0.1:${cfg.llamaPort}`
+cfg.modelPath = process.env.MODEL_PATH_VALUE || ''
+cfg.modelName = process.env.MODEL_NAME_VALUE || ''
+cfg.backend = process.env.BACKEND_VALUE || cfg.backend || 'cpu'
+fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
+NODE
+}
+
 ensure_workstation_config() {
   local workstation_name supabase_url supabase_key workstation_email workstation_password
   workstation_name="$(read_config_value workstationName)"
@@ -419,16 +462,7 @@ ensure_config() {
     fi
     local model_path
     model_path="$(prompt_model)"
-    cat > "$CONFIG_FILE" <<JSON
-{
-  "proxyPort": $PROXY_PORT,
-  "llamaPort": $LLAMA_PORT,
-  "llamaUrl": "http://127.0.0.1:$LLAMA_PORT",
-  "modelPath": "$model_path",
-  "modelName": "$(basename "$model_path")",
-  "backend": "$gpu"
-}
-JSON
+    write_model_config "$model_path" "$gpu"
     log "Zapisano config.json"
   else
     log "Używam zapisanego modelu z config.json (zmień: ./start.sh --change-model)"
@@ -539,6 +573,7 @@ start_llama() {
     "${extra_args[@]}" \
     >"$LOGS_DIR/llama-server.log" 2>&1 &
   echo $! > "$LOGS_DIR/llama.pid"
+  STARTED_LLAMA=1
 }
 
 start_proxy() {
@@ -550,6 +585,7 @@ start_proxy() {
   nohup node "$PROXY_DIR/proxy.js" \
     >"$LOGS_DIR/proxy.log" 2>&1 &
   echo $! > "$LOGS_DIR/proxy.pid"
+  STARTED_PROXY=1
 }
 
 start_workstation_agent() {
@@ -561,6 +597,7 @@ start_workstation_agent() {
   nohup node "$PROXY_DIR/workstation-agent.js" \
     >"$LOGS_DIR/workstation-agent.log" 2>&1 &
   echo $! > "$LOGS_DIR/workstation-agent.pid"
+  STARTED_WORKSTATION_AGENT=1
 }
 
 wait_for_health() {
@@ -579,17 +616,25 @@ wait_for_health() {
 
 cleanup() {
   log "Sprzątam procesy…"
-  for pidfile in "$LOGS_DIR/llama.pid" "$LOGS_DIR/proxy.pid" "$LOGS_DIR/workstation-agent.pid"; do
-    if [ -f "$pidfile" ]; then
-      local pid; pid="$(cat "$pidfile")"
-      kill "$pid" 2>/dev/null || true
-      rm -f "$pidfile"
-    fi
-  done
+  [ "$STARTED_LLAMA" = "1" ] && cleanup_pidfile "$LOGS_DIR/llama.pid"
+  [ "$STARTED_PROXY" = "1" ] && cleanup_pidfile "$LOGS_DIR/proxy.pid"
+  [ "$STARTED_WORKSTATION_AGENT" = "1" ] && cleanup_pidfile "$LOGS_DIR/workstation-agent.pid"
+}
+
+cleanup_pidfile() {
+  local pidfile="$1"
+  if [ -f "$pidfile" ]; then
+    local pid; pid="$(cat "$pidfile")"
+    kill "$pid" 2>/dev/null || true
+    rm -f "$pidfile"
+  fi
 }
 trap cleanup EXIT INT TERM
 
 REUSE_LLAMA=0
+STARTED_LLAMA=0
+STARTED_PROXY=0
+STARTED_WORKSTATION_AGENT=0
 
 # --- Main -------------------------------------------------------------------
 
