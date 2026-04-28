@@ -467,3 +467,10 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 - **Nie rób:** Nie oznaczaj jako gotowe bez ręcznego logowania i potwierdzenia wyników
 - [ ] Gotowe
 
+### 7.3 Deep research braków produktowych
+- **Co:** Uzupełnić braki widoczne po przejściu z MVP do alpha: usuwanie poleceń i wyjaśnienie pojęć/statusów w UI
+- **Gdzie:** `ui/index.html`, `ui/app.js`, `supabase/migrations/`, dokumentacja produktu
+- **Gotowe gdy:** Zadanie można usunąć z listy i szczegółów, RLS pozwala na DELETE, a użytkownik ma słownik `Co to znaczy?`
+- **Nie rób:** Nie wprowadzaj nowego backendu ani zmiany modelu bezpieczeństwa poza team-space alpha
+- [x] Gotowe — dodano politykę DELETE dla `tasks`, akcje usuwania poleceń oraz słownik pojęć/statusów.
+

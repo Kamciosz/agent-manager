@@ -5,7 +5,7 @@ Status: alpha
 
 ## Zakres alpha
 
-Alpha obejmuje działający panel webowy na GitHub Pages, logowanie Supabase Auth, zadania, profile agentów, komunikację AI↔AI przez `messages`, Realtime timeline oraz eksperymentalną pulę stacji roboczych.
+Alpha obejmuje działający panel webowy na GitHub Pages, logowanie Supabase Auth, zadania, usuwanie poleceń, profile agentów, komunikację AI↔AI przez `messages`, Realtime timeline, słownik pojęć/statusów oraz eksperymentalną pulę stacji roboczych.
 
 Architektura pozostaje prosta:
 - UI: statyczne `ui/` na GitHub Pages
@@ -26,6 +26,7 @@ Architektura pozostaje prosta:
 - Ochronę Supabase Auth przed leaked passwords trzeba włączyć w panelu Supabase.
 - Stacje robocze wymagają lokalnego konta operatora Supabase zapisanego w `local-ai-proxy/config.json`.
 - Local AI zależy od modelu GGUF i wydajności komputera; ciężkie modele mogą startować długo.
+- Usunięcie polecenia usuwa rekord zadania oraz rozmowy AI przypięte do tego zadania. Historia jobów i wiadomości stacji roboczych zostaje zachowana, ale bez linku do usuniętego zadania.
 
 ## Checklist alpha smoke test
 
@@ -33,6 +34,8 @@ Architektura pozostaje prosta:
 - Deployed `app.js` nie zawiera placeholderów `__SUPABASE_URL__` ani `__SUPABASE_ANON_KEY__`.
 - Supabase ma tabele `tasks`, `assignments`, `agents`, `messages`, `workstations`, `workstation_models`, `workstation_messages`, `workstation_jobs`.
 - Utworzenie zadania w UI zapisuje rekord w `tasks`.
+- Usunięcie zadania z listy lub szczegółów usuwa rekord z `tasks` i odświeża widok bez błędów RLS.
+- Przycisk `Co to znaczy?` pokazuje słownik pojęć oraz znaczenie statusów `pending`, `analyzing`, `in_progress`, `done`, `failed`.
 - Manager przejmuje zadanie `pending` i ustawia `analyzing`, potem `in_progress`.
 - Executor tworzy przepływ wiadomości: question → answer → report.
 - Task Detail pokazuje timeline i wiadomości bez odświeżania.

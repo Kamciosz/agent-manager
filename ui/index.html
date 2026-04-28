@@ -127,6 +127,10 @@
       <header class="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between">
         <h2 id="page-title" class="text-2xl font-bold text-slate-900">Dashboard</h2>
         <div class="flex items-center gap-3">
+          <button id="btn-open-help"
+            class="text-sm text-slate-700 hover:text-blue-700 font-medium px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
+            Co to znaczy?
+          </button>
           <!-- Badge statusu lokalnego AI (renderowany przez ai-client.js) -->
           <span id="ai-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
             <span class="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>Tryb demo (symulacja)
@@ -174,10 +178,11 @@
                     <th class="px-6 py-3 font-medium">Status</th>
                     <th class="px-6 py-3 font-medium">Priorytet</th>
                     <th class="px-6 py-3 font-medium">Data</th>
+                    <th class="px-6 py-3 font-medium text-right">Akcje</th>
                   </tr>
                 </thead>
                 <tbody id="tasks-table-body" class="divide-y divide-slate-100">
-                  <tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak zadań</td></tr>
+                  <tr><td colspan="6" class="px-6 py-8 text-center text-slate-500">Brak zadań</td></tr>
                 </tbody>
               </table>
             </div>
@@ -203,10 +208,11 @@
                     <th class="px-6 py-3 font-medium">Status</th>
                     <th class="px-6 py-3 font-medium">Priorytet</th>
                     <th class="px-6 py-3 font-medium">Data</th>
+                    <th class="px-6 py-3 font-medium text-right">Akcje</th>
                   </tr>
                 </thead>
                 <tbody id="tasks-table-body-full" class="divide-y divide-slate-100">
-                  <tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak zadań</td></tr>
+                  <tr><td colspan="6" class="px-6 py-8 text-center text-slate-500">Brak zadań</td></tr>
                 </tbody>
               </table>
             </div>
@@ -225,10 +231,16 @@
                 <h2 id="detail-title" class="text-2xl font-bold text-slate-900">—</h2>
                 <p id="detail-description" class="text-slate-600 mt-2">—</p>
               </div>
-              <span id="detail-status-badge"
-                class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">
-                pending
-              </span>
+              <div class="flex flex-col items-end gap-2 shrink-0">
+                <span id="detail-status-badge"
+                  class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">
+                  pending
+                </span>
+                <button id="btn-delete-task-detail"
+                  class="text-red-600 hover:text-red-700 hover:underline text-sm font-medium">
+                  Usuń polecenie
+                </button>
+              </div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6 text-sm">
               <div><div class="text-slate-500">Priorytet</div><div id="detail-priority" class="font-medium">—</div></div>
@@ -565,6 +577,57 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: Słownik pojęć i statusów                                -->
+  <!-- ============================================================== -->
+  <div id="modal-help" class="hidden fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="p-6 border-b border-slate-200 flex items-center justify-between">
+        <h3 class="text-xl font-semibold text-slate-900">Co to znaczy?</h3>
+        <button class="modal-close text-slate-500 hover:text-slate-900 text-2xl leading-none">×</button>
+      </div>
+      <div class="p-6 space-y-6 text-sm text-slate-700">
+        <section>
+          <h4 class="font-semibold text-slate-900 mb-3">Pojęcia</h4>
+          <div class="grid md:grid-cols-2 gap-3">
+            <div class="border border-slate-200 rounded-lg p-3">
+              <div class="font-medium text-slate-900">Polecenie / zadanie</div>
+              <p class="mt-1 text-slate-600">Instrukcja wpisana przez użytkownika. Trafia do kolejki i może zostać wykonana przez symulowanego agenta albo stację roboczą.</p>
+            </div>
+            <div class="border border-slate-200 rounded-lg p-3">
+              <div class="font-medium text-slate-900">Stacja robocza</div>
+              <p class="mt-1 text-slate-600">Komputer z uruchomionym start.command albo start.sh, który zgłasza dostępność do Supabase.</p>
+            </div>
+            <div class="border border-slate-200 rounded-lg p-3">
+              <div class="font-medium text-slate-900">Model</div>
+              <p class="mt-1 text-slate-600">Lokalny model GGUF uruchamiany przez stację. Wybór modelu mówi, czym dana stacja ma kodować.</p>
+            </div>
+            <div class="border border-slate-200 rounded-lg p-3">
+              <div class="font-medium text-slate-900">Tryb demo</div>
+              <p class="mt-1 text-slate-600">Panel działa bez lokalnego proxy/modelu i używa symulacji w przeglądarce.</p>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h4 class="font-semibold text-slate-900 mb-3">Statusy zadań</h4>
+          <div class="space-y-2">
+            <div><span class="inline-block w-24 font-mono text-xs text-slate-500">pending</span> Oczekuje w kolejce.</div>
+            <div><span class="inline-block w-24 font-mono text-xs text-slate-500">analyzing</span> AI kierownik przejął polecenie i decyduje co dalej.</div>
+            <div><span class="inline-block w-24 font-mono text-xs text-slate-500">in_progress</span> Agent albo stacja robocza wykonuje pracę.</div>
+            <div><span class="inline-block w-24 font-mono text-xs text-slate-500">done</span> Polecenie zostało zakończone.</div>
+            <div><span class="inline-block w-24 font-mono text-xs text-slate-500">failed</span> Wystąpił błąd i trzeba sprawdzić wiadomości lub stację.</div>
+          </div>
+        </section>
+      </div>
+      <div class="p-6 border-t border-slate-200 flex justify-end">
+        <button class="modal-close px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">
+          Rozumiem
+        </button>
+      </div>
     </div>
   </div>
 

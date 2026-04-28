@@ -24,6 +24,7 @@ Mapa całej dokumentacji projektu. Czytaj w kolejności odpowiadającej etapowi 
 |------|-----------|
 | [product/mvp-scope.md](product/mvp-scope.md) | Zakres MVP 1.0.0 — funkcje obowiązkowe i kryteria akceptacji |
 | [product/alpha-release.md](product/alpha-release.md) | Status alpha, zakres, ograniczenia i checklisty testów |
+| [product/alpha-gap-analysis.md](product/alpha-gap-analysis.md) | Luki produktu po MVP, decyzje alpha i lista braków przed beta |
 | [product/ui-spec.md](product/ui-spec.md) | Specyfikacja UI/UX — ekrany, persony, UX rules |
 
 ## Implementacja

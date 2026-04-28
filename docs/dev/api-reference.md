@@ -24,7 +24,7 @@ Przechowuje wszystkie zadania zgłoszone przez użytkowników.
 | `title` | tekst | Tytuł zadania |
 | `description` | tekst | Opis zadania |
 | `priority` | tekst | `low` / `medium` / `high` |
-| `status` | tekst | `pending` / `in_progress` / `done` / `failed` |
+| `status` | tekst | `pending` / `analyzing` / `in_progress` / `done` / `failed` |
 | `requester_id` | UUID | ID użytkownika który zgłosił zadanie |
 | `repo` | tekst | Opcjonalnie: powiązane repozytorium Git |
 | `context` | JSON | Dodatkowe informacje (branch, środowisko itp.) |
@@ -164,7 +164,25 @@ await supabase
   .eq('id', taskId)
 ```
 
-Dopuszczalne wartości `status`: `pending`, `in_progress`, `done`, `failed`.
+Dopuszczalne wartości `status`: `pending`, `analyzing`, `in_progress`, `done`, `failed`.
+
+### Usuń zadanie
+
+```js
+await supabase
+  .from('tasks')
+  .delete()
+  .eq('id', taskId)
+```
+
+W obecnym modelu alpha zalogowany użytkownik zespołu może usunąć zadanie. Relacje w bazie zachowują się następująco:
+
+| Dane powiązane | Zachowanie po usunięciu zadania |
+|----------------|----------------------------------|
+| `assignments` | usuwane kaskadowo |
+| `messages` | usuwane kaskadowo |
+| `workstation_jobs` | zostają, ale `task_id` jest ustawiane na `null` |
+| `workstation_messages` | zostają, ale `task_id` jest ustawiane na `null` |
 
 ---
 

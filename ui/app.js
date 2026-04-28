@@ -61,6 +61,14 @@ const TIMELINE_STEPS = [
   { key: STATUS.DONE,        label: 'Zakończono' },
 ]
 
+const STATUS_LABELS = {
+  [STATUS.PENDING]: 'Oczekuje',
+  [STATUS.ANALYZING]: 'Analiza',
+  [STATUS.IN_PROGRESS]: 'W toku',
+  [STATUS.DONE]: 'Gotowe',
+  [STATUS.FAILED]: 'Błąd',
+}
+
 // ============================================================================
 // KLIENT SUPABASE — inicjalizacja jednej instancji dla całej aplikacji
 // ============================================================================
@@ -341,9 +349,14 @@ function bindNavigation() {
     link.addEventListener('click', () => navigateTo(link.dataset.view))
   })
   document.getElementById('btn-logout').addEventListener('click', handleLogout)
+  document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
   document.getElementById('btn-back-to-tasks').addEventListener('click', () => {
     cleanupTaskSubscriptions()
     navigateTo(VIEW.TASKS)
+  })
+  document.getElementById('btn-delete-task-detail').addEventListener('click', () => {
+    if (!state.currentTaskId) return
+    handleDeleteTask(state.currentTaskId)
   })
 }
 
@@ -419,6 +432,42 @@ async function getTaskById(id) {
     console.error('[app.js] getTaskById failed:', error)
     return null
   }
+}
+
+/**
+ * Usuwa zadanie z tabeli `tasks`.
+ * @param {string} id
+ * @returns {Promise<boolean>}
+ */
+async function deleteTask(id) {
+  try {
+    const { error } = await supabase.from('tasks').delete().eq('id', id)
+    if (error) throw error
+    return true
+  } catch (error) {
+    console.error('[app.js] deleteTask failed:', error)
+    showToast('Błąd usuwania zadania.', TOAST_TYPE.ERROR)
+    return false
+  }
+}
+
+/**
+ * Potwierdza i wykonuje usunięcie zadania z dowolnego widoku.
+ * @param {string} taskId
+ * @returns {Promise<void>}
+ */
+async function handleDeleteTask(taskId) {
+  if (!confirm('Usunąć polecenie? Zadanie i jego rozmowy AI zostaną usunięte. Historia stacji roboczych zostanie zachowana bez powiązania z tym zadaniem.')) return
+  const ok = await deleteTask(taskId)
+  if (!ok) return
+
+  if (state.currentTaskId === taskId) {
+    cleanupTaskSubscriptions()
+    state.currentTaskId = null
+    navigateTo(VIEW.TASKS)
+  }
+  await refreshTasks()
+  showToast('Polecenie usunięte.', TOAST_TYPE.SUCCESS)
 }
 
 /**
@@ -729,7 +778,7 @@ function renderTasksTable(tbodyId, tasks) {
     return
   }
   if (!tasks.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak zadań</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-slate-500">Brak zadań</td></tr>'
     return
   }
   tbody.innerHTML = tasks.map((t) => `
@@ -739,12 +788,24 @@ function renderTasksTable(tbodyId, tasks) {
       <td class="px-6 py-3">${statusBadge(t.status)}</td>
       <td class="px-6 py-3">${escapeHtml(t.priority || '')}</td>
       <td class="px-6 py-3 text-slate-500">${formatDate(t.created_at)}</td>
+      <td class="px-6 py-3 text-right">
+        <button class="task-delete text-red-600 hover:underline text-sm" data-id="${t.id}" aria-label="Usuń zadanie ${escapeHtml(t.title || '')}">Usuń</button>
+      </td>
     </tr>
   `).join('')
 
   // Klik na wiersz → otwórz Task Detail
   tbody.querySelectorAll('.task-row').forEach((row) => {
-    row.addEventListener('click', () => openTaskDetail(row.dataset.taskId))
+    row.addEventListener('click', (event) => {
+      if (event.target.closest('.task-delete')) return
+      openTaskDetail(row.dataset.taskId)
+    })
+  })
+  tbody.querySelectorAll('.task-delete').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      handleDeleteTask(button.dataset.id)
+    })
   })
 }
 
@@ -762,7 +823,8 @@ function statusBadge(status) {
     failed:      'bg-red-100 text-red-700',
   }
   const cls = styles[status] || styles.pending
-  return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${cls}">${escapeHtml(status || '')}</span>`
+  const label = STATUS_LABELS[status] || status || ''
+  return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${cls}" title="${escapeHtml(status || '')}">${escapeHtml(label)}</span>`
 }
 
 // ============================================================================
@@ -797,6 +859,12 @@ async function openTaskDetail(taskId) {
   state.detailSubscription = subscribeToTask(taskId, (updated) => {
     renderTaskDetail(updated)
     renderTimeline(updated.status)
+  }, () => {
+    showToast('To zadanie zostało usunięte.', TOAST_TYPE.INFO)
+    cleanupTaskSubscriptions()
+    state.currentTaskId = null
+    navigateTo(VIEW.TASKS)
+    refreshTasks()
   })
   state.messagesSubscription = subscribeToTaskMessages(taskId, (msg) => {
     appendMessage(msg)
@@ -820,6 +888,7 @@ function renderTaskDetail(task) {
   document.getElementById('detail-model').textContent = task.requested_model_name || '—'
   document.getElementById('detail-created').textContent = formatDate(task.created_at)
   document.getElementById('detail-id').textContent = task.id
+  document.getElementById('btn-delete-task-detail').dataset.taskId = task.id
   document.getElementById('btn-task-send-workstation-message').disabled = !task.requested_workstation_id
   document.getElementById('btn-task-send-workstation-message').dataset.workstationId = task.requested_workstation_id || ''
   const badge = document.getElementById('detail-status-badge')
@@ -931,9 +1000,10 @@ function messageHtml(msg) {
  * Subskrybuje zmiany pojedynczego zadania (UPDATE).
  * @param {string} taskId
  * @param {Function} callback - wywoływany z nowym rekordem
+ * @param {Function} onDelete - wywoływany po usunięciu rekordu
  * @returns {Object} kanał Supabase
  */
-function subscribeToTask(taskId, callback) {
+function subscribeToTask(taskId, callback, onDelete) {
   return supabase
     .channel(`task-${taskId}`)
     .on('postgres_changes', {
@@ -942,6 +1012,12 @@ function subscribeToTask(taskId, callback) {
       table: 'tasks',
       filter: `id=eq.${taskId}`,
     }, (payload) => callback(payload.new))
+    .on('postgres_changes', {
+      event: 'DELETE',
+      schema: 'public',
+      table: 'tasks',
+      filter: `id=eq.${taskId}`,
+    }, () => onDelete())
     .subscribe()
 }
 
@@ -1122,6 +1198,15 @@ function closeAllModals() {
   document.getElementById('modal-submit-task').classList.add('hidden')
   document.getElementById('modal-agent').classList.add('hidden')
   document.getElementById('modal-workstation-message').classList.add('hidden')
+  document.getElementById('modal-help').classList.add('hidden')
+}
+
+/**
+ * Otwiera słownik pojęć i statusów.
+ * @returns {void}
+ */
+function openHelpModal() {
+  document.getElementById('modal-help').classList.remove('hidden')
 }
 
 /**

@@ -51,16 +51,23 @@ Po wysłaniu: toast + przycisk `Przejdź do zadania`.
 
 ### 3. Task List
 
-- Tabela: ID | Tytuł | Status | Osoba | Priorytet | Akcje
+- Tabela: ID | Tytuł | Status | Priorytet | Data | Akcje
 - Filtry górne: status, priorytet, przypisane/nieprzypisane, search.
-- Akcje w wierszu: `Pokaż`, `Przypisz`, `Debug`.
+- Akcje w wierszu: klik wiersza pokazuje szczegóły; `Usuń` usuwa polecenie po potwierdzeniu.
 
 ### 4. Task Detail
 
 - Nagłówek z tytułem i statusem, timeline statusów, log preview, debug summary.
+- Przycisk `Usuń polecenie` w nagłówku usuwa bieżące zadanie po potwierdzeniu.
 - Duży przycisk `Uruchom diagnostykę` (jeśli dostępny) i `Przypisz` (jeśli brak przypisania).
 - Sekcja `Komunikacja ze stacją` z przyciskiem `Wyślij wiadomość do stacji`.
 - Meta pola: przypisana `Stacja` i `Model`.
+
+### 4a. Słownik pojęć
+
+- Przycisk `Co to znaczy?` w górnym pasku otwiera modal wyjaśniający pojęcia: polecenie/zadanie, stacja robocza, model, tryb demo.
+- Ten sam modal wyjaśnia statusy techniczne: `pending`, `analyzing`, `in_progress`, `done`, `failed`.
+- Słownik ma być krótki i operacyjny; bez marketingowego onboardingu.
 
 ### 5. Assign modal
 
