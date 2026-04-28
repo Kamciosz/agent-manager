@@ -1,0 +1,20 @@
+# Sekrety i konfiguracja lokalna
+local-ai-proxy/config.json
+local-ai-proxy/bin/*
+local-ai-proxy/models/*
+local-ai-proxy/logs/*
+!local-ai-proxy/bin/.gitkeep
+!local-ai-proxy/models/.gitkeep
+!local-ai-proxy/logs/.gitkeep
+
+# System
+.DS_Store
+Thumbs.db
+
+# Node (gdyby ktoś mimo wszystko zainstalował deps)
+node_modules/
+
+# Edytory
+.idea/
+.vscode/
+*.swp
