@@ -21,7 +21,7 @@ plik .gguf w models/         ← model wybrany przy pierwszym starcie
 
 - **Node.js 18+** (proxy używa wbudowanego `fetch` i `AbortController`).
 - **macOS / Linux**: `bash`, `curl`, `unzip`. Apple Silicon → backend Metal, NVIDIA → CUDA, AMD → ROCm, w pozostałych przypadkach Vulkan/CPU.
-- **Windows 10/11**: `cmd.exe` + PowerShell (są domyślnie). NVIDIA → CUDA, w pozostałych Vulkan/CPU.
+- **Windows 10/11**: `cmd.exe` + PowerShell (są domyślnie). `start.bat` jest tylko bezpiecznym wrapperem, a właściwa logika działa w `start.ps1`. NVIDIA → CUDA, w pozostałych Vulkan/CPU.
 - **Model GGUF**: dowolny plik `.gguf` z HuggingFace (np. `Qwen2.5-3B-Instruct-Q4_K_M.gguf`). Mniejsze modele (3B–7B) działają na laptopach bez GPU.
 
 ## Jak uruchomić
@@ -33,7 +33,7 @@ W katalogu głównym repo (nie tutaj) **wybierz skrypt odpowiedni dla swojego sy
 | 🍎 **macOS** — dwuklik w Finderze | dwuklik | [`start.command`](../start.command) |
 | 🍎 **macOS** — z terminala | `./start.sh` | [`start.sh`](../start.sh) |
 | 🐧 **Linux** (Ubuntu, Debian, Fedora, Arch…) | `./start.sh` | [`start.sh`](../start.sh) |
-| 🪟 **Windows 10 / 11** — dwuklik | dwuklik | [`start.bat`](../start.bat) |
+| 🪟 **Windows 10 / 11** — dwuklik | dwuklik | [`start.bat`](../start.bat) → [`start.ps1`](../start.ps1) |
 
 > ⚠️ `start.sh` jest tylko dla macOS/Linux, `start.bat` tylko dla Windows. Każdy skrypt drukuje na starcie banner z nazwą systemu i odmawia startu na niewłaściwym OS.
 
@@ -47,7 +47,7 @@ W katalogu głównym repo (nie tutaj) **wybierz skrypt odpowiedni dla swojego sy
 start.bat
 ```
 
-Po dwukliku w Windows okno `start.bat` powinno zostać otwarte. Jeśli launcher trafi na błąd, pokaże komunikat i poczeka na klawisz, żeby dało się przeczytać przyczynę. Po poprawnym starcie zostaw okno otwarte — zamknięcie konsoli może zatrzymać lokalne procesy AI.
+Po dwukliku w Windows okno `start.bat` powinno zostać otwarte. Plik BAT nie pyta już o dane i nie uruchamia procesów przez zagnieżdżone `cmd /c`; przekazuje sterowanie do `start.ps1`. Jeśli launcher trafi na błąd, pokaże komunikat i poczeka na klawisz, żeby dało się przeczytać przyczynę. Po poprawnym starcie zostaw okno otwarte — zamknięcie konsoli może zatrzymać lokalne procesy AI.
 
 Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Zapyta też jednorazowo o dane stacji roboczej dla Supabase, żeby `workstation-agent.js` mógł odbierać joby z aplikacji. Kolejne uruchomienia są bez pytań.
 
@@ -62,9 +62,38 @@ Aplikacja sprawdza dostępność co 30 s — możesz włączać i wyłączać `s
 | Flaga | Działanie |
 |------|-----------|
 | `--change-model` | Zapomina aktualny model i pyta o nowy |
-| `--advanced` | Otwiera konfigurację `parallelSlots` i eksperymentalnego SD |
+| `--advanced` | Otwiera konfigurację `parallelSlots`, eksperymentalnego SD i harmonogramu |
+| `--schedule` | Otwiera tylko konfigurację harmonogramu pracy stacji |
 | `--reset` | Usuwa `config.json` i pyta od nowa |
 | `--no-pull` | Pomija pobieranie binary i modelu (offline / testy) |
+
+## Harmonogram pracy stacji
+
+Harmonogram jest domyślnie **wyłączony**. Launcher nie ma wpisanej na sztywno żadnej godziny typu `18:00-08:00`; to tylko przykład okna nocnego, które można ustawić przez:
+
+```bash
+./start.sh --schedule
+```
+
+albo w Windows:
+
+```cmd
+start.bat --schedule
+```
+
+Pola zapisywane w `config.json`:
+
+| Pole | Znaczenie |
+|------|-----------|
+| `scheduleEnabled` | `true/false`, domyślnie `false` |
+| `scheduleStart` / `scheduleEnd` | Godziny `HH:MM`; zakres może przechodzić przez północ, np. `18:00-08:00` |
+| `scheduleOutsideAction` | `wait` lekko czeka bez ładowania modelu albo `exit` kończy launcher poza oknem |
+| `scheduleEndAction` | `finish-current` nie przyjmuje nowych zleceń i kończy aktywne, albo `stop-now` zatrzymuje runtime natychmiast |
+| `scheduleDumpOnStop` | Zapisuje zrzut diagnostyczny do `logs/schedule-dump-*.json` |
+
+Poza harmonogramem launcher w trybie `wait` śpi krótkimi cyklami i **nie ładuje modelu**. Gdy okno pracy skończy się podczas działania, agent stacji przestaje pobierać nowe joby. Domyślne `finish-current` pozwala dokończyć aktywne zadanie i potem zamyka runtime; `stop-now` kończy od razu.
+
+Zrzut harmonogramu jest tylko diagnostyczny: zawiera m.in. aktywną liczbę jobów, model, backend i ustawienia schedule. Nie jest checkpointem stanu modelu ani generowania, więc przy `stop-now` część pracy może zostać utracona.
 
 ## Advanced runtime
 
@@ -96,6 +125,7 @@ Launcher zapisuje konfigurację SD tylko po świadomym wejściu w `--advanced`. 
 | Ścieżka | Co to |
 |---------|------|
 | `proxy.js` | HTTP proxy Node 18+ bez zależności (porty: in 3001 / out 8080) |
+| `runtime-schedule.js` | Wspólna walidacja i obliczanie okien harmonogramu dla launcherów i agenta |
 | `bin/`    | Pobrany binary `llama-server` (gitignored) |
 | `models/` | Pobrane / podlinkowane pliki `.gguf` (gitignored) |
 | `logs/`   | Logi z `llama-server`, proxy i agenta stacji + pliki PID |
@@ -123,6 +153,10 @@ Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci.
 **Pobieranie binary kończy się 404.** Nazwy assetów llama.cpp w GitHub Releases czasem się zmieniają. Otwórz [stronę releasów](https://github.com/ggerganov/llama.cpp/releases/latest), pobierz właściwy ZIP ręcznie, rozpakuj do `bin/` i uruchom z `--no-pull`.
 
 **Frontend wciąż pokazuje „Panel online".** Sprawdź `curl http://127.0.0.1:3001/health` — powinno zwracać `"ok": true`. Jeśli zwraca `"llama": "down"`, to proxy działa ale `llama-server` padł — restart `./start.sh`.
+
+**Windows: okno znika od razu.** Obecny `start.bat` powinien zawsze zostać na końcu z komunikatem. Jeśli nadal znika, uruchom z `cmd.exe` ręcznie: `start.bat --no-pull`, a potem sprawdź `local-ai-proxy\logs\start-windows.log`, `llama-server.err.log`, `proxy.err.log` i `workstation-agent.err.log`.
+
+**Launcher czeka i nie ładuje modelu.** To może być poprawne, jeśli ustawiony jest harmonogram i aktualna godzina jest poza oknem. Zmień ustawienie przez `./start.sh --schedule` albo `start.bat --schedule`.
 
 **Aplikacja działa wolniej po podłączeniu lokalnego modelu.** AI generuje tekst dłużej niż tryb przeglądarkowy. To normalne — większy kontekst i większy model = wolniej. Pomiar w `logs/proxy.log` (Xms na request).
 

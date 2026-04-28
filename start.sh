@@ -16,6 +16,7 @@
 #  Flagi:
 #    --change-model   wymusza ponowne pytanie o model
 #    --advanced       otwiera konfigurację opcji zaawansowanych
+#    --schedule       otwiera konfigurację harmonogramu pracy runtime
 #    --reset          usuwa config.json (i pyta od nowa)
 #    --no-pull        pomija pobieranie binary/modelu (do testów)
 # ============================================================================
@@ -40,11 +41,13 @@ mkdir -p "$BIN_DIR" "$MODELS_DIR" "$LOGS_DIR"
 # --- Parsowanie flag --------------------------------------------------------
 CHANGE_MODEL=0
 ADVANCED_CONFIG=0
+SCHEDULE_CONFIG=0
 NO_PULL=0
 for arg in "$@"; do
   case "$arg" in
     --change-model) CHANGE_MODEL=1 ;;
-    --advanced)     ADVANCED_CONFIG=1 ;;
+    --advanced)     ADVANCED_CONFIG=1; SCHEDULE_CONFIG=1 ;;
+    --schedule)     SCHEDULE_CONFIG=1 ;;
     --reset)        rm -f "$CONFIG_FILE"; echo "[start] Usunięto config.json." ;;
     --no-pull)      NO_PULL=1 ;;
     -h|--help)
@@ -382,6 +385,13 @@ cfg.draftModelName = typeof cfg.draftModelName === 'string' ? cfg.draftModelName
 if (cfg.draftModelPath && !cfg.draftModelName) cfg.draftModelName = path.basename(cfg.draftModelPath)
 cfg.speculativeTokens = clampInt(cfg.speculativeTokens, 4, 1, 16)
 cfg.optimizationMode = cfg.sdEnabled ? 'sd-experimental' : (cfg.parallelSlots > 1 ? 'parallel' : 'standard')
+if (typeof cfg.acceptsJobs !== 'boolean') cfg.acceptsJobs = true
+if (typeof cfg.scheduleEnabled !== 'boolean') cfg.scheduleEnabled = false
+if (!('scheduleStart' in cfg)) cfg.scheduleStart = null
+if (!('scheduleEnd' in cfg)) cfg.scheduleEnd = null
+if (!['wait', 'exit'].includes(cfg.scheduleOutsideAction)) cfg.scheduleOutsideAction = 'wait'
+if (!['finish-current', 'stop-now'].includes(cfg.scheduleEndAction)) cfg.scheduleEndAction = 'finish-current'
+cfg.scheduleDumpOnStop = cfg.scheduleDumpOnStop === true
 fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
 
 function clampInt(value, fallback, min, max) {
@@ -474,6 +484,89 @@ configure_advanced_options() {
   log "Zapisano Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), SD=$(read_config_json_value sdEnabled false)."
 }
 
+write_schedule_config() {
+  local enabled="$1" start_time="$2" end_time="$3" outside_action="$4" end_action="$5" dump_on_stop="$6"
+  CONFIG_FILE_ENV="$CONFIG_FILE" \
+  SCHEDULE_ENABLED_VALUE="$enabled" \
+  SCHEDULE_START_VALUE="$start_time" \
+  SCHEDULE_END_VALUE="$end_time" \
+  SCHEDULE_OUTSIDE_ACTION_VALUE="$outside_action" \
+  SCHEDULE_END_ACTION_VALUE="$end_action" \
+  SCHEDULE_DUMP_ON_STOP_VALUE="$dump_on_stop" \
+  node <<'NODE'
+const fs = require('node:fs')
+const file = process.env.CONFIG_FILE_ENV
+let cfg = {}
+try {
+  cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
+} catch {
+  cfg = {}
+}
+cfg.scheduleEnabled = process.env.SCHEDULE_ENABLED_VALUE === 'true'
+cfg.scheduleStart = cfg.scheduleEnabled ? process.env.SCHEDULE_START_VALUE : null
+cfg.scheduleEnd = cfg.scheduleEnabled ? process.env.SCHEDULE_END_VALUE : null
+cfg.scheduleOutsideAction = ['wait', 'exit'].includes(process.env.SCHEDULE_OUTSIDE_ACTION_VALUE)
+  ? process.env.SCHEDULE_OUTSIDE_ACTION_VALUE
+  : 'wait'
+cfg.scheduleEndAction = ['finish-current', 'stop-now'].includes(process.env.SCHEDULE_END_ACTION_VALUE)
+  ? process.env.SCHEDULE_END_ACTION_VALUE
+  : 'finish-current'
+cfg.scheduleDumpOnStop = process.env.SCHEDULE_DUMP_ON_STOP_VALUE === 'true'
+fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
+NODE
+}
+
+is_time_value() {
+  [[ "$1" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]
+}
+
+configure_schedule_options() {
+  local answer start_time end_time outside_action end_action dump_answer dump_on_stop
+
+  echo
+  echo "=========================================================="
+  echo "  Harmonogram — kiedy stacja może przyjmować pracę"
+  echo "=========================================================="
+  echo "  Domyślnie harmonogram jest wyłączony."
+  echo "  Przykład okna: 18:00-08:00, ale żadna godzina nie jest hardkodowana."
+  echo
+
+  answer="$(prompt_with_default "Konfigurować harmonogram teraz? (y/N)" "N")"
+  case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" in
+    y|yes|t|tak) ;;
+    *)
+      write_schedule_config "false" "" "" "wait" "finish-current" "false"
+      log "Harmonogram wyłączony."
+      return
+      ;;
+  esac
+
+  start_time="$(prompt_with_default "Start HH:MM (np. 18:00)" "$(read_config_json_value scheduleStart '')")"
+  end_time="$(prompt_with_default "Koniec HH:MM (np. 08:00)" "$(read_config_json_value scheduleEnd '')")"
+  if ! is_time_value "$start_time" || ! is_time_value "$end_time"; then
+    err "Niepoprawny czas harmonogramu. Użyj HH:MM, np. 18:00 albo 08:00."
+    exit 1
+  fi
+
+  outside_action="$(prompt_with_default "Poza harmonogramem przed startem: wait czy exit" "$(read_config_json_value scheduleOutsideAction wait)")"
+  case "$outside_action" in wait|exit) ;; *) outside_action="wait" ;; esac
+
+  end_action="$(prompt_with_default "Na końcu okna: finish-current czy stop-now" "$(read_config_json_value scheduleEndAction finish-current)")"
+  case "$end_action" in finish-current|stop-now) ;; *) end_action="finish-current" ;; esac
+
+  dump_answer="$(prompt_with_default "Zapisac zrzut diagnostyczny przy stopie? (y/N)" "N")"
+  case "$(printf '%s' "$dump_answer" | tr '[:upper:]' '[:lower:]')" in
+    y|yes|t|tak) dump_on_stop="true" ;;
+    *) dump_on_stop="false" ;;
+  esac
+
+  write_schedule_config "true" "$start_time" "$end_time" "$outside_action" "$end_action" "$dump_on_stop"
+  log "Zapisano harmonogram: $start_time-$end_time, outside=$outside_action, end=$end_action, dump=$dump_on_stop."
+  if [ "$dump_on_stop" = "true" ]; then
+    warn "Zrzut jest diagnostyczny, nie jest checkpointem generowania; stop-now może utracić aktywną pracę."
+  fi
+}
+
 upsert_workstation_config() {
   local workstation_name="$1" supabase_url="$2" supabase_key="$3" workstation_email="$4" workstation_password="$5"
   CONFIG_FILE_ENV="$CONFIG_FILE" \
@@ -500,6 +593,9 @@ if (typeof cfg.acceptsJobs !== 'boolean') cfg.acceptsJobs = true
 if (typeof cfg.scheduleEnabled !== 'boolean') cfg.scheduleEnabled = false
 if (!('scheduleStart' in cfg)) cfg.scheduleStart = null
 if (!('scheduleEnd' in cfg)) cfg.scheduleEnd = null
+if (!['wait', 'exit'].includes(cfg.scheduleOutsideAction)) cfg.scheduleOutsideAction = 'wait'
+if (!['finish-current', 'stop-now'].includes(cfg.scheduleEndAction)) cfg.scheduleEndAction = 'finish-current'
+cfg.scheduleDumpOnStop = cfg.scheduleDumpOnStop === true
 fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
 NODE
 }
@@ -590,6 +686,11 @@ ensure_config() {
   if [ "$ADVANCED_CONFIG" = "1" ] || [ "$asked_model_config" = "1" ]; then
     configure_advanced_options
   fi
+  if [ "$SCHEDULE_CONFIG" = "1" ]; then
+    configure_schedule_options
+  else
+    sync_runtime_config_json
+  fi
 }
 
 read_config_value() {
@@ -624,6 +725,52 @@ if (value === undefined || value === null || value === '') {
   console.log(String(value))
 }
 NODE
+}
+
+schedule_state_line() {
+  CONFIG_FILE_ENV="$CONFIG_FILE" \
+  PROXY_DIR_ENV="$PROXY_DIR" \
+  node <<'NODE'
+const fs = require('node:fs')
+const path = require('node:path')
+const { getScheduleState, formatDuration } = require(path.join(process.env.PROXY_DIR_ENV, 'runtime-schedule'))
+let cfg = {}
+try {
+  cfg = JSON.parse(fs.readFileSync(process.env.CONFIG_FILE_ENV, 'utf8'))
+} catch {
+  cfg = {}
+}
+const state = getScheduleState(cfg)
+console.log([
+  state.enabled ? '1' : '0',
+  state.inside ? '1' : '0',
+  state.outsideAction || 'wait',
+  state.windowLabel || 'disabled',
+  String(state.secondsUntilStart || 0),
+  formatDuration(state.secondsUntilStart || 0),
+].join('|'))
+NODE
+}
+
+wait_for_schedule_window() {
+  local enabled inside outside_action window_label seconds duration sleep_seconds state
+  while :; do
+    state="$(schedule_state_line)"
+    IFS='|' read -r enabled inside outside_action window_label seconds duration <<< "$state"
+    if [ "$enabled" != "1" ] || [ "$inside" = "1" ]; then
+      return
+    fi
+    if [ "$outside_action" = "exit" ]; then
+      warn "Poza harmonogramem ($window_label). Launcher kończy bez ładowania modelu."
+      exit 0
+    fi
+    warn "Poza harmonogramem ($window_label). Lekko czekam $duration; model nie jest jeszcze ładowany."
+    sleep_seconds="$seconds"
+    if ! [[ "$sleep_seconds" =~ ^[0-9]+$ ]]; then sleep_seconds=60; fi
+    if [ "$sleep_seconds" -gt 60 ]; then sleep_seconds=60; fi
+    if [ "$sleep_seconds" -lt 10 ]; then sleep_seconds=10; fi
+    sleep "$sleep_seconds"
+  done
 }
 
 normalize_parallel_slots() {
@@ -845,6 +992,32 @@ wait_for_health() {
   return 1
 }
 
+wait_for_runtime_processes() {
+  local pids=() labels=() index pid label
+  if [ "$REUSE_LLAMA" != "1" ] && [ -f "$LOGS_DIR/llama.pid" ]; then
+    pids+=("$(cat "$LOGS_DIR/llama.pid")"); labels+=("llama-server")
+  fi
+  if [ -f "$LOGS_DIR/proxy.pid" ]; then
+    pids+=("$(cat "$LOGS_DIR/proxy.pid")"); labels+=("proxy")
+  fi
+  if [ -f "$LOGS_DIR/workstation-agent.pid" ]; then
+    pids+=("$(cat "$LOGS_DIR/workstation-agent.pid")"); labels+=("workstation-agent")
+  fi
+
+  while :; do
+    index=0
+    for pid in "${pids[@]}"; do
+      label="${labels[$index]}"
+      if ! kill -0 "$pid" 2>/dev/null; then
+        warn "$label zakończył proces (pid $pid). Sprzątam pozostałe procesy runtime."
+        return
+      fi
+      index=$((index + 1))
+    done
+    sleep 5
+  done
+}
+
 cleanup() {
   log "Sprzątam procesy…"
   [ "$STARTED_LLAMA" = "1" ] && cleanup_pidfile "$LOGS_DIR/llama.pid"
@@ -881,6 +1054,8 @@ ensure_config "$GPU_DETECTED"
 
 MODEL_PATH="$(read_config_value modelPath)"
 [ -z "$MODEL_PATH" ] && { err "Brak modelPath w config.json"; exit 1; }
+
+wait_for_schedule_window
 
 if [ "$REUSE_LLAMA" = "1" ]; then
   if [ ! -f "$MODEL_PATH" ]; then
@@ -919,14 +1094,6 @@ cat <<EOF
 
 EOF
 
-# Trzymaj skrypt aktywny — wait blokuje aż dziecko się zakończy / Ctrl+C.
-if [ "$REUSE_LLAMA" = "1" ]; then
-  PROXY_PID="$(cat "$LOGS_DIR/proxy.pid")"
-  WORKSTATION_AGENT_PID="$(cat "$LOGS_DIR/workstation-agent.pid")"
-  wait "$PROXY_PID" "$WORKSTATION_AGENT_PID"
-else
-  LLAMA_PID="$(cat "$LOGS_DIR/llama.pid")"
-  PROXY_PID="$(cat "$LOGS_DIR/proxy.pid")"
-  WORKSTATION_AGENT_PID="$(cat "$LOGS_DIR/workstation-agent.pid")"
-  wait "$LLAMA_PID" "$PROXY_PID" "$WORKSTATION_AGENT_PID"
-fi
+# Trzymaj skrypt aktywny. Gdy agent zakończy pracę po harmonogramie,
+# monitor wraca, a trap cleanup zatrzymuje resztę runtime.
+wait_for_runtime_processes

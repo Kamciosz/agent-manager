@@ -1,18 +1,21 @@
 /**
  * @file workstation-agent.js
- * @description Lekki agent lokalny dla szkolnej stacji roboczej. Loguje się do
- *              Supabase kontem operatora, rejestruje komputer, publikuje listę
- *              modeli GGUF, odbiera wiadomości i kolejkę jobów oraz wykonuje je
- *              przez lokalny proxy AI działający na 127.0.0.1.
+ * @description Lekki agent lokalny dla szkolnej stacji roboczej. Loguje sie do
+ *              Supabase kontem operatora, rejestruje komputer, publikuje liste
+ *              modeli GGUF, odbiera wiadomosci i kolejke jobow oraz wykonuje je
+ *              przez lokalny proxy AI dzialajacy na 127.0.0.1.
  *
- *              Brak zewnętrznych zależności — tylko Node 18+ i fetch.
+ *              Brak zewnetrznych zaleznosci - tylko Node 18+ i fetch.
  */
 
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { getScheduleState, normalizeSchedule } = require('./runtime-schedule')
 
 const CONFIG_PATH = path.join(__dirname, 'config.json')
+const LOGS_DIR = path.join(__dirname, 'logs')
+
 const DEFAULTS = {
   POLL_MS: 8000,
   HEARTBEAT_MS: 15000,
@@ -24,6 +27,7 @@ let activeJobs = 0
 let shuttingDown = false
 let workstationId = null
 let authSession = null
+let scheduleStopAnnounced = false
 
 function log(...args) {
   console.log('[workstation-agent]', ...args)
@@ -31,7 +35,10 @@ function log(...args) {
 
 function loadConfig() {
   const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
-  const schedule = normalizeSchedule(raw.scheduleEnabled, raw.scheduleStart, raw.scheduleEnd)
+  const schedule = normalizeSchedule(raw)
+  if (raw.scheduleEnabled === true && !schedule.valid) {
+    log('Niepoprawny harmonogram w config.json - wylaczam schedule dla tej sesji.', raw.scheduleStart, raw.scheduleEnd)
+  }
   return {
     supabaseUrl: raw.supabaseUrl,
     supabaseAnonKey: raw.supabaseAnonKey,
@@ -47,6 +54,9 @@ function loadConfig() {
     scheduleEnabled: schedule.enabled,
     scheduleStart: schedule.start,
     scheduleEnd: schedule.end,
+    scheduleOutsideAction: schedule.outsideAction,
+    scheduleEndAction: schedule.endAction,
+    scheduleDumpOnStop: schedule.dumpOnStop,
     parallelSlots: clampInt(raw.parallelSlots, 1, 1, 4),
     sdEnabled: raw.sdEnabled === true,
     draftModelName: raw.draftModelName || '',
@@ -61,24 +71,11 @@ function clampInt(value, fallback, min, max) {
   return Math.max(min, Math.min(max, parsed))
 }
 
-function normalizeSchedule(enabled, start, end) {
-  if (enabled !== true) return { enabled: false, start: null, end: null }
-  if (!isTimeValue(start) || !isTimeValue(end)) {
-    log('Niepoprawny harmonogram w config.json — wyłączam schedule dla tej sesji.', start, end)
-    return { enabled: false, start: null, end: null }
-  }
-  return { enabled: true, start, end }
-}
-
-function isTimeValue(value) {
-  return typeof value === 'string' && /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(value)
-}
-
 function ensureRequiredConfig(cfg) {
   const required = ['supabaseUrl', 'supabaseAnonKey', 'workstationEmail', 'workstationPassword']
   const missing = required.filter((key) => !cfg[key])
   if (missing.length) {
-    throw new Error(`Brak wymaganych pól w config.json: ${missing.join(', ')}`)
+    throw new Error(`Brak wymaganych pol w config.json: ${missing.join(', ')}`)
   }
 }
 
@@ -93,16 +90,7 @@ function availableSlots(cfg) {
 }
 
 function isWithinSchedule(cfg) {
-  if (!cfg.scheduleEnabled || !cfg.scheduleStart || !cfg.scheduleEnd) return true
-  const now = new Date()
-  const minutes = now.getHours() * 60 + now.getMinutes()
-  const [startHour, startMinute] = cfg.scheduleStart.split(':').map(Number)
-  const [endHour, endMinute] = cfg.scheduleEnd.split(':').map(Number)
-  const start = startHour * 60 + startMinute
-  const end = endHour * 60 + endMinute
-  if (start === end) return true
-  if (start < end) return minutes >= start && minutes <= end
-  return minutes >= start || minutes <= end
+  return getScheduleState(cfg).inside
 }
 
 function buildHeaders(token, apikey, extra = {}) {
@@ -146,7 +134,7 @@ async function signInWithRetry(cfg, attempts = 5) {
 }
 
 async function refreshSession(cfg) {
-  log('Odświeżam sesję Supabase po błędzie 401.')
+  log('Odswiezam sesje Supabase po bledzie 401.')
   authSession = await signInWithRetry(cfg, 2)
   return authSession
 }
@@ -280,6 +268,10 @@ function workstationPayload(cfg, userId, statusOverride) {
       draftModelName: cfg.draftModelName || null,
       speculativeTokens: cfg.speculativeTokens,
       optimizationMode: cfg.optimizationMode,
+      scheduleOutsideAction: cfg.scheduleOutsideAction,
+      scheduleEndAction: cfg.scheduleEndAction,
+      scheduleDumpOnStop: cfg.scheduleDumpOnStop,
+      scheduleInside: isWithinSchedule(cfg),
     },
   }
 }
@@ -318,7 +310,7 @@ async function fetchQueuedJobs(cfg, session) {
 }
 
 async function fetchUnreadMessages(cfg, session) {
-  if (!workstationId) return []
+  if (!workstationId || !isWithinSchedule(cfg)) return []
   return restSelect(
     cfg,
     session,
@@ -330,13 +322,13 @@ async function fetchUnreadMessages(cfg, session) {
 function buildJobPrompt(job) {
   const payload = job.payload || {}
   return [
-    'Jesteś agentem AI uruchomionym na szkolnej stacji roboczej.',
-    payload.instructions || 'Wykonaj zadanie możliwie konkretnie.',
-    'Tytuł: ' + (payload.title || ''),
+    'Jestes agentem AI uruchomionym na szkolnej stacji roboczej.',
+    payload.instructions || 'Wykonaj zadanie mozliwie konkretnie.',
+    'Tytul: ' + (payload.title || ''),
     'Opis: ' + (payload.description || ''),
-    'Repo: ' + (payload.git_repo || '—'),
+    'Repo: ' + (payload.git_repo || '-'),
     'Kontekst: ' + JSON.stringify(payload.context || {}),
-    'Odpowiedz po polsku. Jeśli generujesz kod, dołącz go w jednej odpowiedzi.',
+    'Odpowiedz po polsku. Jesli generujesz kod, dolacz go w jednej odpowiedzi.',
   ].join('\n')
 }
 
@@ -357,7 +349,7 @@ async function callLocalProxy(cfg, prompt) {
 }
 
 async function appendStationMessage(cfg, session, message) {
-  await restInsert(cfg, session, 'workstation_messages', [message])
+  await restInsert(cfg, session, 'workstation_messages', Array.isArray(message) ? message : [message])
 }
 
 async function updateTaskStatus(cfg, session, taskId, status) {
@@ -393,10 +385,10 @@ async function processJob(cfg, session, job) {
       message_type: 'result',
       content: output,
     }])
-    await appendProgressMessage(cfg, session, job, `Job ukończony${result.durationMs ? ` w ${result.durationMs}ms` : ''}.`)
+    await appendProgressMessage(cfg, session, job, `Job ukonczony${result.durationMs ? ` w ${result.durationMs}ms` : ''}.`)
       .catch((error) => log('progress message failed:', error.message))
     await updateTaskStatus(cfg, session, job.task_id, 'done')
-    log('Job ukończony:', job.id)
+    log('Job ukonczony:', job.id)
   } catch (error) {
     await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
       status: 'failed',
@@ -409,7 +401,7 @@ async function processJob(cfg, session, job) {
       sender_kind: 'workstation',
       sender_label: cfg.workstationName,
       message_type: 'error',
-      content: `Job nie powiódł się: ${error.message}`,
+      content: `Job nie powiodl sie: ${error.message}`,
     }])
     await updateTaskStatus(cfg, session, job.task_id, 'failed')
     log('Job nieudany:', job.id, error.message)
@@ -431,13 +423,14 @@ async function appendProgressMessage(cfg, session, job, content) {
 }
 
 async function processIncomingMessages(cfg, session) {
+  if (!isWithinSchedule(cfg)) return
   const messages = await fetchUnreadMessages(cfg, session)
   for (const message of messages) {
     try {
       const result = await callLocalProxy(cfg, [
-        'Użytkownik wysłał wiadomość do stacji roboczej.',
-        'Odpowiedz krótko po polsku i potwierdź, co zrobisz albo co już zrobiłeś.',
-        'Treść wiadomości: ' + (message.content || ''),
+        'Uzytkownik wyslal wiadomosc do stacji roboczej.',
+        'Odpowiedz krotko po polsku i potwierdz, co zrobisz albo co juz zrobiles.',
+        'Tresc wiadomosci: ' + (message.content || ''),
       ].join('\n'))
       await appendStationMessage(cfg, session, [{
         workstation_id: workstationId,
@@ -445,14 +438,72 @@ async function processIncomingMessages(cfg, session) {
         sender_kind: 'workstation',
         sender_label: cfg.workstationName,
         message_type: 'reply',
-        content: result.text || 'Potwierdzam odbiór wiadomości.',
+        content: result.text || 'Potwierdzam odbior wiadomosci.',
       }])
       await restPatch(cfg, session, 'workstation_messages', `id=eq.${encodeURIComponent(message.id)}`, {
         read_at: new Date().toISOString(),
       })
     } catch (error) {
-      log('Nie udało się obsłużyć wiadomości:', error.message)
+      log('Nie udalo sie obsluzyc wiadomosci:', error.message)
     }
+  }
+}
+
+async function handleScheduleBoundary(cfg, session) {
+  if (!cfg.scheduleEnabled || shuttingDown) return false
+  if (isWithinSchedule(cfg)) {
+    scheduleStopAnnounced = false
+    return false
+  }
+
+  if (cfg.scheduleEndAction === 'stop-now') {
+    log('Harmonogram poza oknem pracy - zatrzymuje runtime natychmiast zgodnie z scheduleEndAction=stop-now.')
+    await writeScheduleDumpIfNeeded(cfg, 'stop-now')
+    await shutdown(cfg, session)
+    return true
+  }
+
+  if (activeJobs > 0) {
+    if (!scheduleStopAnnounced) {
+      scheduleStopAnnounced = true
+      log(`Harmonogram poza oknem pracy - nie przyjmuje nowych zlecen, czekam na zakonczenie aktywnych jobow (${activeJobs}).`)
+    }
+    await heartbeat(cfg, session, 'busy')
+    return true
+  }
+
+  log('Harmonogram poza oknem pracy - brak aktywnych jobow, zatrzymuje runtime.')
+  await writeScheduleDumpIfNeeded(cfg, 'finish-current')
+  await shutdown(cfg, session)
+  return true
+}
+
+async function writeScheduleDumpIfNeeded(cfg, reason) {
+  if (!cfg.scheduleDumpOnStop) return
+  try {
+    fs.mkdirSync(LOGS_DIR, { recursive: true })
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const file = path.join(LOGS_DIR, `schedule-dump-${stamp}.json`)
+    const dump = {
+      reason,
+      note: 'Zrzut diagnostyczny nie zapisuje stanu generowania modelu. Przy naglym stop-now czesc pracy moze przepasc.',
+      workstationId,
+      activeJobs,
+      schedule: {
+        enabled: cfg.scheduleEnabled,
+        start: cfg.scheduleStart,
+        end: cfg.scheduleEnd,
+        outsideAction: cfg.scheduleOutsideAction,
+        endAction: cfg.scheduleEndAction,
+      },
+      modelName: cfg.modelName,
+      backend: cfg.backend,
+      writtenAt: new Date().toISOString(),
+    }
+    fs.writeFileSync(file, JSON.stringify(dump, null, 2) + '\n')
+    log('Zapisano zrzut diagnostyczny harmonogramu:', file)
+  } catch (error) {
+    log('Nie udalo sie zapisac zrzutu diagnostycznego harmonogramu:', error.message)
   }
 }
 
@@ -464,7 +515,7 @@ async function shutdown(cfg, session) {
       await heartbeat(cfg, session, 'offline')
     }
   } catch (error) {
-    log('Błąd podczas zamykania:', error.message)
+    log('Blad podczas zamykania:', error.message)
   } finally {
     process.exit(0)
   }
@@ -482,7 +533,12 @@ async function main() {
   log('Stacja gotowa:', workstationId, `sloty=${cfg.parallelSlots}`, `SD=${cfg.sdEnabled ? 'on' : 'off'}`)
 
   setInterval(() => {
-    heartbeat(cfg, authSession).catch((error) => log('Heartbeat failed:', error.message))
+    handleScheduleBoundary(cfg, authSession)
+      .then((handledScheduleStop) => {
+        if (!handledScheduleStop) return heartbeat(cfg, authSession)
+        return null
+      })
+      .catch((error) => log('Heartbeat/schedule failed:', error.message))
   }, DEFAULTS.HEARTBEAT_MS)
 
   setInterval(() => {
@@ -502,7 +558,7 @@ async function main() {
   }, DEFAULTS.POLL_MS)
 
   setInterval(() => {
-    if (shuttingDown) return
+    if (shuttingDown || !isWithinSchedule(cfg)) return
     processIncomingMessages(cfg, authSession).catch((error) => log('pollMessages failed:', error.message))
   }, DEFAULTS.MESSAGE_POLL_MS)
 }
