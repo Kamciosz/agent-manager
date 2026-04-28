@@ -567,7 +567,11 @@ REUSE_LLAMA=0
 resolve_llama_port    # może zmienić LLAMA_PORT i ustawić REUSE_LLAMA
 resolve_proxy_port    # może zmienić PROXY_PORT
 
-GPU_DETECTED="$(download_binary)"
+if [ "$REUSE_LLAMA" = "1" ]; then
+  GPU_DETECTED="$(detect_gpu "$(detect_os)" "$(detect_arch)")"
+else
+  GPU_DETECTED="$(download_binary)"
+fi
 ensure_config "$GPU_DETECTED"
 
 MODEL_PATH="$(read_config_value modelPath)"
