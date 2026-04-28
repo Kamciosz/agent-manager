@@ -30,9 +30,10 @@ W katalogu głównym repo (nie tutaj) **wybierz skrypt odpowiedni dla swojego sy
 
 | System operacyjny | Polecenie | Plik |
 |-------------------|-----------|------|
-| 🍎 **macOS** (Intel + Apple Silicon) | `./start.sh` | [`start.sh`](../start.sh) |
+| 🍎 **macOS** — dwuklik w Finderze | dwuklik | [`start.command`](../start.command) |
+| 🍎 **macOS** — z terminala | `./start.sh` | [`start.sh`](../start.sh) |
 | 🐧 **Linux** (Ubuntu, Debian, Fedora, Arch…) | `./start.sh` | [`start.sh`](../start.sh) |
-| 🪟 **Windows 10 / 11** | `start.bat` | [`start.bat`](../start.bat) |
+| 🪟 **Windows 10 / 11** — dwuklik | dwuklik | [`start.bat`](../start.bat) |
 
 > ⚠️ `start.sh` jest tylko dla macOS/Linux, `start.bat` tylko dla Windows. Każdy skrypt drukuje na starcie banner z nazwą systemu i odmawia startu na niewłaściwym OS.
 

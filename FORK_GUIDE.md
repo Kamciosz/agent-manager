@@ -120,9 +120,9 @@ Domyślnie manager i executor odpowiadają sztywnymi tekstami (tryb demo). Aby w
 
 1. Sklonuj swojego forka lokalnie (`git clone …`).
 2. Uruchom skrypt **właściwy dla Twojego systemu**:
-   - 🍎 **macOS** → `./start.sh`
-   - 🐧 **Linux** → `./start.sh`
-   - 🪟 **Windows** → `start.bat`
+   - 🍎 **macOS** — dwuklik na `start.command` (lub `./start.sh` z terminala)
+   - 🐧 **Linux** — `./start.sh`
+   - 🪟 **Windows** — dwuklik na `start.bat`
 
    Skrypt sam pobierze binary, zapyta o model GGUF i uruchomi proxy na `127.0.0.1:3001`.
 3. Otwórz aplikację — w headerze zobaczysz zielony badge **„AI lokalny"**. Bez uruchomienia proxy aplikacja działa dalej w trybie demo.

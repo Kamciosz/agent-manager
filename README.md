@@ -42,9 +42,10 @@ Domyślnie aplikacja działa w **trybie demo** — manager i executor używają 
 
 | System operacyjny | Polecenie | Plik |
 |-------------------|-----------|------|
-| 🍎 **macOS** (Intel + Apple Silicon) | `./start.sh` | [start.sh](start.sh) |
+| 🍎 **macOS** — dwuklik w Finderze | dwuklik | [start.command](start.command) |
+| 🍎 **macOS** — z terminala | `./start.sh` | [start.sh](start.sh) |
 | 🐧 **Linux** (Ubuntu, Debian, Fedora, Arch…) | `./start.sh` | [start.sh](start.sh) |
-| 🪟 **Windows 10 / 11** | `start.bat` | [start.bat](start.bat) |
+| 🪟 **Windows 10 / 11** — dwuklik | dwuklik | [start.bat](start.bat) |
 
 > ⚠️ Nie uruchamiaj `start.sh` na Windowsie ani `start.bat` na macOS/Linux — każdy skrypt sam wykrywa OS i odmówi startu na niewłaściwym systemie.
 
