@@ -44,7 +44,7 @@ const CORS_HEADERS = {
 
 /**
  * Wczytuje config.json. Brak pliku = pusty obiekt z domyślnymi wartościami.
- * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string }}
+ * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, optimizationMode:string }}
  */
 function loadConfig() {
   let cfg = {}
@@ -60,7 +60,26 @@ function loadConfig() {
     llamaUrl: cfg.llamaUrl || DEFAULTS.LLAMA_URL,
     modelName: cfg.modelName || 'unknown',
     backend: cfg.backend || 'unknown',
+    parallelSlots: clampInt(cfg.parallelSlots, 1, 1, 4),
+    sdEnabled: cfg.sdEnabled === true,
+    draftModelName: cfg.draftModelName || '',
+    speculativeTokens: clampInt(cfg.speculativeTokens, 4, 1, 16),
+    optimizationMode: cfg.optimizationMode || 'standard',
   }
+}
+
+/**
+ * Normalizuje liczbę całkowitą do bezpiecznego zakresu.
+ * @param {unknown} value
+ * @param {number} fallback
+ * @param {number} min
+ * @param {number} max
+ * @returns {number}
+ */
+function clampInt(value, fallback, min, max) {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
 }
 
 // ============================================================================
@@ -189,6 +208,13 @@ async function handleHealth(cfg, res) {
     llamaUrl: cfg.llamaUrl,
     model: cfg.modelName,
     backend: cfg.backend,
+    advanced: {
+      parallelSlots: cfg.parallelSlots,
+      sdEnabled: cfg.sdEnabled,
+      draftModelName: cfg.draftModelName,
+      speculativeTokens: cfg.speculativeTokens,
+      optimizationMode: cfg.optimizationMode,
+    },
   })
 }
 
@@ -213,12 +239,13 @@ async function handleGenerate(cfg, req, res) {
     return
   }
   try {
+    const startedAt = Date.now()
     const text = await forwardToLlama(
       body.prompt,
       { maxTokens: body.maxTokens, temperature: body.temperature },
       cfg.llamaUrl,
     )
-    sendJson(res, 200, { text })
+    sendJson(res, 200, { text, durationMs: Date.now() - startedAt })
   } catch (error) {
     console.error('[proxy] forwardToLlama failed:', cfg.llamaUrl, error.message)
     sendJson(res, 502, { error: 'llama-server unreachable', detail: error.message })

@@ -45,6 +45,8 @@ const VIEW = {
   TASK_DETAIL: 'task-detail',
   AGENTS: 'agents',
   WORKSTATIONS: 'workstations',
+  MONITOR: 'monitor',
+  ADVANCED: 'advanced',
 }
 
 const TOAST_TYPE = {
@@ -69,6 +71,8 @@ const STATUS_LABELS = {
   [STATUS.FAILED]: 'Błąd',
 }
 
+const WORKSTATION_STALE_MS = 2 * 60 * 1000
+
 // ============================================================================
 // KLIENT SUPABASE — inicjalizacja jednej instancji dla całej aplikacji
 // ============================================================================
@@ -88,12 +92,14 @@ const state = {
   currentTaskId: null,
   agentSkills: [],
   editingAgentId: null,
+  tasks: [],
   workstations: [],
   allTasksSubscription: null,
   detailSubscription: null,
   messagesSubscription: null,
   taskWorkstationMessagesSubscription: null,
   workstationsSubscription: null,
+  monitorLogSubscription: null,
 }
 
 // ============================================================================
@@ -184,11 +190,12 @@ async function handleAuthenticated(user) {
   document.getElementById('user-email').textContent = user.email
 
   // Krok 1: załaduj dane do widoków
-  await Promise.all([refreshTasks(), refreshAgents(), refreshWorkstations()])
+  await Promise.all([refreshTasks(), refreshAgents(), refreshWorkstations(), refreshMonitorLog()])
 
   // Krok 2: subskrybuj globalne zmiany w `tasks` aby odświeżać dashboard
   subscribeToAllTasks()
   subscribeToWorkstationsBoard()
+  subscribeToMonitorLog()
 
   // Krok 3: sprawdź dostępność lokalnego AI proxy (badge w headerze)
   initAiClient()
@@ -329,6 +336,8 @@ function navigateTo(viewName) {
     'task-detail': 'Szczegóły zadania',
     agents: 'Profile agentów',
     workstations: 'Stacje robocze',
+    monitor: 'Monitor',
+    advanced: 'Zaawansowane',
   }
   document.getElementById('page-title').textContent = titles[viewName] || ''
 
@@ -496,9 +505,11 @@ async function getMessagesForTask(taskId) {
  */
 async function refreshTasks() {
   const tasks = await getTasks()
+  state.tasks = tasks
   renderTasksTable('tasks-table-body', tasks.slice(0, 10))
   renderTasksTable('tasks-table-body-full', tasks)
   renderStats(tasks)
+  renderMonitorPanel()
 }
 
 // ============================================================================
@@ -532,6 +543,8 @@ async function refreshWorkstations() {
   const workstations = await getWorkstations()
   state.workstations = workstations
   renderWorkstationsTable(workstations)
+  renderMonitorPanel()
+  renderAdvancedRuntimePanel(workstations)
   populateTaskWorkstationSelects()
 }
 
@@ -544,7 +557,7 @@ function renderWorkstationsTable(workstations) {
   const tbody = document.getElementById('workstations-table-body')
   if (!tbody) return
   if (!workstations.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>'
     return
   }
 
@@ -556,6 +569,7 @@ function renderWorkstationsTable(workstations) {
         <td class="px-6 py-3 text-slate-600">${escapeHtml(formatWorkstationPlatform(workstation))}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(workstation.current_model_name || models[0] || '—')}</td>
         <td class="px-6 py-3">${workstationStatusBadge(workstation.status)}</td>
+        <td class="px-6 py-3">${workstationAdvancedSummary(workstation)}</td>
         <td class="px-6 py-3 text-slate-500">${formatDate(workstation.last_seen_at)}</td>
         <td class="px-6 py-3 space-x-2">
           <button class="workstation-message text-blue-600 hover:underline text-sm" data-id="${workstation.id}">Wyślij wiadomość</button>
@@ -567,6 +581,284 @@ function renderWorkstationsTable(workstations) {
   tbody.querySelectorAll('.workstation-message').forEach((button) => {
     button.addEventListener('click', () => openWorkstationMessageModal(button.dataset.id, null))
   })
+}
+
+/**
+ * Renderuje skrót ustawień Advanced w tabeli stacji.
+ * @param {Object} workstation
+ * @returns {string}
+ */
+function workstationAdvancedSummary(workstation) {
+  const slots = workstationParallelSlots(workstation)
+  const active = workstationActiveJobs(workstation)
+  const sdLabel = workstationSdEnabled(workstation) ? 'SD on' : 'SD off'
+  return `
+    <div class="space-y-1">
+      <div class="font-mono text-xs text-slate-700">${active}/${slots} slotów</div>
+      <div class="text-xs text-slate-500">${escapeHtml(sdLabel)}</div>
+    </div>
+  `
+}
+
+/**
+ * Renderuje panel Advanced z podsumowaniem runtime.
+ * @param {Array} workstations
+ * @returns {void}
+ */
+function renderAdvancedRuntimePanel(workstations) {
+  const tbody = document.getElementById('advanced-runtime-table-body')
+  if (!tbody) return
+  const active = workstations.filter((workstation) => workstation.status === 'online' || workstation.status === 'busy')
+  const totalSlots = active.reduce((sum, workstation) => sum + workstationParallelSlots(workstation), 0)
+  const sdCount = active.filter(workstationSdEnabled).length
+  setText('advanced-active-workstations', active.length)
+  setText('advanced-total-slots', totalSlots)
+  setText('advanced-sd-state', sdCount ? `${sdCount} on` : 'off')
+
+  if (!workstations.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>'
+    return
+  }
+
+  tbody.innerHTML = workstations.map((workstation) => {
+    const metadata = workstation.metadata || {}
+    return `
+      <tr class="hover:bg-slate-50">
+        <td class="px-6 py-3 font-medium">${escapeHtml(workstation.display_name || workstation.hostname || 'Stacja')}</td>
+        <td class="px-6 py-3 font-mono text-xs text-slate-700">${workstationActiveJobs(workstation)}/${workstationParallelSlots(workstation)}</td>
+        <td class="px-6 py-3">${workstationSdEnabled(workstation) ? 'on' : 'off'}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(metadata.optimizationMode || 'standard')}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(metadata.draftModelName || '—')}</td>
+      </tr>
+    `
+  }).join('')
+}
+
+/**
+ * Zwraca liczbę slotów zgłoszoną przez stację.
+ * @param {Object} workstation
+ * @returns {number}
+ */
+function workstationParallelSlots(workstation) {
+  const value = Number(workstation.metadata?.parallelSlots || 1)
+  if (!Number.isFinite(value)) return 1
+  return Math.max(1, Math.min(4, value))
+}
+
+/**
+ * Zwraca liczbę aktywnych jobów zgłoszoną przez stację.
+ * @param {Object} workstation
+ * @returns {number}
+ */
+function workstationActiveJobs(workstation) {
+  const value = Number(workstation.metadata?.activeJobs || 0)
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, value)
+}
+
+/**
+ * Sprawdza, czy stacja raportuje włączone SD.
+ * @param {Object} workstation
+ * @returns {boolean}
+ */
+function workstationSdEnabled(workstation) {
+  return workstation.metadata?.sdEnabled === true
+}
+
+// ============================================================================
+// MONITOR — szybki podgląd postępu i ostatnich zdarzeń
+// ============================================================================
+
+/**
+ * Odświeża live log monitora z wiadomości AI i stacji.
+ * @returns {Promise<void>}
+ */
+async function refreshMonitorLog() {
+  const events = await getMonitorEvents()
+  renderMonitorLog(events)
+}
+
+/**
+ * Pobiera ostatnie zdarzenia do monitora.
+ * @returns {Promise<Array>}
+ */
+async function getMonitorEvents() {
+  try {
+    const [aiMessages, stationMessages] = await Promise.all([getRecentAiMessages(), getRecentWorkstationMessages()])
+    return [...aiMessages, ...stationMessages]
+      .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+      .slice(0, 30)
+  } catch (error) {
+    console.error('[app.js] getMonitorEvents failed:', error)
+    return []
+  }
+}
+
+/**
+ * Pobiera ostatnie wiadomości AI.
+ * @returns {Promise<Array>}
+ */
+async function getRecentAiMessages() {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(20)
+  if (error) throw error
+  return (data || []).map((message) => ({ ...message, source: 'ai' }))
+}
+
+/**
+ * Pobiera ostatnie wiadomości stacji roboczych.
+ * @returns {Promise<Array>}
+ */
+async function getRecentWorkstationMessages() {
+  const { data, error } = await supabase
+    .from('workstation_messages')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(20)
+  if (error) throw error
+  return (data || []).map((message) => ({ ...message, source: 'workstation' }))
+}
+
+/**
+ * Renderuje metryki i listy monitora z aktualnego stanu aplikacji.
+ * @returns {void}
+ */
+function renderMonitorPanel() {
+  const activeTasks = state.tasks.filter(isActiveTask)
+  const freeSlots = state.workstations.reduce((sum, workstation) => sum + workstationFreeSlots(workstation), 0)
+  const staleStations = state.workstations.filter(isStaleWorkstation)
+  setText('monitor-active-tasks', activeTasks.length)
+  setText('monitor-free-slots', freeSlots)
+  setText('monitor-stale-workstations', staleStations.length)
+  renderMonitorActiveTasks(activeTasks)
+  renderMonitorWorkstations(state.workstations)
+}
+
+/**
+ * Czy zadanie jest wciąż w toku.
+ * @param {Object} task
+ * @returns {boolean}
+ */
+function isActiveTask(task) {
+  return [STATUS.PENDING, STATUS.ANALYZING, STATUS.IN_PROGRESS].includes(task.status)
+}
+
+/**
+ * Renderuje listę aktywnych zadań w monitorze.
+ * @param {Array} tasks
+ * @returns {void}
+ */
+function renderMonitorActiveTasks(tasks) {
+  const list = document.getElementById('monitor-active-tasks-list')
+  if (!list) return
+  if (!tasks.length) {
+    list.innerHTML = '<p class="text-sm text-slate-500">Brak aktywnych zadań.</p>'
+    return
+  }
+  list.innerHTML = tasks.slice(0, 8).map((task) => `
+    <button class="monitor-task w-full text-left border border-slate-200 rounded-lg px-4 py-3 hover:bg-slate-50" data-task-id="${task.id}">
+      <div class="flex items-center justify-between gap-3">
+        <div class="font-medium text-slate-900 truncate">${escapeHtml(task.title || 'Bez tytułu')}</div>
+        ${statusBadge(task.status)}
+      </div>
+      <div class="text-xs text-slate-500 mt-1">Stacja: ${escapeHtml(resolveWorkstationName(task.requested_workstation_id))} · ${formatDate(task.created_at)}</div>
+    </button>
+  `).join('')
+  list.querySelectorAll('.monitor-task').forEach((button) => {
+    button.addEventListener('click', () => openTaskDetail(button.dataset.taskId))
+  })
+}
+
+/**
+ * Renderuje skrót kondycji stacji w monitorze.
+ * @param {Array} workstations
+ * @returns {void}
+ */
+function renderMonitorWorkstations(workstations) {
+  const list = document.getElementById('monitor-workstations-list')
+  if (!list) return
+  if (!workstations.length) {
+    list.innerHTML = '<p class="text-sm text-slate-500">Brak aktywnych stacji.</p>'
+    return
+  }
+  list.innerHTML = workstations.map((workstation) => {
+    const stale = isStaleWorkstation(workstation)
+    const staleText = stale ? 'Może stać: brak świeżego heartbeat' : `Heartbeat ${formatDate(workstation.last_seen_at)}`
+    return `
+      <div class="border ${stale ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-white'} rounded-lg px-4 py-3">
+        <div class="flex items-center justify-between gap-3">
+          <div class="font-medium text-slate-900 truncate">${escapeHtml(workstation.display_name || workstation.hostname || 'Stacja')}</div>
+          ${workstationStatusBadge(workstation.status)}
+        </div>
+        <div class="text-xs text-slate-500 mt-1">Sloty: ${workstationActiveJobs(workstation)}/${workstationParallelSlots(workstation)} · ${escapeHtml(staleText)}</div>
+      </div>
+    `
+  }).join('')
+}
+
+/**
+ * Renderuje live log monitora.
+ * @param {Array} events
+ * @returns {void}
+ */
+function renderMonitorLog(events) {
+  const list = document.getElementById('monitor-live-log')
+  if (!list) return
+  if (!events.length) {
+    list.innerHTML = '<p class="text-sm text-slate-500">Brak zdarzeń.</p>'
+    return
+  }
+  list.innerHTML = events.map((event) => {
+    const isStation = event.source === 'workstation'
+    const label = isStation ? event.sender_label || 'stacja' : `${event.from_agent || 'agent'} → ${event.to_agent || 'agent'}`
+    const type = event.message_type || event.type || 'event'
+    return `
+      <div class="border-l-4 ${isStation ? 'border-emerald-300 bg-emerald-50' : 'border-blue-300 bg-blue-50'} px-4 py-2 rounded-r-lg">
+        <div class="text-xs text-slate-500 mb-1">
+          <span class="font-semibold">${escapeHtml(label)}</span>
+          <span class="ml-2 uppercase">[${escapeHtml(type)}]</span>
+          <span class="ml-2">${formatDate(event.created_at)}</span>
+        </div>
+        <div class="text-sm text-slate-800">${escapeHtml(truncateText(event.content || '', 260))}</div>
+      </div>
+    `
+  }).join('')
+}
+
+/**
+ * Liczy wolne sloty stacji.
+ * @param {Object} workstation
+ * @returns {number}
+ */
+function workstationFreeSlots(workstation) {
+  if (isStaleWorkstation(workstation)) return 0
+  if (!['online', 'busy'].includes(workstation.status)) return 0
+  return Math.max(0, workstationParallelSlots(workstation) - workstationActiveJobs(workstation))
+}
+
+/**
+ * Sprawdza, czy stacja nie wysłała heartbeat od dłuższego czasu.
+ * @param {Object} workstation
+ * @returns {boolean}
+ */
+function isStaleWorkstation(workstation) {
+  if (!workstation.last_seen_at) return true
+  const ageMs = Date.now() - new Date(workstation.last_seen_at).getTime()
+  return !Number.isFinite(ageMs) || ageMs > WORKSTATION_STALE_MS
+}
+
+/**
+ * Skraca tekst logu do bezpiecznej długości.
+ * @param {string} text
+ * @param {number} maxLength
+ * @returns {string}
+ */
+function truncateText(text, maxLength) {
+  if (text.length <= maxLength) return text
+  return text.slice(0, maxLength - 1) + '…'
 }
 
 /**
@@ -642,6 +934,7 @@ function populateTaskModelSelect(workstationId) {
   if (!workstationId) {
     modelSelect.innerHTML = '<option value="">Brak przypisanego modelu</option>'
     modelSelect.disabled = true
+    renderTaskWorkstationAdvancedInfo(null)
     return
   }
 
@@ -651,6 +944,27 @@ function populateTaskModelSelect(workstationId) {
   modelSelect.innerHTML = models.length
     ? models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join('')
     : '<option value="">Brak wykrytych modeli</option>'
+  renderTaskWorkstationAdvancedInfo(workstation)
+}
+
+/**
+ * Pokazuje skrót Advanced dla wybranej stacji w wizardzie zadania.
+ * @param {Object|null} workstation
+ * @returns {void}
+ */
+function renderTaskWorkstationAdvancedInfo(workstation) {
+  const element = document.getElementById('task-workstation-advanced-info')
+  if (!element) return
+  if (!workstation) {
+    element.classList.add('hidden')
+    element.textContent = ''
+    return
+  }
+  const active = workstationActiveJobs(workstation)
+  const slots = workstationParallelSlots(workstation)
+  const sd = workstationSdEnabled(workstation) ? 'włączone' : 'wyłączone'
+  element.classList.remove('hidden')
+  element.textContent = `Zaawansowane: ${active}/${slots} slotów zajętych, SD ${sd}. Wyższe parallelSlots zwiększa obciążenie RAM/VRAM tej stacji.`
 }
 
 /**
@@ -1092,6 +1406,23 @@ function subscribeToWorkstationsBoard() {
 }
 
 /**
+ * Subskrybuje zdarzenia logów monitora.
+ * @returns {void}
+ */
+function subscribeToMonitorLog() {
+  if (state.monitorLogSubscription) return
+  state.monitorLogSubscription = supabase
+    .channel('monitor-log')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
+      refreshMonitorLog()
+    })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'workstation_messages' }, () => {
+      refreshMonitorLog()
+    })
+    .subscribe()
+}
+
+/**
  * Aktualizuje wskaźnik statusu połączenia Realtime w górnym pasku.
  * @param {string} status
  * @returns {void}
@@ -1137,6 +1468,10 @@ function cleanupGlobalSubscriptions() {
   if (state.workstationsSubscription) {
     supabase.removeChannel(state.workstationsSubscription)
     state.workstationsSubscription = null
+  }
+  if (state.monitorLogSubscription) {
+    supabase.removeChannel(state.monitorLogSubscription)
+    state.monitorLogSubscription = null
   }
 }
 

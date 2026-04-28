@@ -31,6 +31,7 @@ const state = {
   available: false,
   modelName: '',
   backend: '',
+  advanced: null,
   recheckTimer: null,
 }
 
@@ -134,8 +135,10 @@ async function refreshHealth() {
     state.available = Boolean(data.ok)
     state.modelName = data.model || ''
     state.backend = data.backend || ''
+    state.advanced = data.advanced || null
   } catch {
     state.available = false
+    state.advanced = null
   } finally {
     clearTimeout(timeout)
   }
@@ -160,12 +163,23 @@ function renderBadge() {
   if (state.available) {
     badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700'
     badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>AI lokalny: ${escapeHtml(state.modelName)}`
-    badge.title = `Backend: ${state.backend}`
+    badge.title = advancedTitle()
   } else {
     badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-700 border border-sky-200'
     badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>Panel online'
     badge.title = 'Uruchom ./start.sh, aby podłączyć lokalny model do panelu'
   }
+}
+
+/**
+ * Buduje tooltip statusu lokalnego runtime.
+ * @returns {string}
+ */
+function advancedTitle() {
+  const advanced = state.advanced || {}
+  const slots = advanced.parallelSlots || 1
+  const sd = advanced.sdEnabled ? 'on' : 'off'
+  return `Backend: ${state.backend} | parallelSlots: ${slots} | SD: ${sd}`
 }
 
 /**

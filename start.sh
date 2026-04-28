@@ -15,6 +15,7 @@
 #
 #  Flagi:
 #    --change-model   wymusza ponowne pytanie o model
+#    --advanced       otwiera konfigurację opcji zaawansowanych
 #    --reset          usuwa config.json (i pyta od nowa)
 #    --no-pull        pomija pobieranie binary/modelu (do testów)
 # ============================================================================
@@ -38,10 +39,12 @@ mkdir -p "$BIN_DIR" "$MODELS_DIR" "$LOGS_DIR"
 
 # --- Parsowanie flag --------------------------------------------------------
 CHANGE_MODEL=0
+ADVANCED_CONFIG=0
 NO_PULL=0
 for arg in "$@"; do
   case "$arg" in
     --change-model) CHANGE_MODEL=1 ;;
+    --advanced)     ADVANCED_CONFIG=1 ;;
     --reset)        rm -f "$CONFIG_FILE"; echo "[start] Usunięto config.json." ;;
     --no-pull)      NO_PULL=1 ;;
     -h|--help)
@@ -55,6 +58,20 @@ done
 log()  { printf '\033[1;34m[start]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*"; }
 err()  { printf '\033[1;31m[err]\033[0m %s\n' "$*" >&2; }
+
+require_command() {
+  local command_name="$1" install_hint="$2"
+  if ! command -v "$command_name" >/dev/null 2>&1; then
+    err "Brak wymaganego programu: $command_name"
+    err "$install_hint"
+    exit 1
+  fi
+}
+
+check_base_requirements() {
+  require_command curl "Zainstaluj curl i uruchom skrypt ponownie."
+  require_command node "Zainstaluj Node.js 18+: https://nodejs.org"
+}
 
 # --- Banner startowy --------------------------------------------------------
 # Duży, widoczny komunikat: który skrypt i dla jakiego OS.
@@ -83,6 +100,7 @@ print_banner() {
   esac
 }
 print_banner
+check_base_requirements
 
 # --- Detekcja OS / arch / GPU ----------------------------------------------
 
@@ -191,6 +209,8 @@ download_binary() {
     echo "$gpu"
     return
   fi
+
+  require_command unzip "Zainstaluj unzip albo ręcznie rozpakuj llama.cpp do $BIN_DIR i uruchom z --no-pull."
 
   local tokens raw_tokens
   raw_tokens="$(asset_tokens "$os" "$arch" "$gpu")"
@@ -355,8 +375,103 @@ cfg.proxyPort = Number(process.env.PROXY_PORT_VALUE || cfg.proxyPort || 3001)
 cfg.llamaPort = Number(process.env.LLAMA_PORT_VALUE || cfg.llamaPort || 8080)
 cfg.llamaUrl = `http://127.0.0.1:${cfg.llamaPort}`
 if (cfg.modelPath && !cfg.modelName) cfg.modelName = path.basename(cfg.modelPath)
+cfg.parallelSlots = clampInt(cfg.parallelSlots, 1, 1, 4)
+cfg.sdEnabled = cfg.sdEnabled === true
+cfg.draftModelPath = typeof cfg.draftModelPath === 'string' ? cfg.draftModelPath : ''
+cfg.draftModelName = typeof cfg.draftModelName === 'string' ? cfg.draftModelName : ''
+if (cfg.draftModelPath && !cfg.draftModelName) cfg.draftModelName = path.basename(cfg.draftModelPath)
+cfg.speculativeTokens = clampInt(cfg.speculativeTokens, 4, 1, 16)
+cfg.optimizationMode = cfg.sdEnabled ? 'sd-experimental' : (cfg.parallelSlots > 1 ? 'parallel' : 'standard')
 fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
+
+function clampInt(value, fallback, min, max) {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
+}
 NODE
+}
+
+write_advanced_config() {
+  local parallel_slots="$1" sd_enabled="$2" draft_model_path="$3" speculative_tokens="$4"
+  CONFIG_FILE_ENV="$CONFIG_FILE" \
+  PARALLEL_SLOTS_VALUE="$parallel_slots" \
+  SD_ENABLED_VALUE="$sd_enabled" \
+  DRAFT_MODEL_PATH_VALUE="$draft_model_path" \
+  SPECULATIVE_TOKENS_VALUE="$speculative_tokens" \
+  node <<'NODE'
+const fs = require('node:fs')
+const path = require('node:path')
+const file = process.env.CONFIG_FILE_ENV
+let cfg = {}
+try {
+  cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
+} catch {
+  cfg = {}
+}
+cfg.parallelSlots = clampInt(process.env.PARALLEL_SLOTS_VALUE, 1, 1, 4)
+cfg.sdEnabled = process.env.SD_ENABLED_VALUE === 'true'
+cfg.draftModelPath = cfg.sdEnabled ? (process.env.DRAFT_MODEL_PATH_VALUE || '') : ''
+cfg.draftModelName = cfg.draftModelPath ? path.basename(cfg.draftModelPath) : ''
+cfg.speculativeTokens = clampInt(process.env.SPECULATIVE_TOKENS_VALUE, 4, 1, 16)
+cfg.optimizationMode = cfg.sdEnabled ? 'sd-experimental' : (cfg.parallelSlots > 1 ? 'parallel' : 'standard')
+fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
+
+function clampInt(value, fallback, min, max) {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
+}
+NODE
+}
+
+configure_advanced_options() {
+  local answer parallel_slots sd_answer sd_enabled draft_model_path speculative_tokens
+
+  echo
+  echo "=========================================================="
+  echo "  Advanced — opcje wydajności lokalnej stacji"
+  echo "=========================================================="
+  echo "  Domyślnie: parallelSlots=1, SD wyłączone."
+  echo "  Zwiększaj sloty tylko gdy masz zapas RAM/VRAM."
+  echo "  SD jest eksperymentalne i wymaga osobnego mniejszego modelu GGUF."
+  echo
+
+  answer="$(prompt_with_default "Konfigurować Advanced teraz? (y/N)" "N")"
+  case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" in
+    y|yes|t|tak) ;;
+    *)
+      sync_runtime_config_json
+      log "Advanced pozostaje przy domyślnych wartościach: parallelSlots=$(read_config_json_value parallelSlots 1), SD=off."
+      return
+      ;;
+  esac
+
+  parallel_slots="$(prompt_with_default "parallelSlots — ile jobów stacja może robić naraz (1-4)" "$(read_config_json_value parallelSlots 1)")"
+  sd_answer="$(prompt_with_default "Włączyć SD / speculative decoding? (y/N)" "N")"
+  case "$(printf '%s' "$sd_answer" | tr '[:upper:]' '[:lower:]')" in
+    y|yes|t|tak) sd_enabled="true" ;;
+    *) sd_enabled="false" ;;
+  esac
+
+  draft_model_path=""
+  speculative_tokens="$(read_config_json_value speculativeTokens 4)"
+  if [ "$sd_enabled" = "true" ]; then
+    draft_model_path="$(prompt_with_default "Ścieżka do draft modelu GGUF dla SD" "$(read_config_json_value draftModelPath '')")"
+    speculative_tokens="$(prompt_with_default "Speculative tokens / draft window (1-16)" "$speculative_tokens")"
+    if [ -z "$draft_model_path" ]; then
+      warn "SD wymaga draft modelu. Zostawiam SD wyłączone."
+      sd_enabled="false"
+    elif [ ! -f "$draft_model_path" ]; then
+      warn "Draft model nie istnieje: $draft_model_path. Zostawiam SD wyłączone."
+      sd_enabled="false"
+      draft_model_path=""
+    fi
+  fi
+
+  write_advanced_config "$parallel_slots" "$sd_enabled" "$draft_model_path" "$speculative_tokens"
+  sync_runtime_config_json
+  log "Zapisano Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), SD=$(read_config_json_value sdEnabled false)."
 }
 
 upsert_workstation_config() {
@@ -452,6 +567,7 @@ ensure_workstation_config() {
 ensure_config() {
   local gpu="$1"
   local saved_model_path=""
+  local asked_model_config=0
   if [ -f "$CONFIG_FILE" ]; then
     saved_model_path="$(read_config_value modelPath)"
   fi
@@ -463,6 +579,7 @@ ensure_config() {
     local model_path
     model_path="$(prompt_model)"
     write_model_config "$model_path" "$gpu"
+    asked_model_config=1
     log "Zapisano config.json"
   else
     log "Używam zapisanego modelu z config.json (zmień: ./start.sh --change-model)"
@@ -470,6 +587,9 @@ ensure_config() {
 
   sync_runtime_config_json
   ensure_workstation_config
+  if [ "$ADVANCED_CONFIG" = "1" ] || [ "$asked_model_config" = "1" ]; then
+    configure_advanced_options
+  fi
 }
 
 read_config_value() {
@@ -479,22 +599,105 @@ read_config_value() {
     | head -n1 | sed -E "s/.*:[[:space:]]*\"([^\"]*)\"/\1/" || true
 }
 
+read_config_json_value() {
+  local key="$1" default_value="${2:-}"
+  CONFIG_FILE_ENV="$CONFIG_FILE" \
+  CONFIG_KEY_VALUE="$key" \
+  CONFIG_DEFAULT_VALUE="$default_value" \
+  node <<'NODE'
+const fs = require('node:fs')
+const file = process.env.CONFIG_FILE_ENV
+const key = process.env.CONFIG_KEY_VALUE
+const fallback = process.env.CONFIG_DEFAULT_VALUE || ''
+let cfg = {}
+try {
+  cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
+} catch {
+  cfg = {}
+}
+const value = cfg[key]
+if (value === undefined || value === null || value === '') {
+  console.log(fallback)
+} else if (typeof value === 'object') {
+  console.log(JSON.stringify(value))
+} else {
+  console.log(String(value))
+}
+NODE
+}
+
+normalize_parallel_slots() {
+  local value="$1"
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then value=1; fi
+  if [ "$value" -lt 1 ]; then value=1; fi
+  if [ "$value" -gt 4 ]; then value=4; fi
+  printf '%s\n' "$value"
+}
+
+normalize_speculative_tokens() {
+  local value="$1"
+  if ! [[ "$value" =~ ^[0-9]+$ ]]; then value=4; fi
+  if [ "$value" -lt 1 ]; then value=1; fi
+  if [ "$value" -gt 16 ]; then value=16; fi
+  printf '%s\n' "$value"
+}
+
+ensure_runtime_files() {
+  local model_path="$1" bin
+  bin="$(llama_binary_path)"
+
+  if [ ! -f "$model_path" ]; then
+    err "Brak pliku modelu: $model_path"
+    if [ "$NO_PULL" = "1" ]; then
+      err "Uruchom bez --no-pull albo wskaż istniejący plik GGUF przez ./start.sh --change-model."
+    else
+      err "Uruchom ./start.sh --change-model i wybierz istniejący plik GGUF."
+    fi
+    exit 1
+  fi
+
+  if [ ! -x "$bin" ]; then
+    if [ -f "$bin" ]; then
+      chmod +x "$bin"
+    else
+      err "Brak llama-server: $bin"
+      err "Uruchom bez --no-pull albo pobierz llama.cpp ręcznie do local-ai-proxy/bin."
+      exit 1
+    fi
+  fi
+}
+
+llama_supports_flag() {
+  local bin="$1" flag="$2"
+  "$bin" --help 2>&1 | grep -q -- "$flag"
+}
+
 # --- Sprawdzenie portów -----------------------------------------------------
 
 # Czy na danym porcie odpowiada już llama-server? (porozumienie z /health)
 is_llama_server_on() {
   local port="$1"
   curl -fs --max-time 1 "http://127.0.0.1:$port/health" 2>/dev/null \
-    | grep -qi 'status\|slots_idle\|ok'
+    | grep -Eqi '"status"[[:space:]]*:[[:space:]]*"ok"|slots_idle|llama-server|llama\.cpp'
+}
+
+http_health_on() {
+  local port="$1"
+  curl -fs --max-time 1 "http://127.0.0.1:$port/health" >/dev/null 2>&1
 }
 
 # Co stoi na porcie? Zwraca 'free' | 'llama' | 'other'.
 port_state() {
   local port="$1"
-  if ! command -v lsof >/dev/null 2>&1 || ! lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
-    echo "free"; return
+  if is_llama_server_on "$port"; then echo "llama"; return; fi
+  if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+    echo "other"; return
   fi
-  if is_llama_server_on "$port"; then echo "llama"; else echo "other"; fi
+  if http_health_on "$port"; then echo "other"; return; fi
+  if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 "$port" >/dev/null 2>&1; then
+    echo "other"; return
+  fi
+  echo "free"
 }
 
 # Znajdź wolny port w zakresie startując od podanego.
@@ -558,11 +761,39 @@ start_llama() {
   local bin
   bin="$(llama_binary_path)"
   local extra_args=()
+  local parallel_slots sd_enabled draft_model_path speculative_tokens
 
   # Heurystyka: pełny GPU offload na akceleratorach, CPU dla fallbacku
   case "$gpu" in
     metal|cuda|rocm|vulkan) extra_args+=( --n-gpu-layers 999 ) ;;
   esac
+
+  parallel_slots="$(normalize_parallel_slots "$(read_config_json_value parallelSlots 1)")"
+  if [ "$parallel_slots" -gt 1 ]; then
+    if llama_supports_flag "$bin" "--parallel"; then
+      extra_args+=( --parallel "$parallel_slots" )
+      log "Advanced parallelSlots=$parallel_slots aktywne w llama-server."
+    else
+      warn "Ten llama-server nie pokazuje flagi --parallel w --help. Stacja nadal zgłosi parallelSlots=$parallel_slots, ale serwer modelu zostaje bez tej flagi."
+    fi
+  fi
+
+  sd_enabled="$(read_config_json_value sdEnabled false)"
+  if [ "$sd_enabled" = "true" ]; then
+    draft_model_path="$(read_config_json_value draftModelPath '')"
+    speculative_tokens="$(normalize_speculative_tokens "$(read_config_json_value speculativeTokens 4)")"
+    if [ -z "$draft_model_path" ] || [ ! -f "$draft_model_path" ]; then
+      warn "SD włączone w config.json, ale draft model nie istnieje. Startuję bez SD."
+    elif llama_supports_flag "$bin" "--model-draft"; then
+      extra_args+=( --model-draft "$draft_model_path" )
+      if llama_supports_flag "$bin" "--draft-max"; then
+        extra_args+=( --draft-max "$speculative_tokens" )
+      fi
+      log "Advanced SD eksperymentalne aktywne: draft=$(basename "$draft_model_path")."
+    else
+      warn "SD zapisane w config.json, ale ten llama-server nie pokazuje --model-draft w --help. Startuję bez SD."
+    fi
+  fi
 
   log "Uruchamiam llama-server (port $LLAMA_PORT, model $(basename "$model_path"))"
   nohup "$bin" \
@@ -652,8 +883,13 @@ MODEL_PATH="$(read_config_value modelPath)"
 [ -z "$MODEL_PATH" ] && { err "Brak modelPath w config.json"; exit 1; }
 
 if [ "$REUSE_LLAMA" = "1" ]; then
+  if [ ! -f "$MODEL_PATH" ]; then
+    warn "Model zapisany w config.json nie istnieje lokalnie: $MODEL_PATH"
+    warn "Reużywam działający llama-server na :$LLAMA_PORT, ale przy kolejnym starcie wybierz model ponownie."
+  fi
   log "Pomijam start llama-server (używam istniejącego na :$LLAMA_PORT)."
 else
+  ensure_runtime_files "$MODEL_PATH"
   start_llama "$MODEL_PATH" "$GPU_DETECTED"
   wait_for_health "http://127.0.0.1:$LLAMA_PORT/health" "llama-server" 90 || exit 1
 fi
@@ -672,6 +908,8 @@ cat <<EOF
   station agent  $LOGS_DIR/workstation-agent.log
   model          $(basename "$MODEL_PATH")
   backend        $GPU_DETECTED
+  parallelSlots  $(read_config_json_value parallelSlots 1)
+  SD             $(read_config_json_value sdEnabled false)
 
   Otwórz aplikację (GitHub Pages lub ui/index.html) — frontend
   automatycznie wykryje proxy i przełączy się w tryb AI.

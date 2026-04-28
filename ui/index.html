@@ -134,6 +134,14 @@
           class="nav-link w-full text-left px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">
           Stacje robocze
         </button>
+        <button data-view="monitor"
+          class="nav-link w-full text-left px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">
+          Monitor
+        </button>
+        <button data-view="advanced"
+          class="nav-link w-full text-left px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">
+          Zaawansowane
+        </button>
       </nav>
       <div class="p-4 border-t border-slate-200">
         <div id="user-email" class="text-sm text-slate-600 mb-2 truncate"></div>
@@ -359,14 +367,111 @@
                     <th class="px-6 py-3 font-medium">Platforma</th>
                     <th class="px-6 py-3 font-medium">Model</th>
                     <th class="px-6 py-3 font-medium">Status</th>
+                    <th class="px-6 py-3 font-medium">Zaawansowane</th>
                     <th class="px-6 py-3 font-medium">Ostatnio widziana</th>
                     <th class="px-6 py-3 font-medium">Akcje</th>
                   </tr>
                 </thead>
                 <tbody id="workstations-table-body" class="divide-y divide-slate-100">
-                  <tr><td colspan="6" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>
+                  <tr><td colspan="7" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== MONITOR VIEW ========== -->
+        <section id="view-monitor" class="view-section hidden">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#2563eb">
+              <div class="text-sm text-slate-500 font-medium">Aktywne zadania</div>
+              <div id="monitor-active-tasks" class="text-3xl font-bold text-blue-600 mt-2">0</div>
+            </div>
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#0f766e">
+              <div class="text-sm text-slate-500 font-medium">Wolne sloty stacji</div>
+              <div id="monitor-free-slots" class="text-3xl font-bold text-emerald-600 mt-2">0</div>
+            </div>
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#dc2626">
+              <div class="text-sm text-slate-500 font-medium">Stacje bez heartbeat</div>
+              <div id="monitor-stale-workstations" class="text-3xl font-bold text-red-600 mt-2">0</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div class="xl:col-span-2 space-y-6">
+              <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6">
+                <h3 class="text-lg font-semibold text-slate-900 mb-4">Zadania w ruchu</h3>
+                <div id="monitor-active-tasks-list" class="space-y-3">
+                  <p class="text-sm text-slate-500">Brak aktywnych zadań.</p>
+                </div>
+              </div>
+              <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6">
+                <h3 class="text-lg font-semibold text-slate-900 mb-4">Live log</h3>
+                <div id="monitor-live-log" class="space-y-3 max-h-[460px] overflow-auto pr-1">
+                  <p class="text-sm text-slate-500">Brak zdarzeń.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6">
+              <h3 class="text-lg font-semibold text-slate-900 mb-4">Stacje robocze</h3>
+              <div id="monitor-workstations-list" class="space-y-3">
+                <p class="text-sm text-slate-500">Brak aktywnych stacji.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== ADVANCED VIEW ========== -->
+        <section id="view-advanced" class="view-section hidden">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#0f766e">
+              <div class="text-sm text-slate-500 font-medium">Aktywne stacje</div>
+              <div id="advanced-active-workstations" class="text-3xl font-bold text-slate-900 mt-2">0</div>
+            </div>
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#2563eb">
+              <div class="text-sm text-slate-500 font-medium">Sloty równoległe</div>
+              <div id="advanced-total-slots" class="text-3xl font-bold text-blue-600 mt-2">0</div>
+            </div>
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#9333ea">
+              <div class="text-sm text-slate-500 font-medium">SD</div>
+              <div id="advanced-sd-state" class="text-3xl font-bold text-slate-900 mt-2">off</div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div class="xl:col-span-2 bg-white/95 rounded-xl surface-card border border-white/80">
+              <div class="p-6 border-b border-slate-200">
+                <h3 class="text-lg font-semibold text-slate-900">Runtime stacji</h3>
+                <p class="text-sm text-slate-500 mt-1">Podgląd opcji zapisanych lokalnie przez start.sh/start.command i raportowanych do Supabase.</p>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                  <thead class="bg-slate-50 text-slate-600 text-left">
+                    <tr>
+                      <th class="px-6 py-3 font-medium">Stacja</th>
+                      <th class="px-6 py-3 font-medium">Sloty</th>
+                      <th class="px-6 py-3 font-medium">SD</th>
+                      <th class="px-6 py-3 font-medium">Tryb</th>
+                      <th class="px-6 py-3 font-medium">Model draft</th>
+                    </tr>
+                  </thead>
+                  <tbody id="advanced-runtime-table-body" class="divide-y divide-slate-100">
+                    <tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="space-y-4">
+              <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6">
+                <h3 class="text-lg font-semibold text-slate-900">parallelSlots</h3>
+                <p class="text-sm text-slate-600 mt-2">Domyślnie 1. Wartość 2-4 pozwala jednej stacji pobrać kilka jobów naraz, ale każdy slot zużywa dodatkowy kontekst, RAM/VRAM i może spowolnić pojedynczą odpowiedź.</p>
+              </div>
+              <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6">
+                <h3 class="text-lg font-semibold text-slate-900">SD</h3>
+                <p class="text-sm text-slate-600 mt-2">Domyślnie wyłączone. Speculative decoding wymaga osobnego, mniejszego draft modelu i zgodności z aktualnym llama-server. Bez tego runtime startuje standardowo.</p>
+              </div>
             </div>
           </div>
         </section>
@@ -470,16 +575,30 @@
                 </select>
               </div>
             </div>
+            <div id="task-workstation-advanced-info" class="hidden rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600"></div>
 
             <!-- Accordion: zaawansowane -->
             <details class="border border-slate-200 rounded-lg">
               <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-slate-700 hover:bg-slate-50">
                 Zaawansowane
               </summary>
-              <div class="px-4 pb-4 pt-2">
-                <label class="block text-sm font-medium text-slate-700 mb-1">Kontekst (JSON lub tekst)</label>
-                <textarea id="task-context" rows="3" placeholder='np. {"branch": "main", "env": "dev"}'
-                  class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono text-xs"></textarea>
+              <div class="px-4 pb-4 pt-2 space-y-4">
+                <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-1">Kontekst (JSON lub tekst)</label>
+                  <textarea id="task-context" rows="3" placeholder='np. {"branch": "main", "env": "dev"}'
+                    class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono text-xs"></textarea>
+                </div>
+                <div class="grid md:grid-cols-2 gap-3 text-xs text-slate-600">
+                  <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div class="font-semibold text-slate-900">parallelSlots</div>
+                    <p class="mt-1">Domyślnie 1. Ta wartość jest ustawiana lokalnie w runtime stacji i określa, ile jobów stacja może robić naraz.</p>
+                  </div>
+                  <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div class="font-semibold text-slate-900">SD</div>
+                    <p class="mt-1">Domyślnie wyłączone. Wymaga draft modelu i kompatybilnego llama-server, więc jest opcją eksperymentalną.</p>
+                  </div>
+                </div>
+                <p class="text-xs text-slate-500">Szczegóły aktualnej stacji zobaczysz po wyborze stacji powyżej oraz w menu Zaawansowane.</p>
               </div>
             </details>
           </form>
@@ -632,6 +751,14 @@
             <div class="border border-slate-200 rounded-lg p-3">
               <div class="font-medium text-slate-900">Panel online</div>
               <p class="mt-1 text-slate-600">Panel obsługuje kolejkę, profile i statusy w przeglądarce. Lokalny model można podłączyć przez start.command albo start.sh.</p>
+            </div>
+            <div class="border border-slate-200 rounded-lg p-3">
+              <div class="font-medium text-slate-900">parallelSlots</div>
+              <p class="mt-1 text-slate-600">Opcja Advanced lokalnej stacji. Określa, ile jobów stacja może próbować robić równolegle. Domyślnie 1.</p>
+            </div>
+            <div class="border border-slate-200 rounded-lg p-3">
+              <div class="font-medium text-slate-900">SD</div>
+              <p class="mt-1 text-slate-600">Speculative decoding. Domyślnie wyłączone; wymaga draft modelu i kompatybilnego llama-server.</p>
             </div>
           </div>
         </section>

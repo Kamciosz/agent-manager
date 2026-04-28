@@ -488,3 +488,17 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 - **Nie rób:** Nie dodawaj bundlera, bibliotek UI ani marketingowego landing page
 - [x] Gotowe — dodano profile startowe, zmieniono komunikaty na `Panel online` i dopracowano warstwy wizualne.
 
+### 7.6 Advanced runtime i decyzja kierownika
+- **Co:** Dodać opcje Advanced dla lokalnych stacji: `parallelSlots`, SD domyślnie wyłączone oraz routing, w którym kierownik wybiera aktywną stację z wolnym slotem albo fallback przeglądarkowy
+- **Gdzie:** `ui/`, `local-ai-proxy/`, `start.sh`, dokumentacja runtime
+- **Gotowe gdy:** Frontend pokazuje widok Advanced i sloty stacji, `config.json` ma domyślne `parallelSlots=1` oraz `sdEnabled=false`, a manager nie zostawia zadania bez pracownika przy braku wolnej stacji
+- **Nie rób:** Nie włączaj SD automatycznie i nie dodawaj osobnego backendu SSD
+- [x] Gotowe — dodano konfigurację Advanced, raportowanie metadata stacji, równoległe sloty jobów, domyślne SD off i inteligentny wybór wykonawcy.
+
+### 7.7 Monitor postępu
+- **Co:** Dodać widok pozwalający sprawdzić, czy system pracuje i czy stacje nie przestały raportować heartbeat
+- **Gdzie:** `ui/index.html`, `ui/app.js`, `local-ai-proxy/workstation-agent.js`
+- **Gotowe gdy:** Frontend pokazuje aktywne zadania, wolne sloty, stacje bez świeżego heartbeat i live log z wiadomości AI/stacji
+- **Nie rób:** Nie dodawaj osobnego backendu ani zdalnego terminala live
+- [x] Gotowe — dodano widok Monitor, live log oraz wpisy postępu jobów ze stacji roboczej.
+

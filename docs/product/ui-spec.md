@@ -89,11 +89,26 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 
 ### 9. Stacje robocze
 
-- Tabela: Nazwa | Platforma | Model | Status | Ostatnio widziana | Akcje.
+- Tabela: Nazwa | Platforma | Model | Status | Advanced | Ostatnio widziana | Akcje.
 - Główna akcja w wierszu: `Wyślij wiadomość`.
 - Widok ma charakter operacyjny: pokazuje komputery uruchomione przez `start.command` / `start.sh`, a nie ręcznie tworzone rekordy.
+- Kolumna `Advanced` pokazuje `activeJobs/parallelSlots` oraz stan SD.
 
-### 10. Wiadomość do stacji
+### 10. Monitor
+
+- Karty: aktywne zadania, wolne sloty stacji, stacje bez świeżego heartbeat.
+- Lista `Zadania w ruchu` pozwala wejść bezpośrednio do Task Detail.
+- Lista `Stacje robocze` pokazuje status, sloty i ostrzeżenie `Może stać`, gdy heartbeat jest stary.
+- `Live log` zbiera ostatnie wpisy z `messages` i `workstation_messages`, w tym postęp jobów ze stacji.
+
+### 11. Advanced runtime
+
+- Widok `Advanced` pokazuje `parallelSlots`, aktywne joby, SD, tryb optymalizacji i draft model raportowane przez stacje.
+- `parallelSlots` jest ustawieniem lokalnego runtime; domyślnie `1`, zakres `1-4`.
+- SD jest domyślnie wyłączone i opisane jako eksperymentalne; wymaga draft modelu oraz kompatybilnego `llama-server`.
+- Frontend tylko pokazuje te ustawienia. Zapis odbywa się lokalnie przez `start.sh --advanced`, `start.bat --advanced` albo domyślne wartości w launcherze.
+
+### 12. Wiadomość do stacji
 
 - Mały modal z nazwą celu i jednym polem tekstowym.
 - Użycie: doprecyzowanie zadania, wymuszenie konkretnego modelu, prośba o raport.

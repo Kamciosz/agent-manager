@@ -47,7 +47,9 @@ W katalogu głównym repo (nie tutaj) **wybierz skrypt odpowiedni dla swojego sy
 start.bat
 ```
 
-Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Kolejne uruchomienia są bez pytań.
+Po dwukliku w Windows okno `start.bat` powinno zostać otwarte. Jeśli launcher trafi na błąd, pokaże komunikat i poczeka na klawisz, żeby dało się przeczytać przyczynę. Po poprawnym starcie zostaw okno otwarte — zamknięcie konsoli może zatrzymać lokalne procesy AI.
+
+Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Zapyta też jednorazowo o dane stacji roboczej dla Supabase, żeby `workstation-agent.js` mógł odbierać joby z aplikacji. Kolejne uruchomienia są bez pytań.
 
 Po starcie otwórz aplikację (GitHub Pages albo `ui/index.html`). W headerze pojawi się badge:
 - 🟢 **AI lokalny: <nazwa-modelu>** — proxy działa, manager/executor używają prawdziwego LLM.
@@ -60,8 +62,34 @@ Aplikacja sprawdza dostępność co 30 s — możesz włączać i wyłączać `s
 | Flaga | Działanie |
 |------|-----------|
 | `--change-model` | Zapomina aktualny model i pyta o nowy |
+| `--advanced` | Otwiera konfigurację `parallelSlots` i eksperymentalnego SD |
 | `--reset` | Usuwa `config.json` i pyta od nowa |
 | `--no-pull` | Pomija pobieranie binary i modelu (offline / testy) |
+
+## Advanced runtime
+
+Opcje Advanced są lokalne dla konkretnej stacji roboczej i zapisują się w `local-ai-proxy/config.json`. Frontend pokazuje je w widoku **Advanced** oraz w tabeli stacji, ale nie zapisuje ich bezpośrednio do pliku na komputerze użytkownika.
+
+### `parallelSlots`
+
+`parallelSlots` określa, ile jobów agent stacji może próbować obsłużyć naraz.
+
+- Domyślnie: `1`.
+- Zakres w launcherze: `1-4`.
+- Przy `1` stacja robi jedno zadanie i dopiero potem bierze kolejne.
+- Przy `2-4` agent stacji może pobrać kilka jobów równolegle, ale każdy slot zużywa RAM/VRAM i może spowolnić pojedynczą generację.
+
+Jeśli aktywna jest jedna stacja robocza i ma wolny slot, AI kierownik może automatycznie wybrać ją jako wykonawcę. Jeśli nie ma aktywnej stacji z wolnym slotem, przeglądarkowy executor działa jako pracownik fallbackowy, więc system nie zostaje z samym kierownikiem.
+
+### SD / speculative decoding
+
+SD jest domyślnie **wyłączone** (`sdEnabled: false`). To opcja eksperymentalna:
+
+- wymaga osobnego, mniejszego draft modelu GGUF,
+- wymaga kompatybilnego `llama-server`, który pokazuje odpowiednie flagi w `--help`,
+- może przyspieszyć generowanie, ale na złym zestawie modeli może też je spowolnić.
+
+Launcher zapisuje konfigurację SD tylko po świadomym wejściu w `--advanced`. Jeśli binary `llama-server` nie wspiera draft modelu, runtime startuje standardowo i wypisuje ostrzeżenie.
 
 ## Pliki w tym katalogu
 
@@ -70,15 +98,15 @@ Aplikacja sprawdza dostępność co 30 s — możesz włączać i wyłączać `s
 | `proxy.js` | HTTP proxy Node 18+ bez zależności (porty: in 3001 / out 8080) |
 | `bin/`    | Pobrany binary `llama-server` (gitignored) |
 | `models/` | Pobrane / podlinkowane pliki `.gguf` (gitignored) |
-| `logs/`   | Logi z `llama-server` i proxy + pliki PID |
+| `logs/`   | Logi z `llama-server`, proxy i agenta stacji + pliki PID |
 | `config.json` | Wybrany model, porty, backend GPU (gitignored) |
 
 ## Endpointy proxy
 
 ```
-GET  /health     →  { ok, proxy, llama, model, backend }
+GET  /health     →  { ok, proxy, llama, model, backend, advanced }
 POST /generate   →  body: { prompt, maxTokens?, temperature? }
-                    response: { text }
+                    response: { text, durationMs }
 OPTIONS *        →  204 + nagłówki CORS (Allow-Origin: *)
 ```
 

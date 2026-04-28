@@ -20,7 +20,7 @@ const DEFAULTS = {
   AUTH_RETRY_MS: [3000, 7000, 15000, 30000],
 }
 
-let busy = false
+let activeJobs = 0
 let shuttingDown = false
 let workstationId = null
 let authSession = null
@@ -47,7 +47,18 @@ function loadConfig() {
     scheduleEnabled: schedule.enabled,
     scheduleStart: schedule.start,
     scheduleEnd: schedule.end,
+    parallelSlots: clampInt(raw.parallelSlots, 1, 1, 4),
+    sdEnabled: raw.sdEnabled === true,
+    draftModelName: raw.draftModelName || '',
+    speculativeTokens: clampInt(raw.speculativeTokens, 4, 1, 16),
+    optimizationMode: raw.optimizationMode || 'standard',
   }
+}
+
+function clampInt(value, fallback, min, max) {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, parsed))
 }
 
 function normalizeSchedule(enabled, start, end) {
@@ -74,7 +85,11 @@ function ensureRequiredConfig(cfg) {
 function currentStatus(cfg) {
   if (!cfg.acceptsJobs) return 'offline'
   if (!isWithinSchedule(cfg)) return 'offline'
-  return busy ? 'busy' : 'online'
+  return activeJobs >= cfg.parallelSlots ? 'busy' : 'online'
+}
+
+function availableSlots(cfg) {
+  return Math.max(0, cfg.parallelSlots - activeJobs)
 }
 
 function isWithinSchedule(cfg) {
@@ -258,6 +273,13 @@ function workstationPayload(cfg, userId, statusOverride) {
       proxyPort: cfg.proxyPort,
       llamaPort: cfg.llamaPort,
       modelPath: cfg.modelPath || null,
+      parallelSlots: cfg.parallelSlots,
+      activeJobs,
+      availableSlots: availableSlots(cfg),
+      sdEnabled: cfg.sdEnabled,
+      draftModelName: cfg.draftModelName || null,
+      speculativeTokens: cfg.speculativeTokens,
+      optimizationMode: cfg.optimizationMode,
     },
   }
 }
@@ -283,15 +305,16 @@ async function heartbeat(cfg, session, statusOverride) {
   await restPatch(cfg, session, 'workstations', `id=eq.${encodeURIComponent(workstationId)}`, workstationPayload(cfg, session.user.id, statusOverride))
 }
 
-async function fetchQueuedJob(cfg, session) {
-  if (!workstationId || !cfg.acceptsJobs || !isWithinSchedule(cfg)) return null
+async function fetchQueuedJobs(cfg, session) {
+  const limit = availableSlots(cfg)
+  if (!workstationId || !cfg.acceptsJobs || !isWithinSchedule(cfg) || limit < 1) return []
   const rows = await restSelect(
     cfg,
     session,
     'workstation_jobs',
-    `select=*&workstation_id=eq.${encodeURIComponent(workstationId)}&status=eq.queued&order=created_at.asc&limit=1`,
+    `select=*&workstation_id=eq.${encodeURIComponent(workstationId)}&status=eq.queued&order=created_at.asc&limit=${limit}`,
   )
-  return rows[0] || null
+  return rows || []
 }
 
 async function fetchUnreadMessages(cfg, session) {
@@ -327,7 +350,10 @@ async function callLocalProxy(cfg, prompt) {
     throw new Error(`Local proxy HTTP ${response.status}`)
   }
   const data = await response.json()
-  return (data.text || '').trim()
+  return {
+    text: (data.text || '').trim(),
+    durationMs: data.durationMs || null,
+  }
 }
 
 async function appendStationMessage(cfg, session, message) {
@@ -340,19 +366,22 @@ async function updateTaskStatus(cfg, session, taskId, status) {
 }
 
 async function processJob(cfg, session, job) {
-  busy = true
-  await heartbeat(cfg, session)
-  await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
-    status: 'running',
-    started_at: new Date().toISOString(),
-  })
-
+  activeJobs += 1
   try {
-    const output = await callLocalProxy(cfg, buildJobPrompt(job))
+    await heartbeat(cfg, session)
+    await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
+      status: 'running',
+      started_at: new Date().toISOString(),
+    })
+    await appendProgressMessage(cfg, session, job, `Start jobu. Sloty aktywne: ${activeJobs}/${cfg.parallelSlots}.`)
+      .catch((error) => log('progress message failed:', error.message))
+
+    const result = await callLocalProxy(cfg, buildJobPrompt(job))
+    const output = result.text
     await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
       status: 'done',
       result_summary: output.slice(0, 500),
-      result_payload: { text: output },
+      result_payload: { text: output, durationMs: result.durationMs },
       finished_at: new Date().toISOString(),
       error_text: null,
     })
@@ -364,6 +393,8 @@ async function processJob(cfg, session, job) {
       message_type: 'result',
       content: output,
     }])
+    await appendProgressMessage(cfg, session, job, `Job ukończony${result.durationMs ? ` w ${result.durationMs}ms` : ''}.`)
+      .catch((error) => log('progress message failed:', error.message))
     await updateTaskStatus(cfg, session, job.task_id, 'done')
     log('Job ukończony:', job.id)
   } catch (error) {
@@ -383,16 +414,27 @@ async function processJob(cfg, session, job) {
     await updateTaskStatus(cfg, session, job.task_id, 'failed')
     log('Job nieudany:', job.id, error.message)
   } finally {
-    busy = false
+    activeJobs = Math.max(0, activeJobs - 1)
     await heartbeat(cfg, session)
   }
+}
+
+async function appendProgressMessage(cfg, session, job, content) {
+  await appendStationMessage(cfg, session, [{
+    workstation_id: workstationId,
+    task_id: job.task_id || null,
+    sender_kind: 'workstation',
+    sender_label: cfg.workstationName,
+    message_type: 'progress',
+    content,
+  }])
 }
 
 async function processIncomingMessages(cfg, session) {
   const messages = await fetchUnreadMessages(cfg, session)
   for (const message of messages) {
     try {
-      const reply = await callLocalProxy(cfg, [
+      const result = await callLocalProxy(cfg, [
         'Użytkownik wysłał wiadomość do stacji roboczej.',
         'Odpowiedz krótko po polsku i potwierdź, co zrobisz albo co już zrobiłeś.',
         'Treść wiadomości: ' + (message.content || ''),
@@ -403,7 +445,7 @@ async function processIncomingMessages(cfg, session) {
         sender_kind: 'workstation',
         sender_label: cfg.workstationName,
         message_type: 'reply',
-        content: reply || 'Potwierdzam odbiór wiadomości.',
+        content: result.text || 'Potwierdzam odbiór wiadomości.',
       }])
       await restPatch(cfg, session, 'workstation_messages', `id=eq.${encodeURIComponent(message.id)}`, {
         read_at: new Date().toISOString(),
@@ -437,7 +479,7 @@ async function main() {
   await upsertWorkstation(cfg, authSession)
   await syncModels(cfg, authSession)
   await heartbeat(cfg, authSession)
-  log('Stacja gotowa:', workstationId)
+  log('Stacja gotowa:', workstationId, `sloty=${cfg.parallelSlots}`, `SD=${cfg.sdEnabled ? 'on' : 'off'}`)
 
   setInterval(() => {
     heartbeat(cfg, authSession).catch((error) => log('Heartbeat failed:', error.message))
@@ -448,10 +490,12 @@ async function main() {
   }, DEFAULTS.HEARTBEAT_MS)
 
   setInterval(async () => {
-    if (busy || shuttingDown) return
+    if (availableSlots(cfg) < 1 || shuttingDown) return
     try {
-      const job = await fetchQueuedJob(cfg, authSession)
-      if (job) await processJob(cfg, authSession, job)
+      const jobs = await fetchQueuedJobs(cfg, authSession)
+      for (const job of jobs) {
+        processJob(cfg, authSession, job).catch((error) => log('processJob failed:', error.message))
+      }
     } catch (error) {
       log('pollJobs failed:', error.message)
     }
