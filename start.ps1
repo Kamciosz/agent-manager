@@ -11,6 +11,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $RootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptPath = $MyInvocation.MyCommand.Path
 $ProxyDir = Join-Path $RootDir 'local-ai-proxy'
 $BinDir = Join-Path $ProxyDir 'bin'
 $ModelsDir = Join-Path $ProxyDir 'models'
@@ -27,12 +28,15 @@ $AdvancedConfig = $false
 $ScheduleConfig = $false
 $NoPull = $false
 $ShowHelp = $false
+$DoctorMode = $false
+$TranscriptStarted = $false
 
 foreach ($arg in $ScriptArgs) {
   switch -Regex ($arg) {
     '^--change-model$' { $ChangeModel = $true; break }
     '^--advanced$' { $AdvancedConfig = $true; $ScheduleConfig = $true; break }
     '^--schedule$' { $ScheduleConfig = $true; break }
+    '^--doctor$' { $DoctorMode = $true; break }
     '^--reset$' { if (Test-Path $ConfigFile) { Remove-Item -LiteralPath $ConfigFile -Force }; Write-Host '[start] Removed config.json.'; break }
     '^--no-pull$' { $NoPull = $true; break }
     '^-h$|^--help$' { $ShowHelp = $true; break }
@@ -55,6 +59,7 @@ Flags:
   --change-model   ask for a GGUF model again
   --advanced       configure parallel slots, experimental SD and schedule
   --schedule       configure only runtime schedule
+  --doctor         run safe diagnostics without downloads, prompts or services
   --reset          remove local-ai-proxy\config.json and ask again
   --no-pull        skip downloads, useful for offline tests
   --no-pause       consumed by start.bat wrapper
@@ -66,8 +71,14 @@ if ($ShowHelp) {
   exit 0
 }
 
-New-Item -ItemType Directory -Force -Path $BinDir, $ModelsDir, $LogsDir | Out-Null
-Start-Transcript -Path (Join-Path $LogsDir 'start-windows.log') -Append | Out-Null
+function Ensure-WorkspaceDirs {
+  New-Item -ItemType Directory -Force -Path $BinDir, $ModelsDir, $LogsDir | Out-Null
+}
+
+function Start-LauncherTranscript {
+  Start-Transcript -Path (Join-Path $LogsDir 'start-windows.log') -Append | Out-Null
+  $script:TranscriptStarted = $true
+}
 
 function Assert-Command([string] $Name, [string] $Hint) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -763,8 +774,113 @@ function Print-Banner {
   Write-Host ''
 }
 
-try {
+function Write-DoctorResult([string] $Status, [string] $Name, [string] $Message) {
+  $color = 'Gray'
+  if ($Status -eq 'OK') { $color = 'Green' }
+  if ($Status -eq 'WARN') { $color = 'Yellow' }
+  if ($Status -eq 'INFO') { $color = 'Cyan' }
+  Write-Host ('[{0}] {1}: {2}' -f $Status, $Name, $Message) -ForegroundColor $color
+}
+
+function Test-ScriptZoneIdentifier {
+  try {
+    $stream = Get-Item -LiteralPath $ScriptPath -Stream Zone.Identifier -ErrorAction SilentlyContinue
+    return $null -ne $stream
+  } catch {
+    return $false
+  }
+}
+
+function Invoke-Doctor {
   Print-Banner
+  Write-Host 'Safe diagnostics only: no downloads, prompts or runtime services are started.'
+  Write-Host ''
+
+  Write-DoctorResult 'OK' 'Repository' $RootDir
+  if (Test-Path -LiteralPath (Join-Path $ProxyDir 'proxy.js')) {
+    Write-DoctorResult 'OK' 'proxy.js' 'found'
+  } else {
+    Write-DoctorResult 'WARN' 'proxy.js' 'missing local-ai-proxy\proxy.js'
+  }
+  if (Test-Path -LiteralPath (Join-Path $ProxyDir 'workstation-agent.js')) {
+    Write-DoctorResult 'OK' 'workstation-agent.js' 'found'
+  } else {
+    Write-DoctorResult 'WARN' 'workstation-agent.js' 'missing local-ai-proxy\workstation-agent.js'
+  }
+
+  if (Test-ScriptZoneIdentifier) {
+    Write-DoctorResult 'WARN' 'PowerShell unblock' 'this downloaded script has Zone.Identifier; run: Unblock-File .\start.ps1'
+  } else {
+    Write-DoctorResult 'OK' 'PowerShell unblock' 'no Zone.Identifier prompt expected for start.ps1'
+  }
+
+  $node = Get-Command node -ErrorAction SilentlyContinue
+  if ($node) {
+    $nodeVersion = (& node --version 2>$null | Select-Object -First 1)
+    Write-DoctorResult 'OK' 'Node.js' "$nodeVersion at $($node.Source)"
+  } else {
+    Write-DoctorResult 'WARN' 'Node.js' 'not found; full runtime requires Node.js 18+'
+  }
+
+  Write-DoctorResult 'INFO' 'Port 8080' (Get-PortState 8080)
+  Write-DoctorResult 'INFO' 'Port 3001' (Get-PortState 3001)
+
+  $backend = Detect-Backend
+  Write-DoctorResult 'INFO' 'Detected backend' $backend
+  try {
+    $tokenGroups = @(Select-AssetTokenGroups $backend)
+    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/ggerganov/llama.cpp/releases/latest' -Headers @{ 'User-Agent' = 'AgentManagerLauncher' }
+    $asset = Find-LlamaReleaseAsset $release.assets $tokenGroups
+    if ($asset) {
+      Write-DoctorResult 'OK' 'llama.cpp asset' $asset.name
+    } else {
+      Write-DoctorResult 'WARN' 'llama.cpp asset' "no matching asset for: $($tokenGroups -join ' | ')"
+    }
+  } catch {
+    Write-DoctorResult 'WARN' 'llama.cpp asset' "release lookup failed: $($_.Exception.Message)"
+  }
+
+  $bin = Get-LlamaBinaryPath
+  if (Test-Path -LiteralPath $bin) {
+    Write-DoctorResult 'OK' 'llama-server.exe' $bin
+  } else {
+    Write-DoctorResult 'INFO' 'llama-server.exe' 'not downloaded yet; full start will download it'
+  }
+
+  if (Test-Path -LiteralPath $ConfigFile) {
+    $cfg = Read-Config
+    $modelPath = Get-ConfigString $cfg 'modelPath'
+    if ($modelPath -and (Test-Path -LiteralPath $modelPath)) {
+      Write-DoctorResult 'OK' 'config.json modelPath' $modelPath
+    } elseif ($modelPath) {
+      Write-DoctorResult 'WARN' 'config.json modelPath' "configured path does not exist: $modelPath"
+    } else {
+      Write-DoctorResult 'INFO' 'config.json modelPath' 'missing; full start will ask for a GGUF model'
+    }
+
+    $email = Get-ConfigString $cfg 'workstationEmail'
+    if ($email) {
+      Write-DoctorResult 'OK' 'workstation credentials' "email configured: $email"
+    } else {
+      Write-DoctorResult 'INFO' 'workstation credentials' 'missing; full start will ask for Supabase workstation login'
+    }
+  } else {
+    Write-DoctorResult 'INFO' 'config.json' 'missing; full start will enter first-run configuration'
+  }
+
+  Write-Host ''
+  Write-DoctorResult 'OK' 'Doctor' 'finished without starting services'
+}
+
+try {
+  if ($DoctorMode) {
+    Invoke-Doctor
+    exit 0
+  }
+
+  Print-Banner
+  Ensure-WorkspaceDirs
+  Start-LauncherTranscript
   Assert-Command 'node' 'Install Node.js 18+: https://nodejs.org'
   Resolve-LlamaPort
   Resolve-ProxyPort
@@ -801,5 +917,5 @@ try {
   exit 1
 } finally {
   Stop-StartedProcesses
-  try { Stop-Transcript | Out-Null } catch {}
+  try { if ($TranscriptStarted) { Stop-Transcript | Out-Null } } catch {}
 }

@@ -57,6 +57,12 @@ Jeśli uruchamiasz bezpośrednio z PowerShella, użyj ścieżki względnej:
 
 Samo `start.ps1` nie działa w Windows PowerShell, bo PowerShell domyślnie nie uruchamia skryptów z bieżącego katalogu bez `./` lub `.\`.
 
+Jeśli Windows pokazuje ostrzeżenie bezpieczeństwa dla pliku pobranego z internetu i ufasz tej kopii repo, możesz jednorazowo zdjąć blokadę:
+
+```powershell
+Unblock-File .\start.ps1
+```
+
 Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Launcher dobiera paczkę do backendu GPU, ale jeśli upstream nie publikuje dokładnego wariantu, używa bezpiecznego fallbacku CPU zamiast przerywać start. Zapyta też jednorazowo o dane stacji roboczej dla Supabase, żeby `workstation-agent.js` mógł odbierać joby z aplikacji. Kolejne uruchomienia są bez pytań.
 
 Po starcie otwórz aplikację (GitHub Pages albo `ui/index.html`). W headerze pojawi się badge:
@@ -72,8 +78,17 @@ Aplikacja sprawdza dostępność co 30 s — możesz włączać i wyłączać `s
 | `--change-model` | Zapomina aktualny model i pyta o nowy |
 | `--advanced` | Otwiera konfigurację `parallelSlots`, eksperymentalnego SD i harmonogramu |
 | `--schedule` | Otwiera tylko konfigurację harmonogramu pracy stacji |
+| `--doctor` | Uruchamia diagnostykę bez pobierania, promptów i startu usług |
 | `--reset` | Usuwa `config.json` i pyta od nowa |
 | `--no-pull` | Pomija pobieranie binary i modelu (offline / testy) |
+
+Diagnostyka jest najbezpieczniejszą ścieżką testu po `--help`:
+
+```powershell
+.\start.bat --doctor --no-pause
+```
+
+Sprawdza m.in. Node.js, porty, config, obecność `llama-server`, blokadę PowerShell `Zone.Identifier` i to, jaką paczkę llama.cpp launcher wybrałby dla aktualnego backendu. Nie pobiera modelu, nie pyta o dane i nie startuje `llama-server` ani proxy.
 
 ## Harmonogram pracy stacji
 
@@ -165,6 +180,8 @@ Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci.
 **Windows: okno znika od razu.** Obecny `start.bat` powinien zawsze zostać na końcu z komunikatem. Jeśli nadal znika, uruchom z `cmd.exe` ręcznie: `start.bat --no-pull`, a potem sprawdź `local-ai-proxy\logs\start-windows.log`, `llama-server.err.log`, `proxy.err.log` i `workstation-agent.err.log`.
 
 **PowerShell mówi, że `start.ps1` nie jest rozpoznany.** To normalne zachowanie Windows PowerShell. Uruchom `.\start.ps1` albo prościej `.\start.bat` z katalogu repo.
+
+**PowerShell pyta, czy uruchomić skrypt pobrany z internetu.** To znacznik bezpieczeństwa Windows dla plików z ZIP-a/pobrania. Jeśli ufasz repo, uruchom `Unblock-File .\start.ps1` w katalogu projektu albo używaj `start.bat`, który startuje PowerShell z właściwą polityką wykonania.
 
 **Launcher czeka i nie ładuje modelu.** To może być poprawne, jeśli ustawiony jest harmonogram i aktualna godzina jest poza oknem. Zmień ustawienie przez `./start.sh --schedule` albo `start.bat --schedule`.
 

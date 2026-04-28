@@ -17,6 +17,7 @@
 #    --change-model   wymusza ponowne pytanie o model
 #    --advanced       otwiera konfigurację opcji zaawansowanych
 #    --schedule       otwiera konfigurację harmonogramu pracy runtime
+#    --doctor         uruchamia diagnostykę bez pobierania, promptów i usług
 #    --reset          usuwa config.json (i pyta od nowa)
 #    --no-pull        pomija pobieranie binary/modelu (do testów)
 # ============================================================================
@@ -36,22 +37,22 @@ PROXY_PORT=3001
 DEFAULT_SUPABASE_URL="https://xaaalkbygdtjlsnhipwa.supabase.co"
 DEFAULT_SUPABASE_KEY="sb_publishable_y0GUJCxdmltSN8qAtmSmAA_ovM9Dxrc"
 
-mkdir -p "$BIN_DIR" "$MODELS_DIR" "$LOGS_DIR"
-
 # --- Parsowanie flag --------------------------------------------------------
 CHANGE_MODEL=0
 ADVANCED_CONFIG=0
 SCHEDULE_CONFIG=0
+DOCTOR_MODE=0
 NO_PULL=0
 for arg in "$@"; do
   case "$arg" in
     --change-model) CHANGE_MODEL=1 ;;
     --advanced)     ADVANCED_CONFIG=1; SCHEDULE_CONFIG=1 ;;
     --schedule)     SCHEDULE_CONFIG=1 ;;
+    --doctor)       DOCTOR_MODE=1 ;;
     --reset)        rm -f "$CONFIG_FILE"; echo "[start] Usunięto config.json." ;;
     --no-pull)      NO_PULL=1 ;;
     -h|--help)
-      sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
   esac
@@ -69,6 +70,10 @@ require_command() {
     err "$install_hint"
     exit 1
   fi
+}
+
+ensure_workspace_dirs() {
+  mkdir -p "$BIN_DIR" "$MODELS_DIR" "$LOGS_DIR"
 }
 
 check_base_requirements() {
@@ -102,8 +107,6 @@ print_banner() {
       ;;
   esac
 }
-print_banner
-check_base_requirements
 
 # --- Detekcja OS / arch / GPU ----------------------------------------------
 
@@ -1089,6 +1092,88 @@ cleanup_pidfile() {
     rm -f "$pidfile"
   fi
 }
+
+doctor_line() {
+  local status="$1" name="$2" message="$3"
+  printf '[%s] %s: %s\n' "$status" "$name" "$message"
+}
+
+run_doctor() {
+  local backend token_groups release_urls picked asset_url bin model_path workstation_email
+  echo "Safe diagnostics only: no downloads, prompts or runtime services are started."
+  echo
+
+  doctor_line "OK" "Repository" "$ROOT_DIR"
+  [ -f "$PROXY_DIR/proxy.js" ] && doctor_line "OK" "proxy.js" "found" || doctor_line "WARN" "proxy.js" "missing local-ai-proxy/proxy.js"
+  [ -f "$PROXY_DIR/workstation-agent.js" ] && doctor_line "OK" "workstation-agent.js" "found" || doctor_line "WARN" "workstation-agent.js" "missing local-ai-proxy/workstation-agent.js"
+
+  if command -v node >/dev/null 2>&1; then
+    doctor_line "OK" "Node.js" "$(node --version 2>/dev/null) at $(command -v node)"
+  else
+    doctor_line "WARN" "Node.js" "not found; full runtime requires Node.js 18+"
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    doctor_line "OK" "curl" "$(command -v curl)"
+  else
+    doctor_line "WARN" "curl" "not found; binary/model downloads require curl"
+  fi
+
+  doctor_line "INFO" "Port 8080" "$(port_state 8080)"
+  doctor_line "INFO" "Port 3001" "$(port_state 3001)"
+
+  backend="$(detect_gpu "$(detect_os)" "$(detect_arch)")"
+  doctor_line "INFO" "Detected backend" "$backend"
+  if command -v curl >/dev/null 2>&1; then
+    token_groups="$(asset_token_groups "$(detect_os)" "$(detect_arch)" "$backend")"
+    release_urls="$(curl -fsSL "https://api.github.com/repos/ggerganov/llama.cpp/releases/latest" | extract_release_package_urls)" || release_urls=""
+    picked="$(pick_matching_url_from_groups "$release_urls" <<< "$token_groups")" || picked=""
+    asset_url="${picked%%|*}"
+    if [ -n "$asset_url" ]; then
+      doctor_line "OK" "llama.cpp asset" "$(basename "$asset_url")"
+    else
+      doctor_line "WARN" "llama.cpp asset" "no matching asset for current backend/fallbacks"
+    fi
+  fi
+
+  bin="$(llama_binary_path)"
+  if [ -f "$bin" ]; then
+    doctor_line "OK" "llama-server" "$bin"
+  else
+    doctor_line "INFO" "llama-server" "not downloaded yet; full start will download it"
+  fi
+
+  if [ -f "$CONFIG_FILE" ]; then
+    model_path="$(read_config_value modelPath)"
+    workstation_email="$(read_config_value workstationEmail)"
+    if [ -n "$model_path" ] && [ -f "$model_path" ]; then
+      doctor_line "OK" "config.json modelPath" "$model_path"
+    elif [ -n "$model_path" ]; then
+      doctor_line "WARN" "config.json modelPath" "configured path does not exist: $model_path"
+    else
+      doctor_line "INFO" "config.json modelPath" "missing; full start will ask for a GGUF model"
+    fi
+    if [ -n "$workstation_email" ]; then
+      doctor_line "OK" "workstation credentials" "email configured: $workstation_email"
+    else
+      doctor_line "INFO" "workstation credentials" "missing; full start will ask for Supabase workstation login"
+    fi
+  else
+    doctor_line "INFO" "config.json" "missing; full start will enter first-run configuration"
+  fi
+
+  echo
+  doctor_line "OK" "Doctor" "finished without starting services"
+}
+
+print_banner
+if [ "$DOCTOR_MODE" = "1" ]; then
+  run_doctor
+  exit 0
+fi
+
+check_base_requirements
+ensure_workspace_dirs
 trap cleanup EXIT INT TERM
 
 REUSE_LLAMA=0
