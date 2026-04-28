@@ -25,8 +25,10 @@ $DefaultSupabaseKey = 'sb_publishable_y0GUJCxdmltSN8qAtmSmAA_ovM9Dxrc'
 
 $ChangeModel = $false
 $AdvancedConfig = $false
+$ConfigMode = $false
 $ScheduleConfig = $false
 $NoPull = $false
+$UpdateNow = $false
 $ShowHelp = $false
 $DoctorMode = $false
 $TranscriptStarted = $false
@@ -35,8 +37,10 @@ foreach ($arg in $ScriptArgs) {
   switch -Regex ($arg) {
     '^--change-model$' { $ChangeModel = $true; break }
     '^--advanced$' { $AdvancedConfig = $true; $ScheduleConfig = $true; break }
+    '^--config$' { $ConfigMode = $true; $AdvancedConfig = $true; $ScheduleConfig = $true; break }
     '^--schedule$' { $ScheduleConfig = $true; break }
     '^--doctor$' { $DoctorMode = $true; break }
+    '^--update$' { $UpdateNow = $true; break }
     '^--reset$' { if (Test-Path $ConfigFile) { Remove-Item -LiteralPath $ConfigFile -Force }; Write-Host '[start] Removed config.json.'; break }
     '^--no-pull$' { $NoPull = $true; break }
     '^-h$|^--help$' { $ShowHelp = $true; break }
@@ -58,8 +62,10 @@ Usage:
 Flags:
   --change-model   ask for a GGUF model again
   --advanced       configure parallel slots, experimental SD and schedule
+  --config         open terminal workstation/runtime configuration
   --schedule       configure only runtime schedule
   --doctor         run safe diagnostics without downloads, prompts or services
+  --update         run safe git pull --ff-only before startup
   --reset          remove local-ai-proxy\config.json and ask again
   --no-pull        skip downloads, useful for offline tests
   --no-pause       consumed by start.bat wrapper
@@ -116,7 +122,12 @@ function Get-ConfigString([object] $Config, [string] $Name, [string] $Fallback =
 
 function Get-ConfigBool([object] $Config, [string] $Name, [bool] $Fallback = $false) {
   if ($null -eq $Config.PSObject.Properties[$Name] -or $null -eq $Config.$Name) { return $Fallback }
-  return [bool] $Config.$Name
+  $value = $Config.$Name
+  if ($value -is [bool]) { return $value }
+  $raw = ([string] $value).Trim().ToLowerInvariant()
+  if ($raw -in @('true', '1', 'yes', 'y', 'tak', 't')) { return $true }
+  if ($raw -in @('false', '0', 'no', 'n', 'nie', '')) { return $false }
+  return $Fallback
 }
 
 function Get-ConfigInt([object] $Config, [string] $Name, [int] $Fallback, [int] $Min, [int] $Max) {
@@ -124,6 +135,87 @@ function Get-ConfigInt([object] $Config, [string] $Name, [int] $Fallback, [int] 
   $parsed = 0
   if (-not [int]::TryParse([string] $Config.$Name, [ref] $parsed)) { return $Fallback }
   return [Math]::Max($Min, [Math]::Min($Max, $parsed))
+}
+
+function Convert-TokenCount([object] $Value, [int] $Fallback = 262144) {
+  if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string] $Value)) { return $Fallback }
+  $raw = ([string] $Value).Trim().ToLowerInvariant()
+  if ($raw -eq 'native' -or $raw -eq 'natywny') { return 0 }
+  $match = [regex]::Match($raw, '^(\d+)\s*k$')
+  if ($match.Success) { return [int] $match.Groups[1].Value * 1024 }
+  $parsed = 0
+  if ([int]::TryParse($raw, [ref] $parsed)) { return $parsed }
+  return $Fallback
+}
+
+function Get-NormalizedContextMode([object] $Value) {
+  $raw = ([string] $Value).Trim().ToLowerInvariant()
+  if ($raw -eq 'native' -or $raw -eq 'natywny' -or [string]::IsNullOrWhiteSpace($raw)) { return 'native' }
+  return 'extended'
+}
+
+function Get-NormalizedKvCache([object] $Value) {
+  $raw = ([string] $Value).Trim().ToLowerInvariant()
+  if ($raw -in @('auto', 'f16', 'q8_0', 'q4_0')) { return $raw }
+  return 'auto'
+}
+
+function Get-EffectiveContextSize([object] $Config) {
+  $mode = Get-NormalizedContextMode (Get-ConfigString $Config 'contextMode' 'native')
+  if ($mode -eq 'native') { return 0 }
+  $tokens = Convert-TokenCount (Get-ConfigString $Config 'contextSizeTokens' '262144') 262144
+  return [Math]::Max(1024, [Math]::Min(262144, $tokens))
+}
+
+function Get-EffectiveKvCache([object] $Config) {
+  $kv = Get-NormalizedKvCache (Get-ConfigString $Config 'kvCacheQuantization' 'auto')
+  if ($kv -ne 'auto') { return $kv }
+  if ((Get-EffectiveContextSize $Config) -gt 32768) { return 'q8_0' }
+  return 'f16'
+}
+
+function Invoke-SafeGitUpdate([string] $Reason) {
+  $git = Get-Command git -ErrorAction SilentlyContinue
+  if (-not $git) { Write-StartWarn "Update $Reason skipped: git is not available in PATH."; return }
+
+  & git -C $RootDir rev-parse --is-inside-work-tree > $null 2>&1
+  if ($LASTEXITCODE -ne 0) { Write-StartWarn "Update $Reason skipped: this folder is not a git repository."; return }
+
+  & git -C $RootDir diff --quiet --ignore-submodules --
+  $dirtyWorktree = $LASTEXITCODE -ne 0
+  & git -C $RootDir diff --cached --quiet --ignore-submodules --
+  $dirtyIndex = $LASTEXITCODE -ne 0
+  if ($dirtyWorktree -or $dirtyIndex) {
+    Write-StartWarn "Update $Reason skipped: local changes exist. Commit/stash them or run git pull manually."
+    return
+  }
+
+  $branch = (& git -C $RootDir rev-parse --abbrev-ref HEAD 2>$null | Select-Object -First 1)
+  if (-not $branch -or $branch -eq 'HEAD') { Write-StartWarn "Update $Reason skipped: repository is not on a normal branch."; return }
+
+  Write-StartLog "Checking launcher updates ($Reason)."
+  & git -C $RootDir fetch --quiet origin $branch
+  if ($LASTEXITCODE -ne 0) { Write-StartWarn "Could not fetch origin/$branch. Starting local version."; return }
+
+  $localHash = (& git -C $RootDir rev-parse HEAD).Trim()
+  $remoteRef = "origin/$branch"
+  $remoteHash = (& git -C $RootDir rev-parse $remoteRef 2>$null | Select-Object -First 1)
+  if (-not $remoteHash) { Write-StartWarn "Remote branch $remoteRef not found. Update skipped."; return }
+  $remoteHash = $remoteHash.Trim()
+  if ($localHash -eq $remoteHash) { Write-StartLog 'Launcher is up to date.'; return }
+
+  $mergeBase = (& git -C $RootDir merge-base HEAD $remoteRef 2>$null | Select-Object -First 1)
+  if (-not $mergeBase -or $mergeBase.Trim() -ne $localHash) {
+    Write-StartWarn "Update $Reason skipped: local history diverged from $remoteRef. Use git pull manually."
+    return
+  }
+
+  & git -C $RootDir pull --ff-only --quiet origin $branch
+  if ($LASTEXITCODE -eq 0) {
+    Write-StartLog "Repository updated to $remoteRef. This session continues; restart later to run the newest script body."
+  } else {
+    Write-StartWarn 'git pull --ff-only failed. Starting local version.'
+  }
 }
 
 function Sync-RuntimeConfig {
@@ -142,6 +234,14 @@ function Sync-RuntimeConfig {
     Set-ConfigValue $cfg 'draftModelName' ([IO.Path]::GetFileName((Get-ConfigString $cfg 'draftModelPath')))
   }
   Set-ConfigValue $cfg 'speculativeTokens' (Get-ConfigInt $cfg 'speculativeTokens' 4 1 16)
+  $contextMode = Get-NormalizedContextMode (Get-ConfigString $cfg 'contextMode' 'native')
+  Set-ConfigValue $cfg 'contextMode' $contextMode
+  $contextSize = if ($contextMode -eq 'native') { 0 } else { Get-EffectiveContextSize $cfg }
+  Set-ConfigValue $cfg 'contextSizeTokens' $contextSize
+  Set-ConfigValue $cfg 'kvCacheQuantization' (Get-NormalizedKvCache (Get-ConfigString $cfg 'kvCacheQuantization' 'auto'))
+  Set-ConfigValue $cfg 'effectiveContextSizeTokens' $contextSize
+  Set-ConfigValue $cfg 'effectiveKvCacheQuantization' (Get-EffectiveKvCache $cfg)
+  if ($null -eq $cfg.PSObject.Properties['autoUpdate']) { Set-ConfigValue $cfg 'autoUpdate' $false }
   Set-ConfigValue $cfg 'optimizationMode' ($(if (Get-ConfigBool $cfg 'sdEnabled') { 'sd-experimental' } elseif ((Get-ConfigInt $cfg 'parallelSlots' 1 1 4) -gt 1) { 'parallel' } else { 'standard' }))
   if ($null -eq $cfg.PSObject.Properties['acceptsJobs']) { Set-ConfigValue $cfg 'acceptsJobs' $true }
   if ($null -eq $cfg.PSObject.Properties['scheduleEnabled']) { Set-ConfigValue $cfg 'scheduleEnabled' $false }
@@ -504,7 +604,8 @@ function Configure-Advanced {
   Write-Host '=========================================================='
   Write-Host '  Advanced runtime options'
   Write-Host '=========================================================='
-  Write-Host '  Default: parallelSlots=1, SD disabled.'
+  Write-Host '  Default: parallelSlots=1, context=native, KV=auto, SD disabled.'
+  Write-Host '  Preset 256k is available, but may need a lot of RAM/VRAM.'
   Write-Host ''
 
   $answer = Prompt-WithDefault 'Configure Advanced now? (y/N)' 'N'
@@ -515,6 +616,26 @@ function Configure-Advanced {
   }
 
   $parallel = Prompt-WithDefault 'parallelSlots (1-4)' ([string] (Get-ConfigInt $cfg 'parallelSlots' 1 1 4))
+  $contextDefault = if ((Get-NormalizedContextMode (Get-ConfigString $cfg 'contextMode' 'native')) -eq 'native') { 'native' } else { [string] (Get-EffectiveContextSize $cfg) }
+  $contextChoice = Prompt-WithDefault 'Context: native, 32k, 64k, 128k, 256k or token count' $contextDefault
+  switch (($contextChoice.Trim()).ToLowerInvariant()) {
+    'native' { $contextMode = 'native'; $contextSize = 0; break }
+    'natywny' { $contextMode = 'native'; $contextSize = 0; break }
+    '32k' { $contextMode = 'extended'; $contextSize = 32768; break }
+    '32768' { $contextMode = 'extended'; $contextSize = 32768; break }
+    '64k' { $contextMode = 'extended'; $contextSize = 65536; break }
+    '65536' { $contextMode = 'extended'; $contextSize = 65536; break }
+    '128k' { $contextMode = 'extended'; $contextSize = 131072; break }
+    '131072' { $contextMode = 'extended'; $contextSize = 131072; break }
+    '256k' { $contextMode = 'extended'; $contextSize = 262144; break }
+    '262144' { $contextMode = 'extended'; $contextSize = 262144; break }
+    default { $contextMode = 'extended'; $contextSize = Convert-TokenCount $contextChoice 262144; break }
+  }
+  $contextSize = if ($contextMode -eq 'native') { 0 } else { [Math]::Max(1024, [Math]::Min(262144, $contextSize)) }
+  $kvCache = Get-NormalizedKvCache (Prompt-WithDefault 'KV cache compression (auto/f16/q8_0/q4_0)' (Get-ConfigString $cfg 'kvCacheQuantization' 'auto'))
+  $autoDefault = if (Get-ConfigBool $cfg 'autoUpdate' $false) { 'y' } else { 'N' }
+  $autoAnswer = Prompt-WithDefault 'Automatically update launcher on startup? (y/N)' $autoDefault
+  $autoUpdate = $autoAnswer.ToLowerInvariant() -in @('y', 'yes', 't', 'tak')
   $sdAnswer = Prompt-WithDefault 'Enable SD / speculative decoding? (y/N)' 'N'
   $sdEnabled = $sdAnswer.ToLowerInvariant() -in @('y', 'yes', 't', 'tak')
   $draftModelPath = ''
@@ -535,8 +656,14 @@ function Configure-Advanced {
   Set-ConfigValue $cfg 'draftModelPath' $draftModelPath
   Set-ConfigValue $cfg 'draftModelName' ($(if ($draftModelPath) { [IO.Path]::GetFileName($draftModelPath) } else { '' }))
   Set-ConfigValue $cfg 'speculativeTokens' (Get-ConfigInt ([pscustomobject]@{ speculativeTokens = $speculativeTokens }) 'speculativeTokens' 4 1 16)
+  Set-ConfigValue $cfg 'contextMode' $contextMode
+  Set-ConfigValue $cfg 'contextSizeTokens' $contextSize
+  Set-ConfigValue $cfg 'kvCacheQuantization' $kvCache
+  Set-ConfigValue $cfg 'autoUpdate' $autoUpdate
   Save-Config $cfg
   Sync-RuntimeConfig
+  $saved = Read-Config
+  Write-StartLog "Saved Advanced: parallelSlots=$(Get-ConfigInt $saved 'parallelSlots' 1 1 4), context=$(Get-ConfigString $saved 'contextMode' 'native')/$((Get-ConfigInt $saved 'effectiveContextSizeTokens' 0 0 262144)), KV=$(Get-ConfigString $saved 'effectiveKvCacheQuantization' 'f16'), SD=$(Get-ConfigBool $saved 'sdEnabled'), autoUpdate=$(Get-ConfigBool $saved 'autoUpdate')."
 }
 
 function Ensure-Config([string] $Backend) {
@@ -679,10 +806,29 @@ function Start-LoggedProcess([string] $Name, [string] $FilePath, [string[]] $Arg
 }
 
 function Start-Llama([string] $ModelPath, [string] $Backend) {
-  $args = @('--model', $ModelPath, '--host', '127.0.0.1', '--port', [string] $script:LlamaPort, '--ctx-size', '4096')
+  $cfg = Read-Config
+  $contextSize = Get-EffectiveContextSize $cfg
+  $args = @('--model', $ModelPath, '--host', '127.0.0.1', '--port', [string] $script:LlamaPort, '--ctx-size', [string] $contextSize)
+  if ($contextSize -eq 0) {
+    Write-StartLog 'Context: native (llama.cpp --ctx-size 0).'
+  } elseif ($contextSize -ge 131072) {
+    Write-StartWarn "Context $contextSize tokens may need a lot of RAM/VRAM. If startup fails, run start.bat --config and choose native."
+  } else {
+    Write-StartLog "Context: $contextSize tokens."
+  }
+
+  $kvEffective = Get-EffectiveKvCache $cfg
+  $kvRequested = Get-NormalizedKvCache (Get-ConfigString $cfg 'kvCacheQuantization' 'auto')
+  if ($kvEffective -ne 'f16') {
+    if ((Test-LlamaFlag '--cache-type-k') -and (Test-LlamaFlag '--cache-type-v')) {
+      $args += @('--cache-type-k', $kvEffective, '--cache-type-v', $kvEffective)
+      Write-StartLog "KV cache compression: $kvEffective (requested=$kvRequested)."
+    } else {
+      Write-StartWarn "config.json requests KV=$kvEffective, but llama-server does not advertise --cache-type-k/--cache-type-v. Starting without KV compression."
+    }
+  }
   if ($Backend -in @('cuda', 'vulkan')) { $args += @('--n-gpu-layers', '999') }
 
-  $cfg = Read-Config
   $parallel = Get-ConfigInt $cfg 'parallelSlots' 1 1 4
   if ($parallel -gt 1) {
     if (Test-LlamaFlag '--parallel') { $args += @('--parallel', [string] $parallel) }
@@ -740,12 +886,16 @@ function Stop-StartedProcesses {
 }
 
 function Wait-ManagedProcesses {
+  $cfg = Read-Config
   Write-Host ''
   Write-Host '============================================================'
   Write-Host '  Local AI runtime started.'
   Write-Host "  llama-server   http://127.0.0.1:$script:LlamaPort"
   Write-Host "  proxy          http://127.0.0.1:$script:ProxyPort"
   Write-Host "  logs           $LogsDir"
+  Write-Host "  context        $(Get-ConfigString $cfg 'contextMode' 'native') / $(Get-ConfigString $cfg 'effectiveContextSizeTokens' '0') tokens"
+  Write-Host "  KV cache       $(Get-ConfigString $cfg 'effectiveKvCacheQuantization' 'f16')"
+  Write-Host "  autoUpdate     $(Get-ConfigBool $cfg 'autoUpdate' $false)"
   Write-Host '  Press Ctrl+C to stop.'
   Write-Host '============================================================'
   Write-Host ''
@@ -864,6 +1014,8 @@ function Invoke-Doctor {
     } else {
       Write-DoctorResult 'INFO' 'workstation credentials' 'missing; full start will ask for Supabase workstation login'
     }
+    Write-DoctorResult 'INFO' 'context' "mode=$(Get-ConfigString $cfg 'contextMode' 'native'), tokens=$(Get-ConfigString $cfg 'contextSizeTokens' '0'), KV=$(Get-ConfigString $cfg 'kvCacheQuantization' 'auto')"
+    Write-DoctorResult 'INFO' 'autoUpdate' "$(Get-ConfigBool $cfg 'autoUpdate' $false)"
   } else {
     Write-DoctorResult 'INFO' 'config.json' 'missing; full start will enter first-run configuration'
   }
@@ -881,6 +1033,11 @@ try {
   Print-Banner
   Ensure-WorkspaceDirs
   Start-LauncherTranscript
+  if ($UpdateNow) {
+    Invoke-SafeGitUpdate '--update'
+  } elseif (Get-ConfigBool (Read-Config) 'autoUpdate' $false) {
+    Invoke-SafeGitUpdate 'autoUpdate'
+  }
   Assert-Command 'node' 'Install Node.js 18+: https://nodejs.org'
   Resolve-LlamaPort
   Resolve-ProxyPort

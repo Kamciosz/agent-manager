@@ -16,8 +16,10 @@
 #  Flagi:
 #    --change-model   wymusza ponowne pytanie o model
 #    --advanced       otwiera konfigurację opcji zaawansowanych
+#    --config         otwiera terminalową konfigurację stacji/runtime
 #    --schedule       otwiera konfigurację harmonogramu pracy runtime
 #    --doctor         uruchamia diagnostykę bez pobierania, promptów i usług
+#    --update         wykonuje bezpieczne git pull --ff-only przed startem
 #    --reset          usuwa config.json (i pyta od nowa)
 #    --no-pull        pomija pobieranie binary/modelu (do testów)
 # ============================================================================
@@ -40,15 +42,19 @@ DEFAULT_SUPABASE_KEY="sb_publishable_y0GUJCxdmltSN8qAtmSmAA_ovM9Dxrc"
 # --- Parsowanie flag --------------------------------------------------------
 CHANGE_MODEL=0
 ADVANCED_CONFIG=0
+CONFIG_MODE=0
 SCHEDULE_CONFIG=0
 DOCTOR_MODE=0
+UPDATE_NOW=0
 NO_PULL=0
 for arg in "$@"; do
   case "$arg" in
     --change-model) CHANGE_MODEL=1 ;;
     --advanced)     ADVANCED_CONFIG=1; SCHEDULE_CONFIG=1 ;;
+    --config)       CONFIG_MODE=1; ADVANCED_CONFIG=1; SCHEDULE_CONFIG=1 ;;
     --schedule)     SCHEDULE_CONFIG=1 ;;
     --doctor)       DOCTOR_MODE=1 ;;
+    --update)       UPDATE_NOW=1 ;;
     --reset)        rm -f "$CONFIG_FILE"; echo "[start] Usunięto config.json." ;;
     --no-pull)      NO_PULL=1 ;;
     -h|--help)
@@ -79,6 +85,58 @@ ensure_workspace_dirs() {
 check_base_requirements() {
   require_command curl "Zainstaluj curl i uruchom skrypt ponownie."
   require_command node "Zainstaluj Node.js 18+: https://nodejs.org"
+}
+
+run_safe_update() {
+  local reason="$1" branch local_hash remote_ref remote_hash merge_base
+  if ! command -v git >/dev/null 2>&1; then
+    warn "Aktualizacja $reason pominięta: git nie jest dostępny w PATH."
+    return 0
+  fi
+  if ! git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    warn "Aktualizacja $reason pominięta: katalog nie wygląda jak repo git."
+    return 0
+  fi
+  if ! git -C "$ROOT_DIR" diff --quiet --ignore-submodules -- || ! git -C "$ROOT_DIR" diff --cached --quiet --ignore-submodules --; then
+    warn "Aktualizacja $reason pominięta: są lokalne zmiany. Zrób commit/stash albo git pull ręcznie."
+    return 0
+  fi
+
+  branch="$(git -C "$ROOT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then
+    warn "Aktualizacja $reason pominięta: repo nie jest na normalnej gałęzi."
+    return 0
+  fi
+
+  log "Sprawdzam aktualizacje launchera ($reason)…"
+  if ! git -C "$ROOT_DIR" fetch --quiet origin "$branch"; then
+    warn "Nie udało się pobrać informacji o origin/$branch. Startuję z lokalną wersją."
+    return 0
+  fi
+
+  local_hash="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+  remote_ref="origin/$branch"
+  remote_hash="$(git -C "$ROOT_DIR" rev-parse "$remote_ref" 2>/dev/null || true)"
+  if [ -z "$remote_hash" ]; then
+    warn "Brak zdalnej gałęzi $remote_ref. Aktualizacja pominięta."
+    return 0
+  fi
+  if [ "$local_hash" = "$remote_hash" ]; then
+    log "Launcher jest aktualny."
+    return 0
+  fi
+
+  merge_base="$(git -C "$ROOT_DIR" merge-base HEAD "$remote_ref" 2>/dev/null || true)"
+  if [ "$merge_base" != "$local_hash" ]; then
+    warn "Aktualizacja $reason pominięta: lokalna historia różni się od $remote_ref. Użyj git pull ręcznie."
+    return 0
+  fi
+
+  if git -C "$ROOT_DIR" pull --ff-only --quiet origin "$branch"; then
+    log "Zaktualizowano repo do $remote_ref. Ta sesja działa dalej; pełny efekt będzie przy następnym starcie."
+  else
+    warn "git pull --ff-only nie powiódł się. Startuję z lokalną wersją."
+  fi
 }
 
 # --- Banner startowy --------------------------------------------------------
@@ -443,6 +501,14 @@ cfg.draftModelPath = typeof cfg.draftModelPath === 'string' ? cfg.draftModelPath
 cfg.draftModelName = typeof cfg.draftModelName === 'string' ? cfg.draftModelName : ''
 if (cfg.draftModelPath && !cfg.draftModelName) cfg.draftModelName = path.basename(cfg.draftModelPath)
 cfg.speculativeTokens = clampInt(cfg.speculativeTokens, 4, 1, 16)
+cfg.contextMode = normalizeContextMode(cfg.contextMode)
+cfg.contextSizeTokens = cfg.contextMode === 'native'
+  ? 0
+  : clampInt(parseTokenCount(cfg.contextSizeTokens, 262144), 262144, 1024, 262144)
+cfg.kvCacheQuantization = normalizeKvCache(cfg.kvCacheQuantization)
+cfg.effectiveContextSizeTokens = cfg.contextMode === 'native' ? 0 : cfg.contextSizeTokens
+cfg.effectiveKvCacheQuantization = resolveKvCache(cfg.kvCacheQuantization, cfg.effectiveContextSizeTokens)
+cfg.autoUpdate = cfg.autoUpdate === true
 cfg.optimizationMode = cfg.sdEnabled ? 'sd-experimental' : (cfg.parallelSlots > 1 ? 'parallel' : 'standard')
 if (typeof cfg.acceptsJobs !== 'boolean') cfg.acceptsJobs = true
 if (typeof cfg.scheduleEnabled !== 'boolean') cfg.scheduleEnabled = false
@@ -458,16 +524,45 @@ function clampInt(value, fallback, min, max) {
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(max, parsed))
 }
+
+function parseTokenCount(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback
+  const raw = String(value).trim().toLowerCase()
+  if (raw === 'native') return 0
+  const shortMatch = raw.match(/^(\d+)\s*k$/)
+  if (shortMatch) return Number.parseInt(shortMatch[1], 10) * 1024
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function normalizeContextMode(value) {
+  return String(value || 'native').trim().toLowerCase() === 'native' ? 'native' : 'extended'
+}
+
+function normalizeKvCache(value) {
+  const raw = String(value || 'auto').trim().toLowerCase()
+  return ['auto', 'f16', 'q8_0', 'q4_0'].includes(raw) ? raw : 'auto'
+}
+
+function resolveKvCache(value, contextSizeTokens) {
+  const normalized = normalizeKvCache(value)
+  if (normalized !== 'auto') return normalized
+  return Number(contextSizeTokens) > 32768 ? 'q8_0' : 'f16'
+}
 NODE
 }
 
 write_advanced_config() {
-  local parallel_slots="$1" sd_enabled="$2" draft_model_path="$3" speculative_tokens="$4"
+  local parallel_slots="$1" sd_enabled="$2" draft_model_path="$3" speculative_tokens="$4" context_mode_input="$5" context_size_input="$6" kv_cache="$7" auto_update="$8"
   CONFIG_FILE_ENV="$CONFIG_FILE" \
   PARALLEL_SLOTS_VALUE="$parallel_slots" \
   SD_ENABLED_VALUE="$sd_enabled" \
   DRAFT_MODEL_PATH_VALUE="$draft_model_path" \
   SPECULATIVE_TOKENS_VALUE="$speculative_tokens" \
+  CONTEXT_MODE_VALUE="$context_mode_input" \
+  CONTEXT_SIZE_VALUE="$context_size_input" \
+  KV_CACHE_VALUE="$kv_cache" \
+  AUTO_UPDATE_VALUE="$auto_update" \
   node <<'NODE'
 const fs = require('node:fs')
 const path = require('node:path')
@@ -483,6 +578,14 @@ cfg.sdEnabled = process.env.SD_ENABLED_VALUE === 'true'
 cfg.draftModelPath = cfg.sdEnabled ? (process.env.DRAFT_MODEL_PATH_VALUE || '') : ''
 cfg.draftModelName = cfg.draftModelPath ? path.basename(cfg.draftModelPath) : ''
 cfg.speculativeTokens = clampInt(process.env.SPECULATIVE_TOKENS_VALUE, 4, 1, 16)
+cfg.contextMode = normalizeContextMode(process.env.CONTEXT_MODE_VALUE)
+cfg.contextSizeTokens = cfg.contextMode === 'native'
+  ? 0
+  : clampInt(parseTokenCount(process.env.CONTEXT_SIZE_VALUE, 262144), 262144, 1024, 262144)
+cfg.kvCacheQuantization = normalizeKvCache(process.env.KV_CACHE_VALUE)
+cfg.effectiveContextSizeTokens = cfg.contextMode === 'native' ? 0 : cfg.contextSizeTokens
+cfg.effectiveKvCacheQuantization = resolveKvCache(cfg.kvCacheQuantization, cfg.effectiveContextSizeTokens)
+cfg.autoUpdate = process.env.AUTO_UPDATE_VALUE === 'true'
 cfg.optimizationMode = cfg.sdEnabled ? 'sd-experimental' : (cfg.parallelSlots > 1 ? 'parallel' : 'standard')
 fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
 
@@ -491,17 +594,44 @@ function clampInt(value, fallback, min, max) {
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(max, parsed))
 }
+
+function parseTokenCount(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback
+  const raw = String(value).trim().toLowerCase()
+  if (raw === 'native') return 0
+  const shortMatch = raw.match(/^(\d+)\s*k$/)
+  if (shortMatch) return Number.parseInt(shortMatch[1], 10) * 1024
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function normalizeContextMode(value) {
+  const raw = String(value || 'native').trim().toLowerCase()
+  return raw === 'native' ? 'native' : 'extended'
+}
+
+function normalizeKvCache(value) {
+  const raw = String(value || 'auto').trim().toLowerCase()
+  return ['auto', 'f16', 'q8_0', 'q4_0'].includes(raw) ? raw : 'auto'
+}
+
+function resolveKvCache(value, contextSizeTokens) {
+  const normalized = normalizeKvCache(value)
+  if (normalized !== 'auto') return normalized
+  return Number(contextSizeTokens) > 32768 ? 'q8_0' : 'f16'
+}
 NODE
 }
 
 configure_advanced_options() {
-  local answer parallel_slots sd_answer sd_enabled draft_model_path speculative_tokens
+  local answer parallel_slots context_default context_choice context_mode context_size kv_cache auto_update_answer auto_update sd_answer sd_enabled draft_model_path speculative_tokens
 
   echo
   echo "=========================================================="
   echo "  Advanced — opcje wydajności lokalnej stacji"
   echo "=========================================================="
-  echo "  Domyślnie: parallelSlots=1, SD wyłączone."
+  echo "  Domyślnie: parallelSlots=1, kontekst=native, KV=auto, SD=off."
+  echo "  Preset 256k jest dostępny, ale może wymagać dużo RAM/VRAM."
   echo "  Zwiększaj sloty tylko gdy masz zapas RAM/VRAM."
   echo "  SD jest eksperymentalne i wymaga osobnego mniejszego modelu GGUF."
   echo
@@ -511,12 +641,32 @@ configure_advanced_options() {
     y|yes|t|tak) ;;
     *)
       sync_runtime_config_json
-      log "Advanced pozostaje przy domyślnych wartościach: parallelSlots=$(read_config_json_value parallelSlots 1), SD=off."
+      log "Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), context=$(read_config_json_value contextMode native), KV=$(read_config_json_value kvCacheQuantization auto), SD=$(read_config_json_value sdEnabled false)."
       return
       ;;
   esac
 
   parallel_slots="$(prompt_with_default "parallelSlots — ile jobów stacja może robić naraz (1-4)" "$(read_config_json_value parallelSlots 1)")"
+  if [ "$(read_config_json_value contextMode native)" = "native" ]; then
+    context_default="native"
+  else
+    context_default="$(read_config_json_value contextSizeTokens 262144)"
+  fi
+  context_choice="$(prompt_with_default "Kontekst modelu: native, 32k, 64k, 128k, 256k albo liczba tokenów" "$context_default")"
+  case "$(printf '%s' "$context_choice" | tr '[:upper:]' '[:lower:]')" in
+    native|natywny) context_mode="native"; context_size="0" ;;
+    32k|32768) context_mode="extended"; context_size="32768" ;;
+    64k|65536) context_mode="extended"; context_size="65536" ;;
+    128k|131072) context_mode="extended"; context_size="131072" ;;
+    256k|262144) context_mode="extended"; context_size="262144" ;;
+    *) context_mode="extended"; context_size="$context_choice" ;;
+  esac
+  kv_cache="$(prompt_with_default "Kompresja KV cache: auto, f16, q8_0 albo q4_0" "$(read_config_json_value kvCacheQuantization auto)")"
+  auto_update_answer="$(prompt_with_default "Automatycznie aktualizować launcher przy starcie? (y/N)" "$(if [ "$(read_config_json_value autoUpdate false)" = "true" ]; then echo y; else echo N; fi)")"
+  case "$(printf '%s' "$auto_update_answer" | tr '[:upper:]' '[:lower:]')" in
+    y|yes|t|tak) auto_update="true" ;;
+    *) auto_update="false" ;;
+  esac
   sd_answer="$(prompt_with_default "Włączyć SD / speculative decoding? (y/N)" "N")"
   case "$(printf '%s' "$sd_answer" | tr '[:upper:]' '[:lower:]')" in
     y|yes|t|tak) sd_enabled="true" ;;
@@ -538,9 +688,9 @@ configure_advanced_options() {
     fi
   fi
 
-  write_advanced_config "$parallel_slots" "$sd_enabled" "$draft_model_path" "$speculative_tokens"
+  write_advanced_config "$parallel_slots" "$sd_enabled" "$draft_model_path" "$speculative_tokens" "$context_mode" "$context_size" "$kv_cache" "$auto_update"
   sync_runtime_config_json
-  log "Zapisano Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), SD=$(read_config_json_value sdEnabled false)."
+  log "Zapisano Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), context=$(read_config_json_value contextMode native)/$(read_config_json_value effectiveContextSizeTokens 0), KV=$(read_config_json_value effectiveKvCacheQuantization f16), SD=$(read_config_json_value sdEnabled false), autoUpdate=$(read_config_json_value autoUpdate false)."
 }
 
 write_schedule_config() {
@@ -759,6 +909,22 @@ read_config_value() {
     | head -n1 | sed -E "s/.*:[[:space:]]*\"([^\"]*)\"/\1/" || true
 }
 
+read_config_scalar_value() {
+  local key="$1" default_value="${2:-}" raw
+  raw="$(grep -Eo "\"$key\"[[:space:]]*:[[:space:]]*(\"[^\"]*\"|[0-9]+|true|false|null)" "$CONFIG_FILE" 2>/dev/null | head -n1 || true)"
+  if [ -z "$raw" ]; then
+    printf '%s\n' "$default_value"
+    return
+  fi
+  raw="${raw#*:}"
+  raw="$(printf '%s' "$raw" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//')"
+  if [ "$raw" = "null" ] || [ -z "$raw" ]; then
+    printf '%s\n' "$default_value"
+  else
+    printf '%s\n' "$raw"
+  fi
+}
+
 read_config_json_value() {
   local key="$1" default_value="${2:-}"
   CONFIG_FILE_ENV="$CONFIG_FILE" \
@@ -967,7 +1133,31 @@ start_llama() {
   local bin
   bin="$(llama_binary_path)"
   local extra_args=()
-  local parallel_slots sd_enabled draft_model_path speculative_tokens
+  local parallel_slots sd_enabled draft_model_path speculative_tokens context_size kv_requested kv_effective
+
+  context_size="$(read_config_json_value effectiveContextSizeTokens 0)"
+  if ! [[ "$context_size" =~ ^[0-9]+$ ]]; then context_size=0; fi
+  if [ "$context_size" -gt 262144 ]; then context_size=262144; fi
+  extra_args+=( --ctx-size "$context_size" )
+  if [ "$context_size" = "0" ]; then
+    log "Kontekst modelu: native (llama.cpp --ctx-size 0)."
+  elif [ "$context_size" -ge 131072 ]; then
+    warn "Kontekst ${context_size} tokenów może wymagać bardzo dużo RAM/VRAM. Jeśli start będzie wolny albo padnie, wróć do native przez ./start.sh --config."
+  else
+    log "Kontekst modelu: ${context_size} tokenów."
+  fi
+
+  kv_requested="$(read_config_json_value kvCacheQuantization auto)"
+  kv_effective="$(read_config_json_value effectiveKvCacheQuantization f16)"
+  case "$kv_effective" in f16|q8_0|q4_0) ;; *) kv_effective="f16" ;; esac
+  if [ "$kv_effective" != "f16" ]; then
+    if llama_supports_flag "$bin" "--cache-type-k" && llama_supports_flag "$bin" "--cache-type-v"; then
+      extra_args+=( --cache-type-k "$kv_effective" --cache-type-v "$kv_effective" )
+      log "KV cache compression: $kv_effective (requested=$kv_requested)."
+    else
+      warn "config.json chce KV=$kv_effective, ale ten llama-server nie pokazuje --cache-type-k/--cache-type-v. Startuję bez kompresji KV."
+    fi
+  fi
 
   # Heurystyka: pełny GPU offload na akceleratorach, CPU dla fallbacku
   case "$gpu" in
@@ -1006,7 +1196,6 @@ start_llama() {
     --model "$model_path" \
     --host 127.0.0.1 \
     --port "$LLAMA_PORT" \
-    --ctx-size 4096 \
     "${extra_args[@]}" \
     >"$LOGS_DIR/llama-server.log" 2>&1 &
   echo $! > "$LOGS_DIR/llama.pid"
@@ -1158,6 +1347,8 @@ run_doctor() {
     else
       doctor_line "INFO" "workstation credentials" "missing; full start will ask for Supabase workstation login"
     fi
+    doctor_line "INFO" "context" "mode=$(read_config_scalar_value contextMode native), tokens=$(read_config_scalar_value contextSizeTokens 0), KV=$(read_config_scalar_value kvCacheQuantization auto)"
+    doctor_line "INFO" "autoUpdate" "$(read_config_scalar_value autoUpdate false)"
   else
     doctor_line "INFO" "config.json" "missing; full start will enter first-run configuration"
   fi
@@ -1172,6 +1363,11 @@ if [ "$DOCTOR_MODE" = "1" ]; then
   exit 0
 fi
 
+if [ "$UPDATE_NOW" = "1" ]; then
+  run_safe_update "--update"
+elif [ "$(read_config_scalar_value autoUpdate false)" = "true" ]; then
+  run_safe_update "autoUpdate"
+fi
 check_base_requirements
 ensure_workspace_dirs
 trap cleanup EXIT INT TERM
@@ -1225,7 +1421,10 @@ cat <<EOF
   model          $(basename "$MODEL_PATH")
   backend        $GPU_DETECTED
   parallelSlots  $(read_config_json_value parallelSlots 1)
+  context        $(read_config_json_value contextMode native) / $(read_config_json_value effectiveContextSizeTokens 0) tokens
+  KV cache       $(read_config_json_value effectiveKvCacheQuantization f16)
   SD             $(read_config_json_value sdEnabled false)
+  autoUpdate     $(read_config_json_value autoUpdate false)
 
   Otwórz aplikację (GitHub Pages lub ui/index.html) — frontend
   automatycznie wykryje proxy i przełączy się w tryb AI.

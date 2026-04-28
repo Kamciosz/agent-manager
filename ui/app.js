@@ -595,6 +595,7 @@ function workstationAdvancedSummary(workstation) {
   return `
     <div class="space-y-1">
       <div class="font-mono text-xs text-slate-700">${active}/${slots} slotów</div>
+      <div class="text-xs text-slate-500">${escapeHtml(workstationContextLabel(workstation))} · KV ${escapeHtml(workstationKvCacheLabel(workstation))}</div>
       <div class="text-xs text-slate-500">${escapeHtml(sdLabel)}</div>
     </div>
   `
@@ -611,12 +612,14 @@ function renderAdvancedRuntimePanel(workstations) {
   const active = workstations.filter((workstation) => workstation.status === 'online' || workstation.status === 'busy')
   const totalSlots = active.reduce((sum, workstation) => sum + workstationParallelSlots(workstation), 0)
   const sdCount = active.filter(workstationSdEnabled).length
+  const longContextCount = active.filter((workstation) => workstationContextTokens(workstation) >= 65536).length
   setText('advanced-active-workstations', active.length)
   setText('advanced-total-slots', totalSlots)
   setText('advanced-sd-state', sdCount ? `${sdCount} on` : 'off')
+  setText('advanced-context-state', longContextCount ? `${longContextCount} long` : 'native')
 
   if (!workstations.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>'
     return
   }
 
@@ -626,6 +629,8 @@ function renderAdvancedRuntimePanel(workstations) {
       <tr class="hover:bg-slate-50">
         <td class="px-6 py-3 font-medium">${escapeHtml(workstation.display_name || workstation.hostname || 'Stacja')}</td>
         <td class="px-6 py-3 font-mono text-xs text-slate-700">${workstationActiveJobs(workstation)}/${workstationParallelSlots(workstation)}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(workstationContextLabel(workstation))}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(workstationKvCacheLabel(workstation))}</td>
         <td class="px-6 py-3">${workstationSdEnabled(workstation) ? 'on' : 'off'}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(metadata.optimizationMode || 'standard')}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(metadata.draftModelName || '—')}</td>
@@ -663,6 +668,39 @@ function workstationActiveJobs(workstation) {
  */
 function workstationSdEnabled(workstation) {
   return workstation.metadata?.sdEnabled === true
+}
+
+/**
+ * Zwraca liczbę tokenów kontekstu zgłoszoną przez stację.
+ * @param {Object} workstation
+ * @returns {number}
+ */
+function workstationContextTokens(workstation) {
+  const value = Number(workstation.metadata?.effectiveContextSizeTokens ?? workstation.metadata?.contextSizeTokens ?? 0)
+  if (!Number.isFinite(value)) return 0
+  return Math.max(0, value)
+}
+
+/**
+ * Format etykiety kontekstu stacji.
+ * @param {Object} workstation
+ * @returns {string}
+ */
+function workstationContextLabel(workstation) {
+  const mode = workstation.metadata?.contextMode || 'native'
+  const tokens = workstationContextTokens(workstation)
+  if (mode === 'native' || tokens === 0) return 'native ctx'
+  if (tokens % 1024 === 0) return `${tokens / 1024}k ctx`
+  return `${tokens} ctx`
+}
+
+/**
+ * Format etykiety KV cache stacji.
+ * @param {Object} workstation
+ * @returns {string}
+ */
+function workstationKvCacheLabel(workstation) {
+  return workstation.metadata?.effectiveKvCacheQuantization || workstation.metadata?.kvCacheQuantization || 'auto'
 }
 
 // ============================================================================
@@ -793,7 +831,7 @@ function renderMonitorWorkstations(workstations) {
           <div class="font-medium text-slate-900 truncate">${escapeHtml(workstation.display_name || workstation.hostname || 'Stacja')}</div>
           ${workstationStatusBadge(workstation.status)}
         </div>
-        <div class="text-xs text-slate-500 mt-1">Sloty: ${workstationActiveJobs(workstation)}/${workstationParallelSlots(workstation)} · ${escapeHtml(staleText)}</div>
+        <div class="text-xs text-slate-500 mt-1">Sloty: ${workstationActiveJobs(workstation)}/${workstationParallelSlots(workstation)} · ${escapeHtml(workstationContextLabel(workstation))} · ${escapeHtml(staleText)}</div>
       </div>
     `
   }).join('')
@@ -964,7 +1002,7 @@ function renderTaskWorkstationAdvancedInfo(workstation) {
   const slots = workstationParallelSlots(workstation)
   const sd = workstationSdEnabled(workstation) ? 'włączone' : 'wyłączone'
   element.classList.remove('hidden')
-  element.textContent = `Zaawansowane: ${active}/${slots} slotów zajętych, SD ${sd}. Wyższe parallelSlots zwiększa obciążenie RAM/VRAM tej stacji.`
+  element.textContent = `Zaawansowane: ${active}/${slots} slotów zajętych, kontekst ${workstationContextLabel(workstation)}, KV ${workstationKvCacheLabel(workstation)}, SD ${sd}. Wyższe parallelSlots i długi kontekst zwiększają obciążenie RAM/VRAM tej stacji.`
 }
 
 /**

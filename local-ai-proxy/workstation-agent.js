@@ -36,6 +36,9 @@ function log(...args) {
 function loadConfig() {
   const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
   const schedule = normalizeSchedule(raw)
+  const contextMode = normalizeContextMode(raw.contextMode)
+  const contextSizeTokens = contextMode === 'native' ? 0 : clampInt(raw.contextSizeTokens, 262144, 1024, 262144)
+  const kvCacheQuantization = normalizeKvCache(raw.kvCacheQuantization)
   if (raw.scheduleEnabled === true && !schedule.valid) {
     log('Niepoprawny harmonogram w config.json - wylaczam schedule dla tej sesji.', raw.scheduleStart, raw.scheduleEnd)
   }
@@ -61,6 +64,11 @@ function loadConfig() {
     sdEnabled: raw.sdEnabled === true,
     draftModelName: raw.draftModelName || '',
     speculativeTokens: clampInt(raw.speculativeTokens, 4, 1, 16),
+    contextMode,
+    contextSizeTokens,
+    kvCacheQuantization,
+    effectiveKvCacheQuantization: normalizeKvCache(raw.effectiveKvCacheQuantization || resolveKvCache(kvCacheQuantization, contextSizeTokens)),
+    autoUpdate: raw.autoUpdate === true,
     optimizationMode: raw.optimizationMode || 'standard',
   }
 }
@@ -69,6 +77,21 @@ function clampInt(value, fallback, min, max) {
   const parsed = Number.parseInt(value, 10)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(max, parsed))
+}
+
+function normalizeContextMode(value) {
+  return String(value || 'native').trim().toLowerCase() === 'native' ? 'native' : 'extended'
+}
+
+function normalizeKvCache(value) {
+  const raw = String(value || 'auto').trim().toLowerCase()
+  return ['auto', 'f16', 'q8_0', 'q4_0'].includes(raw) ? raw : 'auto'
+}
+
+function resolveKvCache(value, contextSizeTokens) {
+  const normalized = normalizeKvCache(value)
+  if (normalized !== 'auto') return normalized
+  return Number(contextSizeTokens) > 32768 ? 'q8_0' : 'f16'
 }
 
 function ensureRequiredConfig(cfg) {
@@ -267,6 +290,11 @@ function workstationPayload(cfg, userId, statusOverride) {
       sdEnabled: cfg.sdEnabled,
       draftModelName: cfg.draftModelName || null,
       speculativeTokens: cfg.speculativeTokens,
+      contextMode: cfg.contextMode,
+      contextSizeTokens: cfg.contextSizeTokens,
+      kvCacheQuantization: cfg.kvCacheQuantization,
+      effectiveKvCacheQuantization: cfg.effectiveKvCacheQuantization,
+      autoUpdate: cfg.autoUpdate,
       optimizationMode: cfg.optimizationMode,
       scheduleOutsideAction: cfg.scheduleOutsideAction,
       scheduleEndAction: cfg.scheduleEndAction,

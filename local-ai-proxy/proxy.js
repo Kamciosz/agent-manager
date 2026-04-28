@@ -44,7 +44,7 @@ const CORS_HEADERS = {
 
 /**
  * Wczytuje config.json. Brak pliku = pusty obiekt z domyślnymi wartościami.
- * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, optimizationMode:string }}
+ * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, contextMode:string, contextSizeTokens:number, kvCacheQuantization:string, effectiveKvCacheQuantization:string, autoUpdate:boolean, optimizationMode:string }}
  */
 function loadConfig() {
   let cfg = {}
@@ -55,6 +55,9 @@ function loadConfig() {
   } catch (error) {
     console.error('[proxy] Nie udało się wczytać config.json:', error.message)
   }
+  const contextMode = normalizeContextMode(cfg.contextMode)
+  const contextSizeTokens = contextMode === 'native' ? 0 : clampInt(cfg.contextSizeTokens, 262144, 1024, 262144)
+  const kvCacheQuantization = normalizeKvCache(cfg.kvCacheQuantization)
   return {
     proxyPort: Number(cfg.proxyPort) || DEFAULTS.PROXY_PORT,
     llamaUrl: cfg.llamaUrl || DEFAULTS.LLAMA_URL,
@@ -64,6 +67,11 @@ function loadConfig() {
     sdEnabled: cfg.sdEnabled === true,
     draftModelName: cfg.draftModelName || '',
     speculativeTokens: clampInt(cfg.speculativeTokens, 4, 1, 16),
+    contextMode,
+    contextSizeTokens,
+    kvCacheQuantization,
+    effectiveKvCacheQuantization: normalizeKvCache(cfg.effectiveKvCacheQuantization || resolveKvCache(kvCacheQuantization, contextSizeTokens)),
+    autoUpdate: cfg.autoUpdate === true,
     optimizationMode: cfg.optimizationMode || 'standard',
   }
 }
@@ -80,6 +88,37 @@ function clampInt(value, fallback, min, max) {
   const parsed = Number.parseInt(value, 10)
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(max, parsed))
+}
+
+/**
+ * Normalizuje tryb kontekstu modelu.
+ * @param {unknown} value
+ * @returns {'native'|'extended'}
+ */
+function normalizeContextMode(value) {
+  return String(value || 'native').trim().toLowerCase() === 'native' ? 'native' : 'extended'
+}
+
+/**
+ * Normalizuje kompresję KV cache do wartości obsługiwanych przez launcher.
+ * @param {unknown} value
+ * @returns {'auto'|'f16'|'q8_0'|'q4_0'}
+ */
+function normalizeKvCache(value) {
+  const raw = String(value || 'auto').trim().toLowerCase()
+  return ['auto', 'f16', 'q8_0', 'q4_0'].includes(raw) ? raw : 'auto'
+}
+
+/**
+ * Wylicza efektywną kompresję KV cache dla trybu auto.
+ * @param {unknown} value
+ * @param {unknown} contextSizeTokens
+ * @returns {'f16'|'q8_0'|'q4_0'}
+ */
+function resolveKvCache(value, contextSizeTokens) {
+  const normalized = normalizeKvCache(value)
+  if (normalized !== 'auto') return normalized
+  return Number(contextSizeTokens) > 32768 ? 'q8_0' : 'f16'
 }
 
 // ============================================================================
@@ -213,6 +252,11 @@ async function handleHealth(cfg, res) {
       sdEnabled: cfg.sdEnabled,
       draftModelName: cfg.draftModelName,
       speculativeTokens: cfg.speculativeTokens,
+      contextMode: cfg.contextMode,
+      contextSizeTokens: cfg.contextSizeTokens,
+      kvCacheQuantization: cfg.kvCacheQuantization,
+      effectiveKvCacheQuantization: cfg.effectiveKvCacheQuantization,
+      autoUpdate: cfg.autoUpdate,
       optimizationMode: cfg.optimizationMode,
     },
   })

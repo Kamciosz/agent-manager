@@ -169,7 +169,7 @@ Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) działają w trybie przegl
 | Proxy HTTP | `local-ai-proxy/proxy.js` | Endpoints `GET /health`, `POST /generate`. CORS `*`. Bind `127.0.0.1`. |
 | `llama-server` | binary z [llama.cpp Releases](https://github.com/ggerganov/llama.cpp/releases) | Wnioskowanie GGUF z akceleracją GPU. |
 | Launchery | `start.sh`, `start.bat` | Detekcja OS / arch / GPU, pobranie binary, dialog o model, start `llama-server`, proxy i agenta stacji, cleanup. |
-| Konfiguracja | `local-ai-proxy/config.json` | Ścieżka modelu, porty, backend, `parallelSlots`, SD (gitignored). |
+| Konfiguracja | `local-ai-proxy/config.json` | Ścieżka modelu, porty, backend, `parallelSlots`, kontekst, KV cache, SD, auto-update (gitignored). |
 
 ### Decyzje projektowe
 
@@ -177,7 +177,7 @@ Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) działają w trybie przegl
 - **Zero zależności w proxy** — tylko `node:http`, `node:fs`, `node:path`. Nie wymaga `npm install`, działa na każdej instalacji Node 18+.
 - **Tryb przeglądarkowy to nie błąd** — gdy proxy padnie, UI dalej działa jako panel online. Przejście między lokalnym AI a trybem przeglądarkowym jest płynne i widoczne w badge.
 - **Model wybiera użytkownik raz** — pierwsze uruchomienie pyta o URL HF lub ścieżkę. Kolejne starty są ciche; `--change-model` resetuje.
-- **Advanced jest opt-in** — `parallelSlots` domyślnie wynosi `1`, a SD jest domyślnie wyłączone (`sdEnabled=false`).
+- **Advanced jest opt-in** — `parallelSlots` domyślnie wynosi `1`, kontekst jest natywny (`--ctx-size 0`), KV cache działa w trybie `auto`, a SD jest domyślnie wyłączone (`sdEnabled=false`).
 - **Tylko lokalnie** — proxy nasłuchuje wyłącznie na `127.0.0.1`, nie jest udostępniane w sieci.
 
 ## Wspólne stacje robocze (MVP)
@@ -218,6 +218,8 @@ Szkolny komputer
 - Jeśli zadanie nie ma wskazanej stacji, AI kierownik wybiera aktywną stację z wolnym slotem. Przy jednej aktywnej stacji pełni ona rolę wykonawcy.
 - Jeśli żadna stacja nie ma wolnego slotu albo zapis jobu się nie uda, przeglądarkowy executor przejmuje rolę pracownika fallbackowego.
 - `parallelSlots` określa, ile jobów lokalny `workstation-agent.js` może próbować obsłużyć naraz. Domyślnie `1`, zakres `1-4`.
+- Kontekst modelu jest ustawieniem lokalnym stacji. Domyślnie launcher używa natywnego kontekstu GGUF; presety do `256k` są dostępne przez terminalowy `--config` i raportowane w metadata stacji.
+- KV cache może być `auto`, `f16`, `q8_0` albo `q4_0`; `auto` wybiera `q8_0` dla długiego kontekstu, jeśli lokalny `llama-server` obsługuje flagi cache type.
 - SD / speculative decoding jest eksperymentalne i domyślnie wyłączone. Launcher przekazuje flagi draft modelu tylko wtedy, gdy lokalny `llama-server --help` pokazuje kompatybilne opcje.
 
 ### Ważne ograniczenia

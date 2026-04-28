@@ -92,7 +92,7 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 - Tabela: Nazwa | Platforma | Model | Status | Advanced | Ostatnio widziana | Akcje.
 - Główna akcja w wierszu: `Wyślij wiadomość`.
 - Widok ma charakter operacyjny: pokazuje komputery uruchomione przez `start.command` / `start.sh`, a nie ręcznie tworzone rekordy.
-- Kolumna `Advanced` pokazuje `activeJobs/parallelSlots` oraz stan SD.
+- Kolumna `Advanced` pokazuje `activeJobs/parallelSlots`, kontekst, KV cache oraz stan SD.
 
 ### 10. Monitor
 
@@ -103,10 +103,12 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 
 ### 11. Advanced runtime
 
-- Widok `Advanced` pokazuje `parallelSlots`, aktywne joby, SD, tryb optymalizacji i draft model raportowane przez stacje.
+- Widok `Advanced` pokazuje `parallelSlots`, aktywne joby, kontekst, KV cache, SD, tryb optymalizacji i draft model raportowane przez stacje.
 - `parallelSlots` jest ustawieniem lokalnego runtime; domyślnie `1`, zakres `1-4`.
+- Kontekst jest ustawieniem lokalnego runtime; domyślnie `native`, opcjonalnie presety do `256k`.
+- KV cache ma tryby `auto`, `f16`, `q8_0`, `q4_0`; `auto` wybiera kompresję dopiero przy długim kontekście.
 - SD jest domyślnie wyłączone i opisane jako eksperymentalne; wymaga draft modelu oraz kompatybilnego `llama-server`.
-- Frontend tylko pokazuje te ustawienia. Zapis odbywa się lokalnie przez `start.sh --advanced`, `start.bat --advanced` albo domyślne wartości w launcherze.
+- Frontend tylko pokazuje te ustawienia. Zapis odbywa się lokalnie przez `start.sh --config`, `start.bat --config`, `--advanced` albo domyślne wartości w launcherze.
 
 ### 12. Wiadomość do stacji
 

@@ -177,7 +177,7 @@
         <!-- ========== DASHBOARD VIEW ========== -->
         <section id="view-dashboard" class="view-section">
           <!-- Karty statystyk -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#64748b">
               <div class="text-sm text-slate-500 font-medium">Oczekujące</div>
               <div id="stat-pending" class="text-3xl font-bold text-slate-900 mt-2">0</div>
@@ -437,6 +437,10 @@
               <div class="text-sm text-slate-500 font-medium">SD</div>
               <div id="advanced-sd-state" class="text-3xl font-bold text-slate-900 mt-2">off</div>
             </div>
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#0f766e">
+              <div class="text-sm text-slate-500 font-medium">Kontekst</div>
+              <div id="advanced-context-state" class="text-3xl font-bold text-slate-900 mt-2">native</div>
+            </div>
           </div>
 
           <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -451,13 +455,15 @@
                     <tr>
                       <th class="px-6 py-3 font-medium">Stacja</th>
                       <th class="px-6 py-3 font-medium">Sloty</th>
+                      <th class="px-6 py-3 font-medium">Kontekst</th>
+                      <th class="px-6 py-3 font-medium">KV cache</th>
                       <th class="px-6 py-3 font-medium">SD</th>
                       <th class="px-6 py-3 font-medium">Tryb</th>
                       <th class="px-6 py-3 font-medium">Model draft</th>
                     </tr>
                   </thead>
                   <tbody id="advanced-runtime-table-body" class="divide-y divide-slate-100">
-                    <tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>
+                    <tr><td colspan="7" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -471,6 +477,10 @@
               <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6">
                 <h3 class="text-lg font-semibold text-slate-900">SD</h3>
                 <p class="text-sm text-slate-600 mt-2">Domyślnie wyłączone. Speculative decoding wymaga osobnego, mniejszego draft modelu i zgodności z aktualnym llama-server. Bez tego runtime startuje standardowo.</p>
+              </div>
+              <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6">
+                <h3 class="text-lg font-semibold text-slate-900">Kontekst i KV</h3>
+                <p class="text-sm text-slate-600 mt-2">Domyślnie runtime używa natywnego kontekstu modelu. Presety do 256k oraz KV cache auto/q8_0/q4_0 ustawia się lokalnie przez terminalowy config stacji.</p>
               </div>
             </div>
           </div>
@@ -596,6 +606,10 @@
                   <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <div class="font-semibold text-slate-900">SD</div>
                     <p class="mt-1">Domyślnie wyłączone. Wymaga draft modelu i kompatybilnego llama-server, więc jest opcją eksperymentalną.</p>
+                  </div>
+                  <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <div class="font-semibold text-slate-900">Kontekst</div>
+                    <p class="mt-1">Domyślnie natywny. Dłuższy kontekst i kompresja KV są ustawiane na stacji przez terminalowy config.</p>
                   </div>
                 </div>
                 <p class="text-xs text-slate-500">Szczegóły aktualnej stacji zobaczysz po wyborze stacji powyżej oraz w menu Zaawansowane.</p>

@@ -77,8 +77,10 @@ Aplikacja sprawdza dostępność co 30 s — możesz włączać i wyłączać `s
 |------|-----------|
 | `--change-model` | Zapomina aktualny model i pyta o nowy |
 | `--advanced` | Otwiera konfigurację `parallelSlots`, eksperymentalnego SD i harmonogramu |
+| `--config` | Otwiera terminalową konfigurację stacji/runtime: sloty, kontekst, KV cache, auto-update, SD i harmonogram |
 | `--schedule` | Otwiera tylko konfigurację harmonogramu pracy stacji |
 | `--doctor` | Uruchamia diagnostykę bez pobierania, promptów i startu usług |
+| `--update` | Wykonuje bezpieczne `git pull --ff-only` przed startem, jeśli repo nie ma lokalnych zmian |
 | `--reset` | Usuwa `config.json` i pyta od nowa |
 | `--no-pull` | Pomija pobieranie binary i modelu (offline / testy) |
 
@@ -118,9 +120,45 @@ Poza harmonogramem launcher w trybie `wait` śpi krótkimi cyklami i **nie ładu
 
 Zrzut harmonogramu jest tylko diagnostyczny: zawiera m.in. aktywną liczbę jobów, model, backend i ustawienia schedule. Nie jest checkpointem stanu modelu ani generowania, więc przy `stop-now` część pracy może zostać utracona.
 
+## Terminalowy config stacji
+
+Najwygodniejsza ścieżka konfiguracji stacji:
+
+```bash
+./start.sh --config
+```
+
+Windows:
+
+```cmd
+start.bat --config
+```
+
+`--config` zapisuje lokalne ustawienia do `local-ai-proxy/config.json`: `parallelSlots`, kontekst modelu, kompresję KV cache, auto-update, SD oraz harmonogram. Wszystkie pola mają bezpieczne zakresy i są normalizowane przy starcie, więc literówka w liczbie tokenów albo zbyt duża wartość nie powinna wysadzić launchera bez czytelnego ostrzeżenia.
+
 ## Advanced runtime
 
 Opcje Advanced są lokalne dla konkretnej stacji roboczej i zapisują się w `local-ai-proxy/config.json`. Frontend pokazuje je w widoku **Advanced** oraz w tabeli stacji, ale nie zapisuje ich bezpośrednio do pliku na komputerze użytkownika.
+
+### Kontekst modelu
+
+`contextMode` określa, jak launcher przekazuje kontekst do `llama-server`:
+
+- Domyślnie: `native`, czyli `--ctx-size 0`. To każe llama.cpp użyć natywnego kontekstu zapisanego w modelu/GGUF, zamiast hardkodować małe `4096`.
+- Presety opt-in: `32k`, `64k`, `128k`, `256k` albo własna liczba tokenów.
+- Zakres launchera: `1024-262144`; wartości spoza zakresu są przycinane.
+- `256k` jest dostępne, ale może wymagać bardzo dużo RAM/VRAM i modelu, który realnie znosi tak długi kontekst.
+
+### KV cache compression
+
+`kvCacheQuantization` steruje kompresją cache K/V w `llama-server`, jeśli binary pokazuje flagi `--cache-type-k` i `--cache-type-v`:
+
+- Domyślnie: `auto`.
+- `auto` używa `f16` dla krótkiego/natywnego kontekstu i `q8_0` dla kontekstu powyżej 32k.
+- Ręczne opcje: `f16`, `q8_0`, `q4_0`.
+- `q8_0` zwykle jest rozsądnym kompromisem dla długiego kontekstu; `q4_0` jest bardziej agresywne i może pogorszyć jakość.
+
+Nie ma tu osobnej magicznej flagi o nazwie `rotroqwant`; launcher używa realnych opcji llama.cpp dla KV cache. Jeśli upstream zmieni nazwy flag, runtime startuje bez kompresji i pokazuje ostrzeżenie zamiast zamykać okno bez wyjaśnienia.
 
 ### `parallelSlots`
 
@@ -142,6 +180,16 @@ SD jest domyślnie **wyłączone** (`sdEnabled: false`). To opcja eksperymentaln
 - może przyspieszyć generowanie, ale na złym zestawie modeli może też je spowolnić.
 
 Launcher zapisuje konfigurację SD tylko po świadomym wejściu w `--advanced`. Jeśli binary `llama-server` nie wspiera draft modelu, runtime startuje standardowo i wypisuje ostrzeżenie.
+
+### Auto-update
+
+`autoUpdate` jest domyślnie wyłączone. Możesz włączyć je w `--config`; wtedy launcher przed startem spróbuje zrobić:
+
+```bash
+git pull --ff-only
+```
+
+Tylko wtedy, gdy katalog jest czystym repo git i nie ma lokalnych zmian. Jeśli są lokalne zmiany, repo jest w detached HEAD albo zdalna historia się rozjechała, aktualizacja jest pomijana z ostrzeżeniem. Jednorazowo możesz wymusić tę samą bezpieczną próbę flagą `--update`.
 
 ## Pliki w tym katalogu
 
@@ -186,6 +234,10 @@ Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci.
 **Launcher czeka i nie ładuje modelu.** To może być poprawne, jeśli ustawiony jest harmonogram i aktualna godzina jest poza oknem. Zmień ustawienie przez `./start.sh --schedule` albo `start.bat --schedule`.
 
 **Aplikacja działa wolniej po podłączeniu lokalnego modelu.** AI generuje tekst dłużej niż tryb przeglądarkowy. To normalne — większy kontekst i większy model = wolniej. Pomiar w `logs/proxy.log` (Xms na request).
+
+**Po ustawieniu 128k/256k model nie startuje albo komputer mieli dyskiem.** To prawie zawsze brak RAM/VRAM albo model bez realnego wsparcia długiego kontekstu. Uruchom `./start.sh --config` albo `start.bat --config`, wybierz `native` i zostaw KV cache na `auto`.
+
+**Czy można zrobić lokalny kontener Windows?** Kontener Windows wymaga Windows hosta z obsługą Windows Containers/Hyper-V. Na macOS/Linux nie uruchomimy prawdziwego kontenera Windows z tym launcherem. Zamiast tego repo ma smoke test GitHub Actions na `windows-latest`, który uruchamia PowerShell/BAT w izolowanym runnerze Windows.
 
 ## Zatrzymywanie
 

@@ -1,0 +1,51 @@
+name: Windows launcher smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'start.bat'
+      - 'start.ps1'
+      - 'local-ai-proxy/**'
+      - '.github/workflows/windows-launcher-smoke.yml'
+  pull_request:
+    paths:
+      - 'start.bat'
+      - 'start.ps1'
+      - 'local-ai-proxy/**'
+      - '.github/workflows/windows-launcher-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse start.ps1
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          $scriptPath = (Resolve-Path .\start.ps1).Path
+          $null = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref] $tokens, [ref] $errors)
+          if ($errors -and $errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
+      - name: PowerShell help path
+        shell: pwsh
+        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --help
+
+      - name: Batch wrapper help path
+        shell: cmd
+        run: start.bat --help --no-pause
+
+      - name: Safe doctor path
+        shell: pwsh
+        run: powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --doctor
