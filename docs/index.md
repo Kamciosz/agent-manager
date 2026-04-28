@@ -26,6 +26,7 @@ Mapa całej dokumentacji projektu. Czytaj w kolejności odpowiadającej etapowi 
 | [product/alpha-release.md](product/alpha-release.md) | Status alpha, zakres, ograniczenia i checklisty testów |
 | [product/alpha-gap-analysis.md](product/alpha-gap-analysis.md) | Luki produktu po MVP, decyzje alpha i lista braków przed beta |
 | [product/ui-spec.md](product/ui-spec.md) | Specyfikacja UI/UX — ekrany, persony, UX rules |
+| [product/bad-mood-qa.md](product/bad-mood-qa.md) | Krytyczny QA alpha: tester i nietechniczny użytkownik |
 
 ## Implementacja
 

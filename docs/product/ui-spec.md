@@ -14,9 +14,9 @@ Maksymalnie prosty interfejs dla użytkowników nietechnicznych. Każdy kluczowy
 
 ## Główne zasady UX
 
-- Jeden ekran = jedna główna akcja (np. „Dodaj zadanie").
+- Jeden ekran = jedna główna akcja (np. „Dodaj polecenie").
 - Wizard / formularz krokowy dla `submitTask` (3 kroki).
-- Duże, czytelne przyciski i krótki tekst CTA: „Dodaj zadanie", „Przypisz", „Uruchom diagnostykę".
+- Duże, czytelne przyciski i krótki tekst CTA: „Dodaj polecenie", „Przypisz", „Uruchom diagnostykę".
 - „Advanced" ukryte pod accordeonem — domyślnie wyłączone.
 - Onboarding: jednorazowy tour + dane demo.
 - Błyskawiczny feedback: toast + link do utworzonego zasobu.
@@ -26,7 +26,7 @@ Maksymalnie prosty interfejs dla użytkowników nietechnicznych. Każdy kluczowy
 
 ### 1. Dashboard
 
-- Duże CTA: `Dodaj zadanie`, `Moje zadania`, `Kolejka`, `Raporty`.
+- Duże CTA: `Dodaj polecenie`, `Moje polecenia`, `Kolejka`, `Raporty`.
 - Panel stanu: liczba zadań (pending/in_progress/done), health gateway (Connected / Limited / No internet).
 - Szybkie akcje: „Szybki szablon" (one-click create) i wyszukiwarka.
 
@@ -51,7 +51,7 @@ Po wysłaniu: toast + przycisk `Przejdź do zadania`.
 
 ### 3. Task List
 
-- Tabela: ID | Tytuł | Status | Priorytet | Data | Akcje
+- Tabela: ID | Polecenie | Status | Priorytet | Data | Akcje
 - Filtry górne: status, priorytet, przypisane/nieprzypisane, search.
 - Akcje w wierszu: klik wiersza pokazuje szczegóły; `Usuń` usuwa polecenie po potwierdzeniu.
 
@@ -104,6 +104,9 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 ### 11. Advanced runtime
 
 - Widok `Advanced` pokazuje `parallelSlots`, aktywne joby, kontekst, KV cache, SD, tryb optymalizacji i draft model raportowane przez stacje.
+- Formularz dodawania polecenia nie pokazuje `parallelSlots`, SD ani JSON. Te ustawienia należą do konfiguracji stacji roboczej.
+- Widok `Stacje robocze` zawiera prosty konfigurator pól: równoległe zadania, kontekst modelu, KV cache, SD, harmonogram i auto-update. UI generuje instrukcję dla launchera, ale nie zapisuje lokalnego `config.json` przez przeglądarkę.
+- Stacja w poleceniu ma tryb `Automatycznie - AI wybierze stację` albo dokładnie jedną wskazaną stację.
 - `parallelSlots` jest ustawieniem lokalnego runtime; domyślnie `1`, zakres `1-4`.
 - Kontekst jest ustawieniem lokalnego runtime; domyślnie `native`, opcjonalnie presety do `256k`.
 - KV cache ma tryby `auto`, `f16`, `q8_0`, `q4_0`; `auto` wybiera kompresję dopiero przy długim kontekście.
@@ -118,7 +121,14 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 
 ## Copy & Tone
 
-- Zwięzłe polecenia: „Dodaj zadanie", „Pokaż zadanie", „Uruchom diagnostykę".
+- Zwięzłe polecenia: „Dodaj polecenie", „Pokaż polecenie", „Uruchom diagnostykę".
+
+## Ustawienia użytkownika
+
+- Widok `Ustawienia` jest dostępny z lewego menu.
+- Preferencje są lokalne dla przeglądarki i zapisują się w `localStorage`.
+- Zakres alpha: motyw `system/jasny/ciemny`, język `pl/en`, domyślne repozytorium i domyślna stacja.
+- Pełne tłumaczenie wszystkich stringów dynamicznych jest odłożone; widoczny przełącznik języka przygotowuje UX i strukturę preferencji.
 - Unikaj skrótów technicznych; podpowiedzi inline w miejscu akcji.
 
 ## Dostępność i błędy

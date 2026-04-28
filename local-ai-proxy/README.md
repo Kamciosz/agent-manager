@@ -63,7 +63,9 @@ Jeśli Windows pokazuje ostrzeżenie bezpieczeństwa dla pliku pobranego z inter
 Unblock-File .\start.ps1
 ```
 
-Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Launcher dobiera paczkę do backendu GPU, ale jeśli upstream nie publikuje dokładnego wariantu, używa bezpiecznego fallbacku CPU zamiast przerywać start. Zapyta też jednorazowo o dane stacji roboczej dla Supabase, żeby `workstation-agent.js` mógł odbierać joby z aplikacji. Kolejne uruchomienia są bez pytań.
+Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Launcher dobiera paczkę do backendu GPU, ale jeśli upstream nie publikuje dokładnego wariantu, używa bezpiecznego fallbacku CPU zamiast przerywać start. Zapyta też jednorazowo o dane stacji roboczej dla Supabase oraz origin aplikacji Pages, żeby `workstation-agent.js` mógł odbierać joby, a lokalny proxy wpuszczał tylko zaufaną stronę. Kolejne uruchomienia są bez pytań.
+
+Launcher nie ma wpisanego domyślnego projektu Supabase. Wklejasz własny Project URL i publishable/anon key z panelu Supabase. Przykład konfiguracji bez sekretów: [`config.example.json`](config.example.json).
 
 Po starcie otwórz aplikację (GitHub Pages albo `ui/index.html`). W headerze pojawi się badge:
 - 🟢 **AI lokalny: <nazwa-modelu>** — proxy działa, manager/executor używają prawdziwego LLM.
@@ -83,6 +85,13 @@ Aplikacja sprawdza dostępność co 30 s — możesz włączać i wyłączać `s
 | `--update` | Wykonuje bezpieczne `git pull --ff-only` przed startem, jeśli repo nie ma lokalnych zmian |
 | `--reset` | Usuwa `config.json` i pyta od nowa |
 | `--no-pull` | Pomija pobieranie binary i modelu (offline / testy) |
+
+No-code aktualizacja:
+
+- Windows: dwuklik [`../Aktualizuj.bat`](../Aktualizuj.bat)
+- macOS/Linux: dwuklik [`../Aktualizuj.command`](../Aktualizuj.command)
+
+Oba pliki uruchamiają bezpieczne `--update`. Jeśli repo ma lokalne zmiany, update zostanie pominięty i pokaże komunikat.
 
 Diagnostyka jest najbezpieczniejszą ścieżką testu po `--help`:
 
@@ -134,7 +143,18 @@ Windows:
 start.bat --config
 ```
 
-`--config` zapisuje lokalne ustawienia do `local-ai-proxy/config.json`: `parallelSlots`, kontekst modelu, kompresję KV cache, auto-update, SD oraz harmonogram. Wszystkie pola mają bezpieczne zakresy i są normalizowane przy starcie, więc literówka w liczbie tokenów albo zbyt duża wartość nie powinna wysadzić launchera bez czytelnego ostrzeżenia.
+`--config` zapisuje lokalne ustawienia do `local-ai-proxy/config.json`: dane stacji Supabase, dozwolone originy aplikacji, `parallelSlots`, kontekst modelu, kompresję KV cache, auto-update, SD oraz harmonogram. Wszystkie pola mają bezpieczne zakresy i są normalizowane przy starcie, więc literówka w liczbie tokenów albo zbyt duża wartość nie powinna wysadzić launchera bez czytelnego ostrzeżenia.
+
+Najważniejsze pola bezpieczeństwa:
+
+| Pole | Znaczenie |
+|------|-----------|
+| `supabaseUrl` | URL Twojego projektu Supabase |
+| `supabaseAnonKey` | Publishable/anon key, nie service-role key |
+| `allowedOrigins` | Strony, które mogą wołać lokalny proxy, np. `https://twoj-login.github.io` |
+| `workstationPassword` | Lokalnie zapisane hasło operatora stacji; plik jest gitignored |
+
+Jeśli przenosisz stację do innego forka, uruchom `--config` i popraw `allowedOrigins`. Inaczej proxy zwróci HTTP 403 dla nieznanej strony.
 
 ## Advanced runtime
 
@@ -200,7 +220,8 @@ Tylko wtedy, gdy katalog jest czystym repo git i nie ma lokalnych zmian. Jeśli 
 | `bin/`    | Pobrany binary `llama-server` (gitignored) |
 | `models/` | Pobrane / podlinkowane pliki `.gguf` (gitignored) |
 | `logs/`   | Logi z `llama-server`, proxy i agenta stacji + pliki PID |
-| `config.json` | Wybrany model, porty, backend GPU (gitignored) |
+| `config.json` | Wybrany model, porty, backend GPU, dane stacji, `allowedOrigins` i opcje runtime (gitignored) |
+| `config.example.json` | Bezpieczny przykład konfiguracji bez prawdziwych sekretów |
 
 ## Endpointy proxy
 
@@ -208,10 +229,10 @@ Tylko wtedy, gdy katalog jest czystym repo git i nie ma lokalnych zmian. Jeśli 
 GET  /health     →  { ok, proxy, llama, model, backend, advanced }
 POST /generate   →  body: { prompt, maxTokens?, temperature? }
                     response: { text, durationMs }
-OPTIONS *        →  204 + nagłówki CORS (Allow-Origin: *)
+OPTIONS *        →  204 + nagłówki CORS dla dozwolonego Origin
 ```
 
-Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci.
+Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci. Dodatkowo sprawdza nagłówek `Origin`: domyślnie wpuszcza oficjalne Pages i localhost, a origin Twojego forka dodajesz przez `--config`.
 
 ## Troubleshooting
 
@@ -224,6 +245,8 @@ Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci.
 **Pobieranie binary kończy się 404 albo nie ma paczki GPU.** Nazwy assetów llama.cpp w GitHub Releases czasem się zmieniają. Launcher próbuje wariant GPU i fallback CPU. Jeśli upstream znowu zmieni nazwy, otwórz [stronę releasów](https://github.com/ggerganov/llama.cpp/releases/latest), pobierz właściwy ZIP lub `tar.gz` ręcznie, rozpakuj do `bin/` i uruchom z `--no-pull`.
 
 **Frontend wciąż pokazuje „Panel online".** Sprawdź `curl http://127.0.0.1:3001/health` — powinno zwracać `"ok": true`. Jeśli zwraca `"llama": "down"`, to proxy działa ale `llama-server` padł — restart `./start.sh`.
+
+**Proxy zwraca HTTP 403 `Origin not allowed`.** Uruchom `./start.sh --config` albo `start.bat --config` i wpisz origin swojej aplikacji Pages, np. `https://twoj-login.github.io`. Nie wpisuj ścieżki `/agent-manager`, bo przeglądarka wysyła origin bez ścieżki.
 
 **Windows: okno znika od razu.** Obecny `start.bat` powinien zawsze zostać na końcu z komunikatem. Jeśli nadal znika, uruchom z `cmd.exe` ręcznie: `start.bat --no-pull`, a potem sprawdź `local-ai-proxy\logs\start-windows.log`, `llama-server.err.log`, `proxy.err.log` i `workstation-agent.err.log`.
 

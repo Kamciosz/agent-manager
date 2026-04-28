@@ -34,7 +34,12 @@ function log(...args) {
 }
 
 function loadConfig() {
-  const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+  let raw
+  try {
+    raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+  } catch (error) {
+    throw new Error(`Nie moge wczytac local-ai-proxy/config.json (${error.message}). Uruchom start.bat --config albo ./start.sh --config i przejdz konfiguracje stacji jeszcze raz.`)
+  }
   const schedule = normalizeSchedule(raw)
   const contextMode = normalizeContextMode(raw.contextMode)
   const contextSizeTokens = contextMode === 'native' ? 0 : clampInt(raw.contextSizeTokens, 262144, 1024, 262144)
@@ -98,7 +103,7 @@ function ensureRequiredConfig(cfg) {
   const required = ['supabaseUrl', 'supabaseAnonKey', 'workstationEmail', 'workstationPassword']
   const missing = required.filter((key) => !cfg[key])
   if (missing.length) {
-    throw new Error(`Brak wymaganych pol w config.json: ${missing.join(', ')}`)
+    throw new Error(`Brak wymaganych pol w config.json: ${missing.join(', ')}. Uruchom start.bat --config albo ./start.sh --config i uzupelnij konfiguracje stacji.`)
   }
 }
 
@@ -596,11 +601,13 @@ function sleep(ms) {
 }
 
 process.on('SIGINT', () => {
-  const cfg = authSession ? loadConfig() : null
+  let cfg = null
+  try { cfg = authSession ? loadConfig() : null } catch { cfg = null }
   shutdown(cfg, authSession)
 })
 process.on('SIGTERM', () => {
-  const cfg = authSession ? loadConfig() : null
+  let cfg = null
+  try { cfg = authSession ? loadConfig() : null } catch { cfg = null }
   shutdown(cfg, authSession)
 })
 

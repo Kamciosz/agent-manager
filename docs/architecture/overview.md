@@ -117,7 +117,7 @@ Free tier Supabase wystarcza dla MVP: 50 000 wiadomości real-time/mies., 500 MB
 - Każdy użytkownik i agent loguje się przez Supabase Auth — konto email/hasło lub OAuth.
 - Row Level Security (RLS) w bazie — każdy widzi tylko dane swojego tenantu.
 - Tokeny JWT generowane i weryfikowane przez Supabase — nie trzeba tego pisać.
-- Klucz API (`anon key`) jest publiczny i bezpieczny — można go commitować do repozytorium; dostęp do danych kontroluje RLS, nie klucz.
+- Klucz API (`anon/publishable key`) jest przeznaczony do frontendu, ale nie commitujemy w launcherach domyślnego projektu Supabase. Własny fork podaje swój key przez GitHub Secrets albo lokalny `config.json`, a dostęp do danych kontroluje RLS.
 
 ## Przepływ wiadomości
 
@@ -166,7 +166,7 @@ Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) działają w trybie przegl
 | Element | Plik / źródło | Rola |
 |---------|---------------|------|
 | `ai-client.js` | `ui/ai-client.js` | Health-check co 30 s, `generate()`, badge statusu w UI. Rzuca `AiUnavailableError` ⇒ manager/executor wpadają w fallback. |
-| Proxy HTTP | `local-ai-proxy/proxy.js` | Endpoints `GET /health`, `POST /generate`. CORS `*`. Bind `127.0.0.1`. |
+| Proxy HTTP | `local-ai-proxy/proxy.js` | Endpoints `GET /health`, `POST /generate`. CORS z allowlistą originów. Bind `127.0.0.1`. |
 | `llama-server` | binary z [llama.cpp Releases](https://github.com/ggerganov/llama.cpp/releases) | Wnioskowanie GGUF z akceleracją GPU. |
 | Launchery | `start.sh`, `start.bat` | Detekcja OS / arch / GPU, pobranie binary, dialog o model, start `llama-server`, proxy i agenta stacji, cleanup. |
 | Konfiguracja | `local-ai-proxy/config.json` | Ścieżka modelu, porty, backend, `parallelSlots`, kontekst, KV cache, SD, auto-update (gitignored). |
@@ -178,7 +178,7 @@ Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) działają w trybie przegl
 - **Tryb przeglądarkowy to nie błąd** — gdy proxy padnie, UI dalej działa jako panel online. Przejście między lokalnym AI a trybem przeglądarkowym jest płynne i widoczne w badge.
 - **Model wybiera użytkownik raz** — pierwsze uruchomienie pyta o URL HF lub ścieżkę. Kolejne starty są ciche; `--change-model` resetuje.
 - **Advanced jest opt-in** — `parallelSlots` domyślnie wynosi `1`, kontekst jest natywny (`--ctx-size 0`), KV cache działa w trybie `auto`, a SD jest domyślnie wyłączone (`sdEnabled=false`).
-- **Tylko lokalnie** — proxy nasłuchuje wyłącznie na `127.0.0.1`, nie jest udostępniane w sieci.
+- **Tylko lokalnie** — proxy nasłuchuje wyłącznie na `127.0.0.1`, nie jest udostępniane w sieci i odrzuca nieznany `Origin` HTTP 403.
 
 ## Wspólne stacje robocze (MVP)
 

@@ -20,8 +20,9 @@ $ConfigFile = Join-Path $ProxyDir 'config.json'
 
 $LlamaPort = 8080
 $ProxyPort = 3001
-$DefaultSupabaseUrl = 'https://xaaalkbygdtjlsnhipwa.supabase.co'
-$DefaultSupabaseKey = 'sb_publishable_y0GUJCxdmltSN8qAtmSmAA_ovM9Dxrc'
+$DefaultSupabaseUrl = ''
+$DefaultSupabaseKey = ''
+$DefaultAppOrigin = 'https://kamciosz.github.io'
 
 $ChangeModel = $false
 $AdvancedConfig = $false
@@ -572,6 +573,7 @@ function Ensure-WorkstationConfig {
   $key = Get-ConfigString $cfg 'supabaseAnonKey'
   $email = Get-ConfigString $cfg 'workstationEmail'
   $password = Get-ConfigString $cfg 'workstationPassword'
+  $appOrigin = Get-ConfigString $cfg 'appOrigin' $DefaultAppOrigin
 
   if ($name -and $url -and $key -and $email -and $password) {
     Write-StartLog 'Using saved workstation config.'
@@ -582,17 +584,26 @@ function Ensure-WorkstationConfig {
   Write-Host '=========================================================='
   Write-Host '  Workstation config'
   Write-Host '=========================================================='
+  Write-Host '  Copy Supabase URL and publishable key from your own Supabase project.'
+  Write-Host '  This launcher does not ship a production default key.'
   $name = Prompt-WithDefault 'Workstation name' ($(if ($name) { $name } else { $env:COMPUTERNAME }))
   $url = Prompt-WithDefault 'Supabase URL' ($(if ($url) { $url } else { $DefaultSupabaseUrl }))
   $key = Prompt-WithDefault 'Supabase publishable key' ($(if ($key) { $key } else { $DefaultSupabaseKey }))
   $email = Prompt-WithDefault 'Operator email' $email
   if (-not $password) { $password = Prompt-Secret 'Operator password' }
+  $appOrigin = Prompt-WithDefault 'GitHub Pages app origin, without path' $appOrigin
 
   Set-ConfigValue $cfg 'workstationName' $name
   Set-ConfigValue $cfg 'supabaseUrl' $url
   Set-ConfigValue $cfg 'supabaseAnonKey' $key
   Set-ConfigValue $cfg 'workstationEmail' $email
   Set-ConfigValue $cfg 'workstationPassword' $password
+  Set-ConfigValue $cfg 'appOrigin' (($appOrigin.Trim()).TrimEnd('/'))
+  $origins = New-Object System.Collections.Generic.List[string]
+  foreach ($origin in @('http://localhost', 'http://127.0.0.1', (($appOrigin.Trim()).TrimEnd('/')))) {
+    if ($origin -and -not $origins.Contains($origin)) { $origins.Add($origin) }
+  }
+  Set-ConfigValue $cfg 'allowedOrigins' $origins.ToArray()
   if ($null -eq $cfg.PSObject.Properties['acceptsJobs']) { Set-ConfigValue $cfg 'acceptsJobs' $true }
   Save-Config $cfg
   Write-StartLog 'Saved workstation config.'

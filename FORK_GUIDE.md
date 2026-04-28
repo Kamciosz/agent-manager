@@ -1,165 +1,140 @@
-# FORK_GUIDE — jak uruchomić własną kopię projektu
+# FORK_GUIDE — własna kopia Agent Manager
 
-Przewodnik dla osoby, która chce forknąć to repozytorium i postawić własny działający Agent Manager. Czas: ~10–15 minut. Wymagania: konto GitHub i konto Supabase (oba darmowe).
+Ten przewodnik prowadzi przez uruchomienie własnego forka: GitHub Pages jako UI i Supabase jako backend. Terminal nie jest potrzebny do samego deployu UI, ale migracje bazy trzeba zastosować jawnie w Supabase.
 
-Żaden terminal nie jest potrzebny — wszystko przez przeglądarkę.
-
----
-
-## Co to jest i jak działa
-
-Agent Manager to aplikacja webowa (GitHub Pages) połączona z Supabase jako backendem.
+## Co dostajesz
 
 ```
-GitHub Pages                Supabase
-(twoja strona)    ←→       (baza danych + real-time + logowanie)
-      ▲                          ▲
-      │                          │
-użytkownicy               automatycznie zarządzane
-i agenci                  przez Supabase — Ty nic nie hostujesz
+GitHub Pages                 Supabase
+statyczny panel UI   <->     Auth + Postgres + Realtime
 ```
 
-Ty nie masz żadnego własnego serwera. Supabase jest usługą zewnętrzną którą konfigurujesz raz przez panel webowy.
+Nie hostujesz własnego serwera. GitHub Actions publikuje pliki z `ui/`, a Supabase trzyma dane, logowanie i realtime.
 
----
+## Krok 1 — fork repozytorium
 
-## Krok 1 — Forkuj repozytorium
+1. Otwórz repozytorium na GitHub.
+2. Kliknij **Fork**.
+3. Wybierz swoje konto i utwórz kopię.
 
-1. Wejdź na stronę tego repozytorium na GitHub.
-2. Kliknij przycisk **Fork** (prawy górny róg).
-3. Wybierz swoje konto → kliknij **Create fork**.
+## Krok 2 — utwórz projekt Supabase
 
-Masz teraz własną kopię projektu na swoim koncie GitHub.
+1. Wejdź na https://supabase.com.
+2. Kliknij **New project**.
+3. Wybierz organizację, nazwę i region.
+4. Poczekaj, aż projekt będzie gotowy.
 
----
+## Krok 3 — zastosuj migracje SQL
 
-## Krok 2 — Utwórz projekt Supabase
+Workflow GitHub Pages **nie stosuje migracji bazy danych**. Zrób to ręcznie jedną z dwóch metod.
 
-1. Wejdź na [supabase.com](https://supabase.com) → kliknij **Start for free**.
-2. Zarejestruj się (może być GitHub login).
-3. Kliknij **New project**.
-4. Wybierz organizację, nadaj nazwę (np. `agent-manager`), wybierz region (Europe — Frankfurt).
-5. Kliknij **Create new project**. Poczekaj ~1 minutę na setup.
+Metoda bez terminala:
 
----
+1. W Supabase otwórz **SQL Editor**.
+2. Otwórz pliki z [supabase/migrations](supabase/migrations) w kolejności nazw.
+3. Wklej zawartość każdego pliku i kliknij **Run**.
+4. Jeśli plik jest już zastosowany, większość poleceń jest idempotentna (`if not exists`, `drop policy if exists`).
 
-## Krok 3 — Skopiuj klucze Supabase
+Metoda dla osób technicznych:
 
-W panelu swojego projektu Supabase:
+1. Użyj Supabase CLI albo narzędzi MCP Supabase.
+2. Zastosuj migracje z [supabase/migrations](supabase/migrations).
+3. Po zmianach uruchom security/performance advisors.
 
-1. Przejdź do **Settings → API**.
-2. Skopiuj dwie wartości:
-   - **Project URL** — wygląda jak `https://xxxxxxxxxxxx.supabase.co`
-   - **anon public key** — długi ciąg znaków zaczynający się od `eyJ...`
+## Krok 4 — skopiuj wartości API
 
-Te klucze są **bezpieczne do użycia publicznie** — Supabase kontroluje dostęp przez Row Level Security (RLS), nie przez ukrywanie kluczy.
+W Supabase przejdź do **Settings → API** i skopiuj:
 
----
+- Project URL, np. `https://twoj-projekt.supabase.co`
+- publishable/anon key
 
-## Krok 4 — Dodaj klucze do GitHub Secrets
+Publishable/anon key może być użyty publicznie w frontendzie, ale bezpieczeństwo danych zależy od RLS. Nie używaj service-role key w tym repozytorium.
 
-W swoim sforkowanym repozytorium na GitHub:
+## Krok 5 — dodaj GitHub Secrets
+
+W swoim forku GitHub:
 
 1. Wejdź w **Settings → Secrets and variables → Actions**.
-2. Kliknij **New repository secret**.
-3. Dodaj:
-   - Nazwa: `SUPABASE_URL` / Wartość: twój Project URL
-4. Kliknij **New repository secret** ponownie.
-   - Nazwa: `SUPABASE_ANON_KEY` / Wartość: twój anon key
+2. Dodaj sekret `SUPABASE_URL` z Project URL.
+3. Dodaj sekret `SUPABASE_ANON_KEY` z publishable/anon key.
 
-GitHub Actions będzie używał tych wartości automatycznie przy każdym deploy.
-
----
-
-## Krok 5 — Włącz GitHub Pages
-
-W swoim sforkowanym repozytorium:
+## Krok 6 — włącz GitHub Pages
 
 1. Wejdź w **Settings → Pages**.
 2. W sekcji **Source** wybierz **GitHub Actions**.
-3. Kliknij **Save**.
+3. Zapisz ustawienie.
 
----
+## Krok 7 — uruchom deploy
 
-## Krok 6 — Uruchom pierwszy deploy
+1. Wejdź w **Actions**.
+2. Wybierz workflow **Deploy to GitHub Pages**.
+3. Kliknij **Run workflow**.
+4. Po zakończeniu otwórz link z **Settings → Pages**.
 
-1. W repozytorium wejdź w **Actions**.
-2. Wybierz workflow **Deploy** z listy po lewej.
-3. Kliknij **Run workflow** → **Run workflow** (zielony przycisk).
+Deploy robi tylko dwie rzeczy:
 
-GitHub Actions automatycznie:
-- Zastosuje schemat bazy danych w Supabase (tabele, polityki bezpieczeństwa)
-- Zbuduje i opublikuje aplikację na GitHub Pages
+- podmienia placeholdery Supabase w [ui/app.js](ui/app.js),
+- publikuje folder `ui/` na GitHub Pages.
 
-Poczekaj ~2 minuty. Gotowe.
+Nie dotyka schematu Supabase.
 
----
+## Krok 8 — pierwsze konto
 
-## Krok 7 — Znajdź link do aplikacji
+1. Otwórz swoją aplikację Pages.
+2. Zarejestruj konto.
+3. Dodaj pierwsze polecenie albo podłącz stację roboczą.
 
-Po zakończeniu deploy:
+## Krok 9 — lokalna stacja robocza
 
-1. Wejdź w **Settings → Pages**.
-2. Zobaczysz link do swojej aplikacji — wygląda jak `https://twojlogin.github.io/agent-manager`.
-3. Otwórz go w przeglądarce.
+Na komputerze, który ma uruchamiać lokalny model GGUF:
 
----
+- Windows: dwuklik [start.bat](start.bat)
+- macOS: dwuklik [start.command](start.command)
+- Linux: `./start.sh`
 
-## Krok 8 — Utwórz pierwsze konto managera
+Pierwszy start zapyta o:
 
-1. Na stronie aplikacji kliknij **Zarejestruj się**.
-2. Wpisz email i hasło.
-3. Pierwsze konto automatycznie otrzymuje rolę **manager**.
-4. Możesz teraz zapraszać innych użytkowników i agentów.
+- model GGUF,
+- nazwę stacji,
+- Supabase URL,
+- publishable/anon key,
+- konto operatora stacji,
+- origin aplikacji Pages, np. `https://twoj-login.github.io`.
 
----
+Origin jest potrzebny, bo lokalny proxy nie przyjmuje już requestów z dowolnej strony.
 
-## Krok 9 — (opcjonalnie) Włącz lokalny AI
+## Aktualizacje
 
-Domyślnie manager i executor działają w trybie przeglądarkowym ze stałymi tekstami operacyjnymi. Aby włączyć **prawdziwy lokalny model** (llama.cpp + GGUF) na swoim komputerze:
+Dla nietechnicznego użytkownika:
 
-1. Sklonuj swojego forka lokalnie (`git clone …`).
-2. Uruchom skrypt **właściwy dla Twojego systemu**:
-   - 🍎 **macOS** — dwuklik na `start.command` (lub `./start.sh` z terminala)
-   - 🐧 **Linux** — `./start.sh`
-   - 🪟 **Windows** — dwuklik na `start.bat`
+- Windows: dwuklik [Aktualizuj.bat](Aktualizuj.bat)
+- macOS/Linux: dwuklik [Aktualizuj.command](Aktualizuj.command)
 
-   Skrypt sam pobierze binary, zapyta o model GGUF i uruchomi proxy na `127.0.0.1:3001`.
-3. Otwórz aplikację — w headerze zobaczysz zielony badge **„AI lokalny"**. Bez uruchomienia proxy aplikacja działa dalej w trybie demo.
+Dla terminala:
 
-Pełna dokumentacja: [local-ai-proxy/README.md](local-ai-proxy/README.md).
+```bash
+./start.sh --update
+```
 
----
+```cmd
+start.bat --update
+```
 
-## Co dzieje się potem automatycznie
+Update jest bezpieczny: jeśli katalog ma lokalne zmiany, launcher pominie `git pull` i pokaże ostrzeżenie.
 
-Każde `git push` do głównej gałęzi repozytorium:
-- Uruchamia GitHub Actions
-- Aktualizuje aplikację na GitHub Pages
-- Stosuje ewentualne zmiany schematu bazy Supabase
+## Najczęstsze problemy
 
-Nie musisz niczego robić ręcznie po zakończeniu setupu.
+| Objaw | Co zrobić |
+|-------|-----------|
+| Aplikacja nie ładuje danych | Sprawdź GitHub Secrets i czy migracje Supabase zostały zastosowane |
+| Rejestracja działa, ale tabele puste/błędy RLS | Zastosuj migracje z [supabase/migrations](supabase/migrations) jeszcze raz w kolejności |
+| Lokalny AI nie łączy się z aplikacją | Uruchom `--doctor`, sprawdź `allowedOrigins` w `local-ai-proxy/config.json` |
+| Windows okno znika | Uruchom `start.bat --doctor --no-pause` z `cmd.exe` |
+| Update nic nie zmienia | Repo ma lokalne zmiany albo nie jest klonem git; to bezpieczne zachowanie |
 
----
+## Czego nie robić
 
-## Jak zapraszać nowych agentów / użytkowników
-
-Nie ma żadnych tokenów do generowania ani konfiguracji po stronie użytkownika.
-
-1. Powiedz im link do aplikacji.
-2. Niech się zarejestrują.
-3. W panelu managera przydziel im rolę (executor / viewer).
-4. Mogą zacząć pracę.
-
----
-
-## Limity darmowego planu Supabase
-
-| Zasób | Limit | Wystarczy na |
-|-------|-------|-------------|
-| Baza danych | 500 MB | Tysiące zadań |
-| Real-time wiadomości | 2 mln/miesiąc | Dziesiątki aktywnych agentów |
-| Użytkownicy | Bez limitu | Wszystkich |
-| Projekty | 2 aktywne | MVP + backup |
-
-Dla większego projektu: płatny plan Supabase zaczyna się od $25/miesiąc.
+- Nie commituj `local-ai-proxy/config.json`.
+- Nie wpisuj service-role key do repozytorium ani do GitHub Pages.
+- Nie ustawiaj lokalnego proxy na publiczny adres sieciowy.
+- Nie zakładaj, że deploy Pages zmieni bazę danych. Migracje stosuj jawnie.

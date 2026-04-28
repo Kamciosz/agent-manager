@@ -1,75 +1,96 @@
 # Agent Manager
 
-Status: **alpha**. Webowy przepływ zadań działa przez GitHub Pages + Supabase, a lokalny runtime GGUF/stacje robocze są funkcją eksperymentalną alpha.
+Status: **alpha**. Agent Manager to panel do dodawania poleceń dla AI, śledzenia wykonania i podłączania lokalnych stacji roboczych z modelem GGUF.
 
-System zarządzania agentami AI — AI kierownik przyjmuje zadania od użytkownika, rozkłada je na części, rozdziela między agenty wykonawcze, monitoruje postęp i raportuje wyniki. Wszystko działa przez przeglądarkę, bez instalacji czegokolwiek.
+Najprościej: otwierasz aplikację, wpisujesz polecenie dla AI, a AI kierownik decyduje, czy wykona je przeglądarkowy agent, czy dostępna stacja robocza.
 
-## Jak to działa (prosto)
+## Szybki start: używam aplikacji
 
-1. Otwierasz aplikację w przeglądarce
-2. Wpisujesz zadanie (np. „Zrób mi stronę logowania")
-3. AI kierownik sam decyduje ilu agentów wykonawczych potrzeba i co każdy ma robić
-4. Agenty wykonawcze realizują zadanie i komunikują się ze sobą na bieżąco
-5. Widzisz postęp w czasie rzeczywistym — bez odświeżania strony
-6. Gotowe zadanie wraca do Ciebie
+1. Otwórz aplikację: https://kamciosz.github.io/agent-manager/
+2. Zarejestruj konto emailem i hasłem.
+3. Kliknij **Dodaj polecenie**.
+4. Wpisz, co AI ma zrobić, opcjonalnie dodaj repozytorium i wybierz stację.
+5. Obserwuj status w czasie rzeczywistym w widoku **Monitor** albo w szczegółach polecenia.
 
-Nie ma żadnej instalacji, terminala, ani serwera do uruchamiania. Każdy komputer z przeglądarką i internetem może być agentem — działa na szkolnym WiFi.
+Nie musisz instalować niczego, jeśli wystarcza tryb przeglądarkowy alpha.
 
-## Szybki start (dla użytkownika)
+## Dodaj lokalną stację roboczą
 
-1. Wejdź na aplikację: https://kamciosz.github.io/agent-manager/
-2. Zarejestruj się emailem i hasłem
-3. Manager przypisze Ci rolę
-4. Gotowe
+Stacja robocza to komputer, który uruchamia lokalny model GGUF przez llama.cpp i odbiera polecenia z aplikacji.
 
-## Szybki start (dla właściciela projektu — jednorazowy setup)
+1. Pobierz paczkę launchera z GitHub Actions albo sklonuj repo.
+2. Uruchom plik dla swojego systemu:
 
-Zobacz [FORK_GUIDE.md](FORK_GUIDE.md) — ~10 minut klikania, zero kodu.
+| System | Najprostszy start | Aktualizacja | Diagnostyka |
+|--------|-------------------|--------------|-------------|
+| Windows 10/11 | dwuklik [start.bat](start.bat) | dwuklik [Aktualizuj.bat](Aktualizuj.bat) | `start.bat --doctor --no-pause` |
+| macOS | dwuklik [start.command](start.command) | dwuklik [Aktualizuj.command](Aktualizuj.command) | `./start.sh --doctor` |
+| Linux | `./start.sh` | `./Aktualizuj.command` | `./start.sh --doctor` |
+
+3. Pierwszy start zapyta o model GGUF, nazwę stacji i dane Supabase.
+4. Zostaw okno launchera otwarte, kiedy komputer ma wykonywać polecenia.
+5. Stacja pojawi się w aplikacji w widoku **Stacje robocze**.
+
+Ważne: `local-ai-proxy/config.json` jest lokalny i nie powinien trafić do gita. Przykład bez sekretów jest w [local-ai-proxy/config.example.json](local-ai-proxy/config.example.json).
+
+## Aktualizacja
+
+Najprościej użyj:
+
+- Windows: [Aktualizuj.bat](Aktualizuj.bat)
+- macOS/Linux: [Aktualizuj.command](Aktualizuj.command)
+
+To uruchamia bezpieczny update launchera. Jeśli repo ma lokalne zmiany, update zostanie pominięty z komunikatem zamiast nadpisywać pliki.
+
+Możesz też użyć flagi:
+
+```bash
+./start.sh --update
+```
+
+```cmd
+start.bat --update
+```
+
+## Dla właściciela forka
+
+Zobacz [FORK_GUIDE.md](FORK_GUIDE.md). W skrócie:
+
+1. Fork repozytorium.
+2. Utwórz projekt Supabase.
+3. Wklej migracje SQL z [supabase/migrations](supabase/migrations) w Supabase SQL Editor albo zastosuj je przez Supabase CLI/tools.
+4. Dodaj `SUPABASE_URL` i `SUPABASE_ANON_KEY` do GitHub Secrets.
+5. Włącz GitHub Pages z GitHub Actions.
+6. Uruchom workflow **Deploy**.
+
+Deploy GitHub Pages publikuje UI. Migracje bazy są jawne i nie są wykonywane przez workflow Pages.
+
+## Bezpieczeństwo alpha
+
+- Publiczny `anon/publishable key` Supabase może być użyty w frontendzie, ale dane chroni RLS.
+- Launchery nie mają już wpisanego domyślnego projektu Supabase. Każdy fork podaje własny URL i key.
+- Lokalny proxy akceptuje tylko skonfigurowane originy aplikacji oraz localhost.
+- `local-ai-proxy/config.json`, modele, binarki i logi są ignorowane przez git.
+- CI ma guard blokujący przypadkowe dodanie lokalnego configu i oczywistych sekretów.
 
 ## Technologia
 
-| Warstwa | Rozwiązanie | Koszt |
-|---------|------------|-------|
-| Interfejs webowy | GitHub Pages | Darmowy |
-| Baza zadań i historia | Supabase (PostgreSQL) | Darmowy |
-| Komunikacja w czasie rzeczywistym | Supabase Realtime (WebSocket) | Darmowy |
-| Logowanie i konta | Supabase Auth | Darmowy |
-| Automatyczny deploy | GitHub Actions | Darmowy |
-
-Wszystkie połączenia przez port 443 (HTTPS) — działa na szkolnym i firmowym WiFi.
-
-## Lokalny AI (opcjonalnie)
-
-Domyślnie aplikacja działa w **trybie demo** — manager i executor używają sztywnych odpowiedzi. Możesz włączyć **prawdziwy lokalny model językowy** (llama.cpp + GGUF) jednym poleceniem — wybierz skrypt **odpowiedni dla swojego systemu**:
-
-| System operacyjny | Polecenie | Plik |
-|-------------------|-----------|------|
-| 🍎 **macOS** — dwuklik w Finderze | dwuklik | [start.command](start.command) |
-| 🍎 **macOS** — z terminala | `./start.sh` | [start.sh](start.sh) |
-| 🐧 **Linux** (Ubuntu, Debian, Fedora, Arch…) | `./start.sh` | [start.sh](start.sh) |
-| 🪟 **Windows 10 / 11** — dwuklik | dwuklik | [start.bat](start.bat) |
-
-> ⚠️ Nie uruchamiaj `start.sh` na Windowsie ani `start.bat` na macOS/Linux — każdy skrypt sam wykrywa OS i odmówi startu na niewłaściwym systemie.
-
-Skrypt sam pobierze binary `llama-server`, wykryje GPU (Apple Metal / NVIDIA CUDA / AMD ROCm / Vulkan / CPU), zapyta o model GGUF (URL HuggingFace lub plik lokalny) i uruchomi lokalne proxy. Frontend automatycznie wykryje proxy i przełączy się w tryb AI — w headerze pojawi się zielony badge **„AI lokalny”**. Wszystko offline, bez kosztów, bez kont.
-
-Szczegóły, flagi i troubleshooting: [local-ai-proxy/README.md](local-ai-proxy/README.md).
+| Warstwa | Rozwiązanie |
+|---------|-------------|
+| UI | GitHub Pages, vanilla JS, Tailwind CDN |
+| Baza i realtime | Supabase Postgres + Realtime |
+| Logowanie | Supabase Auth |
+| Lokalny AI | llama.cpp `llama-server` + Node 18 proxy |
+| Stacje | `workstation-agent.js` + Supabase REST |
 
 ## Dokumentacja
 
 | Sekcja | Plik |
 |--------|------|
-| **Nawigacja po docs** | [docs/index.md](docs/index.md) |
-| Wizja i założenia | [docs/concept/vision.md](docs/concept/vision.md) |
-| Role w systemie | [docs/concept/roles.md](docs/concept/roles.md) |
-| Architektura — przegląd | [docs/architecture/overview.md](docs/architecture/overview.md) |
-| Komunikacja AI↔AI | [docs/architecture/communication.md](docs/architecture/communication.md) |
-| Profile agentów | [docs/architecture/agent-profiles.md](docs/architecture/agent-profiles.md) |
-| Ustawienia repo i autodebug | [docs/architecture/repo-settings.md](docs/architecture/repo-settings.md) |
-| Zakres MVP 1.0.0 | [docs/product/mvp-scope.md](docs/product/mvp-scope.md) |
-| Status alpha | [docs/product/alpha-release.md](docs/product/alpha-release.md) |
-| Specyfikacja UI/UX | [docs/product/ui-spec.md](docs/product/ui-spec.md) |
-| Struktura projektu | [docs/dev/repo-map.md](docs/dev/repo-map.md) |
-| Supabase — jak używać | [docs/dev/api-reference.md](docs/dev/api-reference.md) |
-| Testy i weryfikacja | [docs/dev/testing.md](docs/dev/testing.md) |
-| Jak forknąć i uruchomić | [FORK_GUIDE.md](FORK_GUIDE.md) |
+| Nawigacja po docs | [docs/index.md](docs/index.md) |
+| Architektura | [docs/architecture/overview.md](docs/architecture/overview.md) |
+| Lokalny runtime | [local-ai-proxy/README.md](local-ai-proxy/README.md) |
+| Specyfikacja UI | [docs/product/ui-spec.md](docs/product/ui-spec.md) |
+| Testy | [docs/dev/testing.md](docs/dev/testing.md) |
+| Krytyczny QA alpha | [docs/product/bad-mood-qa.md](docs/product/bad-mood-qa.md) |
+| Jak forknąć | [FORK_GUIDE.md](FORK_GUIDE.md) |

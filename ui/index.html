@@ -3,7 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agent Manager</title>
+  <title>Agent Manager — polecenia dla AI</title>
+  <script>
+    (() => {
+      const theme = localStorage.getItem('agent-manager-theme') || 'system'
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+      if (theme === 'dark' || (theme === 'system' && prefersDark)) document.documentElement.classList.add('theme-dark')
+    })()
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body {
@@ -37,6 +44,66 @@
       100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
     }
     .timeline-current { animation: pulse-ring 1.5s infinite; }
+    .help-dot {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.1rem;
+      height: 1.1rem;
+      border-radius: 999px;
+      border: 1px solid #cbd5e1;
+      color: #475569;
+      font-size: 0.72rem;
+      font-weight: 700;
+      margin-left: 0.25rem;
+      cursor: help;
+      vertical-align: text-bottom;
+    }
+    html.theme-dark body {
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    html.theme-dark .header-layer,
+    html.theme-dark .sidebar-layer,
+    html.theme-dark .bg-white\/95,
+    html.theme-dark .bg-white {
+      background: rgba(15, 23, 42, 0.96) !important;
+      border-color: rgba(71, 85, 105, 0.7) !important;
+    }
+    html.theme-dark .bg-slate-50,
+    html.theme-dark .bg-slate-100,
+    html.theme-dark .bg-slate-200 {
+      background: #1e293b !important;
+    }
+    html.theme-dark .text-slate-900,
+    html.theme-dark .text-slate-800,
+    html.theme-dark .text-slate-700 {
+      color: #f8fafc !important;
+    }
+    html.theme-dark .text-slate-600,
+    html.theme-dark .text-slate-500 {
+      color: #cbd5e1 !important;
+    }
+    html.theme-dark .border-slate-200,
+    html.theme-dark .border-slate-300,
+    html.theme-dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+      border-color: #334155 !important;
+    }
+    html.theme-dark input,
+    html.theme-dark textarea,
+    html.theme-dark select {
+      background: #0f172a !important;
+      color: #f8fafc !important;
+      border-color: #475569 !important;
+    }
+    html.theme-dark input::placeholder,
+    html.theme-dark textarea::placeholder {
+      color: #94a3b8 !important;
+    }
+    html.theme-dark .hover\:bg-slate-50:hover,
+    html.theme-dark .hover\:bg-slate-100:hover {
+      background: #1e293b !important;
+    }
   </style>
 </head>
 <body class="text-slate-900 min-h-screen font-sans antialiased">
@@ -53,7 +120,7 @@
     <div class="w-full max-w-md bg-white/95 rounded-2xl surface-card border border-white/80 p-8">
       <div class="text-center mb-8">
         <h1 class="text-3xl font-bold text-slate-900">Agent Manager</h1>
-        <p class="text-slate-500 mt-2">Zaloguj się, aby zarządzać zadaniami AI</p>
+        <p class="text-slate-500 mt-2">Dodawaj polecenia do AI i obserwuj wykonanie</p>
       </div>
 
       <!-- Zakładki Login / Register -->
@@ -115,7 +182,7 @@
     <!-- Sidebar nawigacyjny -->
     <aside class="w-64 bg-white/95 border-r border-slate-200/80 sidebar-layer flex flex-col">
       <div class="p-6 border-b border-slate-200">
-        <h1 class="text-xl font-bold text-slate-900">Agent Manager</h1>
+        <h1 class="text-xl font-bold text-slate-900">Polecenia AI</h1>
       </div>
       <nav class="flex-1 p-4 space-y-1">
         <button data-view="dashboard"
@@ -124,7 +191,7 @@
         </button>
         <button data-view="tasks"
           class="nav-link w-full text-left px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">
-          Zadania
+          Polecenia
         </button>
         <button data-view="agents"
           class="nav-link w-full text-left px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">
@@ -141,6 +208,10 @@
         <button data-view="advanced"
           class="nav-link w-full text-left px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">
           Zaawansowane
+        </button>
+        <button data-view="settings"
+          class="nav-link w-full text-left px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">
+          Ustawienia
         </button>
       </nav>
       <div class="p-4 border-t border-slate-200">
@@ -195,10 +266,10 @@
           <!-- Akcja + tabela ostatnich zadań -->
           <div class="bg-white/95 rounded-xl surface-card border border-white/80">
             <div class="p-6 border-b border-slate-200 flex items-center justify-between">
-              <h3 class="text-lg font-semibold text-slate-900">Ostatnie zadania</h3>
+              <h3 class="text-lg font-semibold text-slate-900">Ostatnie polecenia</h3>
               <button id="btn-add-task"
                 class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition">
-                + Dodaj zadanie
+                + Dodaj polecenie
               </button>
             </div>
             <div class="overflow-x-auto">
@@ -206,7 +277,7 @@
                 <thead class="bg-slate-50 text-slate-600 text-left">
                   <tr>
                     <th class="px-6 py-3 font-medium">ID</th>
-                    <th class="px-6 py-3 font-medium">Tytuł</th>
+                    <th class="px-6 py-3 font-medium">Polecenie</th>
                     <th class="px-6 py-3 font-medium">Status</th>
                     <th class="px-6 py-3 font-medium">Priorytet</th>
                     <th class="px-6 py-3 font-medium">Data</th>
@@ -225,10 +296,10 @@
         <section id="view-tasks" class="view-section hidden">
           <div class="bg-white/95 rounded-xl surface-card border border-white/80">
             <div class="p-6 border-b border-slate-200 flex items-center justify-between">
-              <h3 class="text-lg font-semibold text-slate-900">Wszystkie zadania</h3>
+              <h3 class="text-lg font-semibold text-slate-900">Wszystkie polecenia</h3>
               <button id="btn-add-task-2"
                 class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition">
-                + Dodaj zadanie
+                + Dodaj polecenie
               </button>
             </div>
             <div class="overflow-x-auto">
@@ -236,7 +307,7 @@
                 <thead class="bg-slate-50 text-slate-600 text-left">
                   <tr>
                     <th class="px-6 py-3 font-medium">ID</th>
-                    <th class="px-6 py-3 font-medium">Tytuł</th>
+                    <th class="px-6 py-3 font-medium">Polecenie</th>
                     <th class="px-6 py-3 font-medium">Status</th>
                     <th class="px-6 py-3 font-medium">Priorytet</th>
                     <th class="px-6 py-3 font-medium">Data</th>
@@ -334,7 +405,7 @@
                     <th class="px-6 py-3 font-medium">Nazwa</th>
                     <th class="px-6 py-3 font-medium">Rola</th>
                     <th class="px-6 py-3 font-medium">Umiejętności</th>
-                    <th class="px-6 py-3 font-medium">Limit</th>
+                    <th class="px-6 py-3 font-medium">Limit profilu</th>
                     <th class="px-6 py-3 font-medium">Akcje</th>
                   </tr>
                 </thead>
@@ -352,7 +423,7 @@
             <div class="p-6 border-b border-slate-200 flex items-center justify-between gap-4">
               <div>
                 <h3 class="text-lg font-semibold text-slate-900">Stacje robocze</h3>
-                <p class="text-sm text-slate-500 mt-1">Każda stacja rejestruje się lokalnie przez start.command/start.sh i publikuje swoje modele do Supabase.</p>
+                <p class="text-sm text-slate-500 mt-1">Każda stacja rejestruje się lokalnie przez start.bat/start.command/start.sh i publikuje swoje modele do Supabase.</p>
               </div>
               <button id="btn-refresh-workstations"
                 class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition">
@@ -377,6 +448,62 @@
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80 mt-6 p-6">
+            <div class="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <h3 class="text-lg font-semibold text-slate-900">Dodaj lub skonfiguruj stację</h3>
+                <p class="text-sm text-slate-500 mt-1">Te pola pomagają przygotować lokalny config. Zapis na komputerze robi launcher: <code>start.bat --config</code> albo <code>./start.sh --config</code>.</p>
+              </div>
+              <button id="btn-generate-station-config"
+                class="bg-slate-900 hover:bg-slate-800 text-white font-medium px-4 py-2 rounded-lg transition">
+                Przygotuj instrukcję
+              </button>
+            </div>
+            <div class="grid md:grid-cols-3 gap-4">
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Równoległe zadania <span class="help-dot" title="Ile zleceń stacja może robić naraz. Zostaw 1, jeśli nie wiesz.">?</span></span>
+                <input id="station-config-slots" type="number" min="1" max="4" value="1" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Kontekst modelu <span class="help-dot" title="Ile tekstu model może pamiętać. Native jest najbezpieczniejsze.">?</span></span>
+                <select id="station-config-context" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                  <option value="native">native</option>
+                  <option value="32768">32k</option>
+                  <option value="65536">64k</option>
+                  <option value="131072">128k</option>
+                </select>
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">KV cache <span class="help-dot" title="Kompresja pamięci modelu. Auto dobiera bezpieczną wartość.">?</span></span>
+                <select id="station-config-kv" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                  <option value="auto">auto</option>
+                  <option value="f16">f16</option>
+                  <option value="q8_0">q8_0</option>
+                  <option value="q4_0">q4_0</option>
+                </select>
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">SD <span class="help-dot" title="Eksperymentalne przyspieszanie. Zostaw wyłączone bez draft modelu.">?</span></span>
+                <select id="station-config-sd" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                  <option value="false">wyłączone</option>
+                  <option value="true">włączone</option>
+                </select>
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Harmonogram <span class="help-dot" title="Puste oznacza brak harmonogramu. Przykład: 18:00-08:00.">?</span></span>
+                <input id="station-config-schedule" type="text" placeholder="np. 18:00-08:00" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Auto-update <span class="help-dot" title="Launcher spróbuje bezpiecznie pobrać aktualizacje przed startem.">?</span></span>
+                <select id="station-config-update" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                  <option value="false">wyłączony</option>
+                  <option value="true">włączony</option>
+                </select>
+              </label>
+            </div>
+            <pre id="station-config-output" class="hidden mt-5 bg-slate-900 text-slate-100 text-xs rounded-lg p-4 overflow-auto whitespace-pre-wrap"></pre>
           </div>
         </section>
 
@@ -486,6 +613,44 @@
           </div>
         </section>
 
+        <!-- ========== SETTINGS VIEW ========== -->
+        <section id="view-settings" class="view-section hidden">
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6 max-w-3xl">
+            <h3 class="text-lg font-semibold text-slate-900">Ustawienia</h3>
+            <p class="text-sm text-slate-500 mt-1">Preferencje są zapisywane w tej przeglądarce.</p>
+            <div class="grid md:grid-cols-2 gap-4 mt-6">
+              <label class="block">
+                <span class="block text-sm font-medium text-slate-700 mb-1">Motyw kolorystyczny</span>
+                <select id="settings-theme" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <option value="system">Systemowy</option>
+                  <option value="light">Jasny</option>
+                  <option value="dark">Ciemny</option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="block text-sm font-medium text-slate-700 mb-1">Język</span>
+                <select id="settings-language" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <option value="pl">Polski</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
+              <label class="block md:col-span-2">
+                <span class="block text-sm font-medium text-slate-700 mb-1">Domyślne repozytorium</span>
+                <input id="settings-default-repo" type="text" placeholder="owner/repo albo https://github.com/owner/repo" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+              </label>
+              <label class="block md:col-span-2">
+                <span class="block text-sm font-medium text-slate-700 mb-1">Domyślna stacja</span>
+                <select id="settings-default-workstation" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                  <option value="">Automatycznie - AI wybierze stację</option>
+                </select>
+              </label>
+            </div>
+            <div class="mt-6 flex justify-end">
+              <button id="btn-save-settings" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition">Zapisz ustawienia</button>
+            </div>
+          </div>
+        </section>
+
       </main>
     </div>
   </div>
@@ -496,7 +661,7 @@
   <div id="modal-submit-task" class="hidden fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="p-6 border-b border-slate-200 flex items-center justify-between">
-        <h3 class="text-xl font-semibold text-slate-900">Nowe zadanie</h3>
+        <h3 class="text-xl font-semibold text-slate-900">Nowe polecenie dla AI</h3>
         <button class="modal-close text-slate-500 hover:text-slate-900 text-2xl leading-none">×</button>
       </div>
 
@@ -504,7 +669,7 @@
       <div class="px-6 pt-4">
         <div class="flex items-center justify-between text-xs font-medium text-slate-500 mb-2">
           <span class="step-label" data-step="1">1. Szablon</span>
-          <span class="step-label" data-step="2">2. Dane</span>
+          <span class="step-label" data-step="2">2. Polecenie</span>
           <span class="step-label" data-step="3">3. Przegląd</span>
         </div>
         <div class="w-full bg-slate-200 rounded-full h-1.5">
@@ -515,7 +680,7 @@
       <div class="p-6">
         <!-- KROK 1: szablon -->
         <div class="wizard-step" data-step="1">
-          <p class="text-sm text-slate-600 mb-4">Wybierz szablon zadania:</p>
+          <p class="text-sm text-slate-600 mb-4">Wybierz typ polecenia:</p>
           <div class="grid grid-cols-2 gap-3">
             <button class="template-card border-2 border-slate-200 hover:border-blue-500 rounded-xl p-4 text-left transition" data-template="bug-fix">
               <div class="text-2xl mb-2">🐛</div>
@@ -544,18 +709,18 @@
         <div class="wizard-step hidden" data-step="2">
           <form id="form-task" class="space-y-4">
             <div>
-              <label class="block text-sm font-medium text-slate-700 mb-1">Tytuł *</label>
-              <input type="text" id="task-title" required
+              <label class="block text-sm font-medium text-slate-700 mb-1">Polecenie dla AI * <span class="help-dot" title="Jedno zdanie: co AI ma zrobić.">?</span></label>
+              <input type="text" id="task-title" required placeholder="Np. napraw formularz logowania i opisz zmianę"
                 class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
-              <label class="block text-sm font-medium text-slate-700 mb-1">Opis *</label>
-              <textarea id="task-description" required rows="4"
+              <label class="block text-sm font-medium text-slate-700 mb-1">Szczegóły / oczekiwany wynik * <span class="help-dot" title="Napisz jak ma wyglądać gotowy wynik i co jest ważne.">?</span></label>
+              <textarea id="task-description" required rows="4" placeholder="Np. formularz ma walidować email, pokazywać błąd i działać na telefonie."
                 class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"></textarea>
             </div>
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Priorytet</label>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Priorytet <span class="help-dot" title="To tylko kolejność w kolejce. AI kierownik nadal decyduje jak wykonać pracę.">?</span></label>
                 <select id="task-priority"
                   class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                   <option value="low">Niski</option>
@@ -564,57 +729,46 @@
                 </select>
               </div>
               <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Repozytorium (opcjonalnie)</label>
-                <input type="text" id="task-repo" placeholder="owner/repo"
+                <label class="block text-sm font-medium text-slate-700 mb-1">Repozytorium (opcjonalnie) <span class="help-dot" title="Możesz wpisać owner/repo albo pełny link GitHub. Pole może zostać puste.">?</span></label>
+                <input type="text" id="task-repo" list="repo-suggestions" placeholder="owner/repo albo https://github.com/owner/repo"
                   class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                <datalist id="repo-suggestions"></datalist>
               </div>
             </div>
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Stacja robocza</label>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Stacja robocza <span class="help-dot" title="Zostaw automatycznie albo wybierz dokładnie jedną stację.">?</span></label>
                 <select id="task-workstation"
                   class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                  <option value="">Bez przypisania stacji</option>
+                  <option value="">Automatycznie - AI wybierze stację</option>
                 </select>
               </div>
               <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">Model</label>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Model <span class="help-dot" title="Model wybierasz tylko wtedy, gdy wskazujesz konkretną stację.">?</span></label>
                 <select id="task-model" disabled
                   class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400">
-                  <option value="">Brak przypisanego modelu</option>
+                  <option value="">Automatycznie</option>
                 </select>
               </div>
             </div>
             <div id="task-workstation-advanced-info" class="hidden rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600"></div>
-
-            <!-- Accordion: zaawansowane -->
-            <details class="border border-slate-200 rounded-lg">
-              <summary class="px-4 py-3 cursor-pointer text-sm font-medium text-slate-700 hover:bg-slate-50">
-                Zaawansowane
-              </summary>
-              <div class="px-4 pb-4 pt-2 space-y-4">
-                <div>
-                  <label class="block text-sm font-medium text-slate-700 mb-1">Kontekst (JSON lub tekst)</label>
-                  <textarea id="task-context" rows="3" placeholder='np. {"branch": "main", "env": "dev"}'
-                    class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono text-xs"></textarea>
-                </div>
-                <div class="grid md:grid-cols-2 gap-3 text-xs text-slate-600">
-                  <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div class="font-semibold text-slate-900">parallelSlots</div>
-                    <p class="mt-1">Domyślnie 1. Ta wartość jest ustawiana lokalnie w runtime stacji i określa, ile jobów stacja może robić naraz.</p>
-                  </div>
-                  <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div class="font-semibold text-slate-900">SD</div>
-                    <p class="mt-1">Domyślnie wyłączone. Wymaga draft modelu i kompatybilnego llama-server, więc jest opcją eksperymentalną.</p>
-                  </div>
-                  <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <div class="font-semibold text-slate-900">Kontekst</div>
-                    <p class="mt-1">Domyślnie natywny. Dłuższy kontekst i kompresja KV są ustawiane na stacji przez terminalowy config.</p>
-                  </div>
-                </div>
-                <p class="text-xs text-slate-500">Szczegóły aktualnej stacji zobaczysz po wyborze stacji powyżej oraz w menu Zaawansowane.</p>
+            <div class="grid md:grid-cols-3 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Linki lub pliki pomocnicze</label>
+                <textarea id="task-links" rows="3" placeholder="Link do issue, pliku, PR albo opis gdzie patrzeć"
+                  class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"></textarea>
               </div>
-            </details>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Wymagania</label>
+                <textarea id="task-requirements" rows="3" placeholder="Np. ma działać na telefonie, bez zmiany API"
+                  class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"></textarea>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Czego AI ma nie robić</label>
+                <textarea id="task-avoid" rows="3" placeholder="Np. nie usuwać istniejących danych, nie zmieniać routingu"
+                  class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"></textarea>
+              </div>
+            </div>
           </form>
         </div>
 
@@ -645,7 +799,7 @@
           </button>
           <button id="wizard-submit"
             class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg hidden">
-            Wyślij
+            Wyślij polecenie
           </button>
         </div>
       </div>
@@ -686,7 +840,7 @@
           <p class="text-xs text-slate-500 mt-1">Naciśnij Enter aby dodać tag</p>
         </div>
         <div>
-          <label class="block text-sm font-medium text-slate-700 mb-1">Limit równoczesnych zadań</label>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Maksymalnie równoczesnych zadań dla profilu <span class="help-dot" title="To limit bezpieczeństwa profilu. Przy zwykłym poleceniu AI kierownik sam wybiera wykonawcę.">?</span></label>
           <input type="number" id="agent-concurrency" min="1" max="10" value="1"
             class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
         </div>

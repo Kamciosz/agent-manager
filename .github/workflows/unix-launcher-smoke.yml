@@ -1,0 +1,60 @@
+name: macOS and Linux launcher smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'start.sh'
+      - 'start.command'
+      - 'Aktualizuj.command'
+      - 'local-ai-proxy/**'
+      - '.github/workflows/unix-launcher-smoke.yml'
+  pull_request:
+    paths:
+      - 'start.sh'
+      - 'start.command'
+      - 'Aktualizuj.command'
+      - 'local-ai-proxy/**'
+      - '.github/workflows/unix-launcher-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare artifacts
+        run: mkdir -p artifacts/unix-launcher
+
+      - name: Static syntax checks
+        run: |
+          bash -n start.sh
+          node --check local-ai-proxy/proxy.js
+          node --check local-ai-proxy/workstation-agent.js
+          node --check local-ai-proxy/runtime-schedule.js
+
+      - name: Help path
+        run: |
+          chmod +x start.sh start.command Aktualizuj.command
+          ./start.sh --help 2>&1 | tee artifacts/unix-launcher/start-sh-help-${{ matrix.os }}.txt
+
+      - name: Safe doctor path
+        run: |
+          ./start.sh --doctor 2>&1 | tee artifacts/unix-launcher/start-sh-doctor-${{ matrix.os }}.txt
+
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unix-launcher-smoke-${{ matrix.os }}-${{ github.run_number }}
+          path: artifacts/unix-launcher/
+          if-no-files-found: warn

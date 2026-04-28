@@ -9,7 +9,7 @@ Kryteria walidacji i scenariusze testów dla projektu Agent Manager. Backend to 
 | ID | Kryterium | Metoda weryfikacji | Warunek przejścia |
 |----|-----------|-------------------|-------------------|
 | AM-VAL-001 | Tworzenie zadania | Ręczny test w UI — formularz Submit Task | Zadanie pojawia się w tabeli Supabase; status `pending`; widoczne na liście zadań |
-| AM-VAL-002 | Przydział zadania przez AI kierownika | Ręczny test — dodaj zadanie, sprawdź czy AI kierownik przydzielił je w ciągu ~5 sekund | Wpis w tabeli `assignments`; agent wykonawczy dostaje powiadomienie real-time |
+| AM-VAL-002 | Przydział polecenia przez AI kierownika | Ręczny test — dodaj polecenie, sprawdź czy AI kierownik przydzielił je w ciągu ~5 sekund | Wpis w tabeli `assignments`; agent wykonawczy dostaje powiadomienie real-time |
 | AM-VAL-003 | Aktualizacja statusu zadania | Sprawdź w UI czy status zmienia się na żywo bez odświeżania | Historia statusów w bazie; bieżący status poprawny |
 | AM-VAL-004 | Profile agentów | CRUD w UI — utwórz, edytuj, usuń profil; sprawdź czy AI kierownik uwzględnia go przy przydziale | Profile zapisywane w Supabase; AI kierownik respektuje skills i limity |
 | AM-VAL-005 | Autodebug | Ustaw status zadania na `failed`; sprawdź czy system generuje raport | Raport zawiera opis błędu, sugestię naprawy, logi |
@@ -24,7 +24,7 @@ Kryteria walidacji i scenariusze testów dla projektu Agent Manager. Backend to 
 
 **Kroki:**
 1. Zaloguj się jako manager w aplikacji.
-2. Kliknij „Dodaj zadanie" → wypełnij formularz → „Wyślij".
+2. Kliknij „Dodaj polecenie" → wypełnij formularz → „Wyślij polecenie".
 3. Obserwuj stronę Task Detail.
 
 **Oczekiwany wynik:**
@@ -97,6 +97,37 @@ Wszystkie zdarzenia powinny się pojawić w ciągu kilku sekund od wysłania zad
 - Karta wyników z: opisem błędu, sugestią naprawy, logami z tablicy `task_logs`
 - Przycisk „Pobierz raport" i „Utwórz zgłoszenie"
 
+## Smoke testy launcherów i bezpieczeństwa
+
+Przed pushem uruchom lokalnie:
+
+```bash
+bash -n start.sh
+node --check ui/app.js ui/ai-client.js ui/manager.js ui/executor.js ui/settings.js
+node --check local-ai-proxy/proxy.js local-ai-proxy/workstation-agent.js local-ai-proxy/runtime-schedule.js
+./start.sh --doctor
+git diff --check
+```
+
+Po pushu muszą przejść workflow:
+
+| Workflow | Co sprawdza |
+|----------|-------------|
+| `Deploy to GitHub Pages` | Wstrzyknięcie Supabase secrets i publikację `ui/` |
+| `Security scan` | Brak śledzonego `local-ai-proxy/config.json` i oczywistych sekretów |
+| `Windows launcher smoke` | Parser PowerShell, `start.ps1 --help`, `start.bat --help`, `start.ps1 --doctor` |
+| `macOS and Linux launcher smoke` | `bash -n`, `node --check`, `start.sh --help`, `start.sh --doctor` |
+| `Package launchers` | ZIP-y `AgentManager-Windows`, `AgentManager-macOS`, `AgentManager-Linux` |
+
+Manualny test UI po tej rundzie:
+
+1. Otwórz aplikację i przejdź do **Ustawienia**.
+2. Zmień motyw na ciemny, odśwież stronę i sprawdź, czy wybór został.
+3. Dodaj polecenie bez repo i bez stacji.
+4. Dodaj polecenie z repo i jedną stacją.
+5. Sprawdź, czy formularz nie wymaga JSON i czy tooltipy `?` wyjaśniają pola.
+6. W **Stacje robocze** użyj konfiguratora i sprawdź, czy generuje instrukcję `--config`.
+
 ---
 
 ## Gdzie sprawdzać dane podczas testów
@@ -107,12 +138,7 @@ Supabase dostarcza panel webowy do przeglądania bazy danych:
 2. Przejdź do **Table Editor** — widok wszystkich rekordów w tabelach.
 3. Przejdź do **Realtime** → **Inspect** — podgląd live wiadomości przez kanały.
 4. Przejdź do **Authentication** → **Users** — lista zarejestrowanych użytkowników i ich ról.
-
 Żadnego curl ani terminala — wszystko przez przeglądarkę.
-  -X POST "$API_URL/api/v1/tasks/$TASK_ID/assign" \
-  -H "Authorization: Bearer $VIEWER_TOKEN" \
-  -d '{"assignee":"agent-1"}' | grep -q "403"
-```
 
 ---
 

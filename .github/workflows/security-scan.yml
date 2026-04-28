@@ -1,0 +1,42 @@
+name: Security scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets-and-config:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Block local runtime config
+        run: |
+          if git ls-files --error-unmatch local-ai-proxy/config.json >/dev/null 2>&1; then
+            echo "local-ai-proxy/config.json must stay untracked; it may contain local credentials."
+            exit 1
+          fi
+
+      - name: Scan high-risk literal secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t tracked_files < <(git ls-files | grep -v '^.github/workflows/security-scan.yml$')
+          if grep -nE 'sb_secret_|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|service_role' "${tracked_files[@]}"; then
+            echo "High-risk secret-like literal found. Remove it or move it to GitHub Secrets."
+            exit 1
+          fi
+          if grep -nE 'DEFAULT_SUPABASE_(URL|KEY)="https?://' "${tracked_files[@]}"; then
+            echo "Launcher must not ship a real default Supabase project URL/key."
+            exit 1
+          fi
+          if grep -nE "DEFAULT_SUPABASE_(URL|KEY)='https?://|DefaultSupabase.*https?://" "${tracked_files[@]}"; then
+            echo "Launcher must not ship a real default Supabase project URL/key."
+            exit 1
+          fi

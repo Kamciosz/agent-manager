@@ -1,0 +1,25 @@
+{
+  "proxyPort": 3001,
+  "llamaPort": 8080,
+  "llamaUrl": "http://127.0.0.1:8080",
+  "modelPath": "",
+  "modelName": "",
+  "backend": "cpu",
+  "workstationName": "Moja stacja",
+  "supabaseUrl": "https://YOUR-PROJECT.supabase.co",
+  "supabaseAnonKey": "sb_publishable_YOUR_KEY_OR_LEGACY_ANON_KEY",
+  "workstationEmail": "operator@example.com",
+  "workstationPassword": "CHANGE-ME-LOCAL-ONLY",
+  "allowedOrigins": [
+    "https://YOUR-GITHUB-LOGIN.github.io",
+    "http://localhost",
+    "http://127.0.0.1"
+  ],
+  "acceptsJobs": true,
+  "scheduleEnabled": false,
+  "parallelSlots": 1,
+  "contextMode": "native",
+  "kvCacheQuantization": "auto",
+  "sdEnabled": false,
+  "autoUpdate": false
+}

@@ -36,8 +36,9 @@ CONFIG_FILE="$PROXY_DIR/config.json"
 
 LLAMA_PORT=8080
 PROXY_PORT=3001
-DEFAULT_SUPABASE_URL="https://xaaalkbygdtjlsnhipwa.supabase.co"
-DEFAULT_SUPABASE_KEY="sb_publishable_y0GUJCxdmltSN8qAtmSmAA_ovM9Dxrc"
+DEFAULT_SUPABASE_URL=""
+DEFAULT_SUPABASE_KEY=""
+DEFAULT_APP_ORIGIN="https://kamciosz.github.io"
 
 # --- Parsowanie flag --------------------------------------------------------
 CHANGE_MODEL=0
@@ -777,13 +778,14 @@ configure_schedule_options() {
 }
 
 upsert_workstation_config() {
-  local workstation_name="$1" supabase_url="$2" supabase_key="$3" workstation_email="$4" workstation_password="$5"
+  local workstation_name="$1" supabase_url="$2" supabase_key="$3" workstation_email="$4" workstation_password="$5" app_origin="$6"
   CONFIG_FILE_ENV="$CONFIG_FILE" \
   WORKSTATION_NAME_VALUE="$workstation_name" \
   SUPABASE_URL_VALUE="$supabase_url" \
   SUPABASE_KEY_VALUE="$supabase_key" \
   WORKSTATION_EMAIL_VALUE="$workstation_email" \
   WORKSTATION_PASSWORD_VALUE="$workstation_password" \
+  APP_ORIGIN_VALUE="$app_origin" \
   node <<'NODE'
 const fs = require('node:fs')
 const file = process.env.CONFIG_FILE_ENV
@@ -798,6 +800,12 @@ cfg.supabaseUrl = process.env.SUPABASE_URL_VALUE || cfg.supabaseUrl || ''
 cfg.supabaseAnonKey = process.env.SUPABASE_KEY_VALUE || cfg.supabaseAnonKey || ''
 cfg.workstationEmail = process.env.WORKSTATION_EMAIL_VALUE || cfg.workstationEmail || ''
 cfg.workstationPassword = process.env.WORKSTATION_PASSWORD_VALUE || cfg.workstationPassword || ''
+const origins = new Set(Array.isArray(cfg.allowedOrigins) ? cfg.allowedOrigins : [])
+for (const origin of ['http://localhost', 'http://127.0.0.1']) origins.add(origin)
+const appOrigin = (process.env.APP_ORIGIN_VALUE || '').trim().replace(/\/+$/, '')
+if (appOrigin) origins.add(appOrigin)
+cfg.appOrigin = appOrigin || cfg.appOrigin || ''
+cfg.allowedOrigins = Array.from(origins).filter(Boolean)
 if (typeof cfg.acceptsJobs !== 'boolean') cfg.acceptsJobs = true
 if (typeof cfg.scheduleEnabled !== 'boolean') cfg.scheduleEnabled = false
 if (!('scheduleStart' in cfg)) cfg.scheduleStart = null
@@ -837,12 +845,13 @@ NODE
 }
 
 ensure_workstation_config() {
-  local workstation_name supabase_url supabase_key workstation_email workstation_password
+  local workstation_name supabase_url supabase_key workstation_email workstation_password app_origin
   workstation_name="$(read_config_value workstationName)"
   supabase_url="$(read_config_value supabaseUrl)"
   supabase_key="$(read_config_value supabaseAnonKey)"
   workstation_email="$(read_config_value workstationEmail)"
   workstation_password="$(read_config_value workstationPassword)"
+  app_origin="$(read_config_value appOrigin)"
 
   if [ -n "$workstation_name" ] && [ -n "$supabase_url" ] && [ -n "$supabase_key" ] && [ -n "$workstation_email" ] && [ -n "$workstation_password" ]; then
     log "Używam zapisanej konfiguracji stacji roboczej."
@@ -858,14 +867,17 @@ ensure_workstation_config() {
   echo
 
   workstation_name="$(prompt_with_default "Nazwa stacji" "${workstation_name:-$(hostname)}")"
+  echo "  Supabase URL i publishable key skopiujesz z własnego projektu Supabase."
+  echo "  Nie ma tu domyślnego klucza produkcyjnego, żeby fork był bezpieczny."
   supabase_url="$(prompt_with_default "Supabase URL" "${supabase_url:-$DEFAULT_SUPABASE_URL}")"
   supabase_key="$(prompt_with_default "Supabase publishable key" "${supabase_key:-$DEFAULT_SUPABASE_KEY}")"
   workstation_email="$(prompt_with_default "Email operatora stacji" "$workstation_email")"
   if [ -z "$workstation_password" ]; then
     workstation_password="$(prompt_secret_value "Hasło operatora stacji")"
   fi
+  app_origin="$(prompt_with_default "Adres aplikacji GitHub Pages (origin, bez ścieżki)" "${app_origin:-$DEFAULT_APP_ORIGIN}")"
 
-  upsert_workstation_config "$workstation_name" "$supabase_url" "$supabase_key" "$workstation_email" "$workstation_password"
+  upsert_workstation_config "$workstation_name" "$supabase_url" "$supabase_key" "$workstation_email" "$workstation_password" "$app_origin"
   log "Zapisano konfigurację stacji roboczej w config.json"
 }
 

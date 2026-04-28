@@ -11,7 +11,7 @@ Dokumentacja produktowa w [docs/](docs/index.md).
 **Projekt:** Agent Manager — system zarządzania agentami AI
 **Repo:** `Kamciosz/agent-manager` na GitHub
 **Architektura:** GitHub Pages (frontend) + Supabase (backend) — ZERO własnego serwera, ZERO npm, ZERO bundlera
-**Supabase URL:** `https://xaaalkbygdtjlsnhipwa.supabase.co`
+**Supabase URL:** własny projekt Supabase wstrzykiwany przez GitHub Actions jako `${{ secrets.SUPABASE_URL }}`
 **Supabase anon key:** wstrzykiwany przez GitHub Actions jako `${{ secrets.SUPABASE_ANON_KEY }}`
 
 **Tabele Supabase (już istnieją w bazie):** `tasks`, `assignments`, `agents`, `messages`
@@ -260,7 +260,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
   - Struktura HTML ma dwa główne `<div>`: `#auth-screen` (login/register) i `#app-screen` (ukryty na start)
   - `#auth-screen`: dwa formularze (zakładki "Zaloguj" / "Zarejestruj"), pola email + hasło, przycisk submit, div na błędy
   - `#app-screen`: nawigacja boczna z linkami do Dashboard / Zadania / Profile Agentów, główny obszar `#main-content`
-  - Dashboard pokazuje: 3 karty ze statystykami (pending/in_progress/done), przycisk "Dodaj zadanie", tabela ostatnich zadań (ID | Tytuł | Status | Priorytet | Data)
+  - Dashboard pokazuje: 3 karty ze statystykami (pending/in_progress/done), przycisk "Dodaj polecenie", tabela ostatnich poleceń (ID | Polecenie | Status | Priorytet | Data)
   - Status połączenia: zielona/czerwona kropka w górnym pasku z tekstem "Połączono" / "Brak połączenia"
 - **Gotowe gdy:** Strona otwiera się w przeglądarce, widać ekran logowania, po kliknięciu zakładki widać formularz rejestracji
 - **Nie rób:** Nie implementuj logiki Supabase — HTML i CSS tylko (klasy Tailwind)
@@ -274,8 +274,8 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
   - Krok 1 — Szablon: 4 karty do kliknięcia: Bug Fix / Refactor / Testy / Własne (każda z ikonką i krótkim opisem)
   - Krok 2 — Dane: pola `title`* (required), `description`* (required), `priority` (select: low/medium/high, domyślnie medium), `repo` (optional), accordion "Zaawansowane" z polem `context` (textarea)
   - Krok 3 — Przegląd: podsumowanie w read-only, dwa przyciski: "Wyślij" (niebieski) i "Zapisz jako szkic" (szary)
-  - Przycisk "Dodaj zadanie" na dashboardzie otwiera modal (JavaScript toggle klasy hidden)
-- **Gotowe gdy:** Kliknięcie "Dodaj zadanie" otwiera modal, przyciski Dalej/Wstecz przełączają kroki, accordion się zwija/rozwija
+  - Przycisk "Dodaj polecenie" na dashboardzie otwiera modal (JavaScript toggle klasy hidden)
+- **Gotowe gdy:** Kliknięcie "Dodaj polecenie" otwiera modal, przyciski Dalej/Wstecz przełączają kroki
 - **Nie rób:** Nie podłączaj do Supabase jeszcze — tylko interakcja HTML/JS
 - [x] Gotowe
 
@@ -409,7 +409,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 - **Co:** Przeprowadzić test pełnego przepływu zadania
 - **Gdzie:** Test manualny w przeglądarce po deploy — zgodnie z [docs/dev/testing.md](docs/dev/testing.md) Scenariusz 1
 - **Jak zrobić:** 
-  - Zaloguj się, kliknij "Dodaj zadanie", wypełnij formularz, wyślij
+  - Zaloguj się, kliknij "Dodaj polecenie", wypełnij formularz, wyślij
   - Otwórz Task Detail i obserwuj timeline przez 10 sekund
   - Zaznacz wyniki: które kroki timelineʼu się zmieniły, ile sekund zajął każdy krok
 - **Gotowe gdy:** Timeline pokazuje co najmniej 4 z 5 kroków zmieniające się na żywo; żaden błąd w konsoli przeglądarki

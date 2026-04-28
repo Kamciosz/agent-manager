@@ -7,7 +7,7 @@
  *              Endpointy:
  *                GET  /health    → status proxy + llama-server + nazwa modelu
  *                POST /generate  → { prompt, maxTokens?, temperature? } → { text }
- *                OPTIONS *       → CORS preflight (Access-Control-Allow-Origin: *)
+ *                OPTIONS *       → CORS preflight dla dozwolonych originów
  *
  *              Konfiguracja: `local-ai-proxy/config.json`. Plik tworzy
  *              automatycznie `start.sh` / `start.bat` po wybraniu modelu.
@@ -27,12 +27,12 @@ const DEFAULTS = {
   MAX_TOKENS: 256,
   TEMPERATURE: 0.7,
   TIMEOUT_MS: 15000,
+  ALLOWED_ORIGINS: ['https://kamciosz.github.io', 'http://localhost', 'http://127.0.0.1'],
 }
 
 const CONFIG_PATH = path.join(__dirname, 'config.json')
 
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Max-Age': '86400',
@@ -44,7 +44,7 @@ const CORS_HEADERS = {
 
 /**
  * Wczytuje config.json. Brak pliku = pusty obiekt z domyślnymi wartościami.
- * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, contextMode:string, contextSizeTokens:number, kvCacheQuantization:string, effectiveKvCacheQuantization:string, autoUpdate:boolean, optimizationMode:string }}
+ * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, allowedOrigins:string[], parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, contextMode:string, contextSizeTokens:number, kvCacheQuantization:string, effectiveKvCacheQuantization:string, autoUpdate:boolean, optimizationMode:string }}
  */
 function loadConfig() {
   let cfg = {}
@@ -63,6 +63,7 @@ function loadConfig() {
     llamaUrl: cfg.llamaUrl || DEFAULTS.LLAMA_URL,
     modelName: cfg.modelName || 'unknown',
     backend: cfg.backend || 'unknown',
+    allowedOrigins: normalizeAllowedOrigins(cfg.allowedOrigins),
     parallelSlots: clampInt(cfg.parallelSlots, 1, 1, 4),
     sdEnabled: cfg.sdEnabled === true,
     draftModelName: cfg.draftModelName || '',
@@ -74,6 +75,21 @@ function loadConfig() {
     autoUpdate: cfg.autoUpdate === true,
     optimizationMode: cfg.optimizationMode || 'standard',
   }
+}
+
+/**
+ * Normalizuje originy, które mogą wywoływać lokalne proxy.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function normalizeAllowedOrigins(value) {
+  const raw = Array.isArray(value) ? value : []
+  const origins = new Set(DEFAULTS.ALLOWED_ORIGINS)
+  for (const item of raw) {
+    const origin = String(item || '').trim().replace(/\/+$/, '')
+    if (origin) origins.add(origin)
+  }
+  return Array.from(origins)
 }
 
 /**
@@ -126,23 +142,48 @@ function resolveKvCache(value, contextSizeTokens) {
 // ============================================================================
 
 /**
+ * Sprawdza, czy request pochodzi z dozwolonego originu.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {Object} cfg
+ * @returns {boolean}
+ */
+function isOriginAllowed(req, cfg) {
+  const origin = req.headers.origin
+  if (!origin) return true
+  if (origin === 'null') return true
+  const normalized = String(origin).trim().replace(/\/+$/, '')
+  return cfg.allowedOrigins.includes(normalized)
+}
+
+/**
  * Dopisuje nagłówki CORS do odpowiedzi.
+ * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
+ * @param {Object} cfg
  * @returns {void}
  */
-function withCors(res) {
+function withCors(req, res, cfg) {
   for (const [k, v] of Object.entries(CORS_HEADERS)) res.setHeader(k, v)
+  const origin = req.headers.origin
+  if (origin && origin !== 'null') {
+    res.setHeader('Access-Control-Allow-Origin', String(origin).trim().replace(/\/+$/, ''))
+    res.setHeader('Vary', 'Origin')
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', 'null')
+  }
 }
 
 /**
  * Odpowiada JSON-em z odpowiednim statusem.
+ * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
+ * @param {Object} cfg
  * @param {number} status
  * @param {Object} body
  * @returns {void}
  */
-function sendJson(res, status, body) {
-  withCors(res)
+function sendJson(req, res, cfg, status, body) {
+  withCors(req, res, cfg)
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
   res.statusCode = status
   res.end(JSON.stringify(body))
@@ -238,9 +279,9 @@ async function pingLlama(llamaUrl) {
  * @param {import('node:http').ServerResponse} res
  * @returns {Promise<void>}
  */
-async function handleHealth(cfg, res) {
+async function handleHealth(cfg, req, res) {
   const llamaOk = await pingLlama(cfg.llamaUrl)
-  sendJson(res, 200, {
+  sendJson(req, res, cfg, 200, {
     ok: llamaOk,
     proxy: 'up',
     llama: llamaOk ? 'up' : 'down',
@@ -275,11 +316,11 @@ async function handleGenerate(cfg, req, res) {
     body = JSON.parse(await readBody(req))
   } catch (error) {
     console.warn('[proxy] Invalid JSON body:', error.message)
-    sendJson(res, 400, { error: 'Invalid JSON body' })
+    sendJson(req, res, cfg, 400, { error: 'Invalid JSON body' })
     return
   }
   if (!body || typeof body.prompt !== 'string' || !body.prompt.trim()) {
-    sendJson(res, 400, { error: 'Missing prompt' })
+    sendJson(req, res, cfg, 400, { error: 'Missing prompt' })
     return
   }
   try {
@@ -289,10 +330,10 @@ async function handleGenerate(cfg, req, res) {
       { maxTokens: body.maxTokens, temperature: body.temperature },
       cfg.llamaUrl,
     )
-    sendJson(res, 200, { text, durationMs: Date.now() - startedAt })
+    sendJson(req, res, cfg, 200, { text, durationMs: Date.now() - startedAt })
   } catch (error) {
     console.error('[proxy] forwardToLlama failed:', cfg.llamaUrl, error.message)
-    sendJson(res, 502, { error: 'llama-server unreachable', detail: error.message })
+    sendJson(req, res, cfg, 502, { error: 'llama-server unreachable', detail: error.message })
   }
 }
 
@@ -323,9 +364,18 @@ function logLine(method, url, status, startedAt) {
 async function route(cfg, req, res) {
   const startedAt = Date.now()
 
+  if (!isOriginAllowed(req, cfg)) {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    res.setHeader('Vary', 'Origin')
+    res.statusCode = 403
+    res.end(JSON.stringify({ error: 'Origin not allowed', allowedOrigins: cfg.allowedOrigins }))
+    logLine(req.method || '', req.url || '/', 403, startedAt)
+    return
+  }
+
   // CORS preflight — zawsze 204 dla OPTIONS, niezależnie od ścieżki
   if (req.method === 'OPTIONS') {
-    withCors(res)
+    withCors(req, res, cfg)
     res.statusCode = 204
     res.end()
     logLine(req.method, req.url, 204, startedAt)
@@ -334,7 +384,7 @@ async function route(cfg, req, res) {
 
   const url = req.url || '/'
   if (req.method === 'GET' && url === '/health') {
-    await handleHealth(cfg, res)
+    await handleHealth(cfg, req, res)
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }
@@ -344,7 +394,7 @@ async function route(cfg, req, res) {
     return
   }
 
-  sendJson(res, 404, { error: 'Not found' })
+  sendJson(req, res, cfg, 404, { error: 'Not found' })
   logLine(req.method, url, 404, startedAt)
 }
 
@@ -357,7 +407,7 @@ function startServer() {
   const server = http.createServer((req, res) => {
     route(cfg, req, res).catch((error) => {
       console.error('[proxy] Unhandled error:', error)
-      sendJson(res, 500, { error: 'Internal proxy error' })
+      sendJson(req, res, cfg, 500, { error: 'Internal proxy error' })
     })
   })
 
@@ -365,6 +415,7 @@ function startServer() {
     console.log('[proxy] Local AI proxy listening on http://127.0.0.1:' + cfg.proxyPort)
     console.log('[proxy] Forwarding to llama-server at ' + cfg.llamaUrl)
     console.log('[proxy] Model: ' + cfg.modelName + ' | Backend: ' + cfg.backend)
+    console.log('[proxy] Allowed origins: ' + cfg.allowedOrigins.join(', '))
   })
 
   server.on('error', (err) => {

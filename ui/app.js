@@ -14,6 +14,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { initManager, stopManager } from './manager.js'
 import { initExecutor, stopExecutor } from './executor.js'
 import { initAiClient } from './ai-client.js'
+import { applySettings, getRecentRepos, getSettings, rememberRepo, saveSettings } from './settings.js'
 
 // ============================================================================
 // KONFIGURACJA — placeholdery podmieniane przez GitHub Actions
@@ -47,6 +48,7 @@ const VIEW = {
   WORKSTATIONS: 'workstations',
   MONITOR: 'monitor',
   ADVANCED: 'advanced',
+  SETTINGS: 'settings',
 }
 
 const TOAST_TYPE = {
@@ -72,6 +74,14 @@ const STATUS_LABELS = {
 }
 
 const WORKSTATION_STALE_MS = 2 * 60 * 1000
+
+const PRIORITY_LABELS = {
+  low: 'Niski',
+  medium: 'Średni',
+  high: 'Wysoki',
+}
+
+applySettings()
 
 // ============================================================================
 // KLIENT SUPABASE — inicjalizacja jednej instancji dla całej aplikacji
@@ -332,12 +342,13 @@ function navigateTo(viewName) {
   // Aktualizuj tytuł strony i podświetlenie linków sidebar
   const titles = {
     dashboard: 'Dashboard',
-    tasks: 'Zadania',
-    'task-detail': 'Szczegóły zadania',
+    tasks: 'Polecenia',
+    'task-detail': 'Szczegóły polecenia',
     agents: 'Profile agentów',
     workstations: 'Stacje robocze',
     monitor: 'Monitor',
     advanced: 'Zaawansowane',
+    settings: 'Ustawienia',
   }
   document.getElementById('page-title').textContent = titles[viewName] || ''
 
@@ -347,6 +358,7 @@ function navigateTo(viewName) {
     link.classList.toggle('text-blue-700', isActive)
     link.classList.toggle('text-slate-600', !isActive)
   })
+  if (viewName === VIEW.SETTINGS) renderSettingsForm()
 }
 
 /**
@@ -359,6 +371,8 @@ function bindNavigation() {
   })
   document.getElementById('btn-logout').addEventListener('click', handleLogout)
   document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
+  document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
+  document.getElementById('btn-generate-station-config').addEventListener('click', renderStationConfigInstruction)
   document.getElementById('btn-back-to-tasks').addEventListener('click', () => {
     cleanupTaskSubscriptions()
     navigateTo(VIEW.TASKS)
@@ -546,6 +560,7 @@ async function refreshWorkstations() {
   renderMonitorPanel()
   renderAdvancedRuntimePanel(workstations)
   populateTaskWorkstationSelects()
+  renderSettingsForm()
 }
 
 /**
@@ -953,7 +968,7 @@ function populateTaskWorkstationSelects() {
   if (!workstationSelect || !modelSelect) return
 
   workstationSelect.innerHTML = [
-    '<option value="">Bez przypisania stacji</option>',
+    '<option value="">Automatycznie - AI wybierze stację</option>',
     ...state.workstations.map((workstation) => `<option value="${workstation.id}">${escapeHtml(workstation.display_name || workstation.hostname || 'Stacja')} (${escapeHtml(workstation.status || 'offline')})</option>`),
   ].join('')
 
@@ -970,7 +985,7 @@ function populateTaskModelSelect(workstationId) {
   if (!modelSelect) return
 
   if (!workstationId) {
-    modelSelect.innerHTML = '<option value="">Brak przypisanego modelu</option>'
+    modelSelect.innerHTML = '<option value="">Automatycznie</option>'
     modelSelect.disabled = true
     renderTaskWorkstationAdvancedInfo(null)
     return
@@ -1002,7 +1017,7 @@ function renderTaskWorkstationAdvancedInfo(workstation) {
   const slots = workstationParallelSlots(workstation)
   const sd = workstationSdEnabled(workstation) ? 'włączone' : 'wyłączone'
   element.classList.remove('hidden')
-  element.textContent = `Zaawansowane: ${active}/${slots} slotów zajętych, kontekst ${workstationContextLabel(workstation)}, KV ${workstationKvCacheLabel(workstation)}, SD ${sd}. Wyższe parallelSlots i długi kontekst zwiększają obciążenie RAM/VRAM tej stacji.`
+  element.textContent = `Wybrana stacja: ${active}/${slots} zajętych miejsc pracy, kontekst ${workstationContextLabel(workstation)}, KV ${workstationKvCacheLabel(workstation)}, SD ${sd}. Te parametry zmienia się w widoku Stacje robocze albo lokalnie przez --config.`
 }
 
 /**
@@ -1138,7 +1153,7 @@ function renderTasksTable(tbodyId, tasks) {
       <td class="px-6 py-3 font-mono text-xs text-slate-500">${escapeHtml(String(t.id).slice(0, 8))}</td>
       <td class="px-6 py-3 font-medium">${escapeHtml(t.title || '')}</td>
       <td class="px-6 py-3">${statusBadge(t.status)}</td>
-      <td class="px-6 py-3">${escapeHtml(t.priority || '')}</td>
+      <td class="px-6 py-3">${escapeHtml(priorityLabel(t.priority))}</td>
       <td class="px-6 py-3 text-slate-500">${formatDate(t.created_at)}</td>
       <td class="px-6 py-3 text-right">
         <button class="task-delete text-red-600 hover:underline text-sm" data-id="${t.id}" aria-label="Usuń zadanie ${escapeHtml(t.title || '')}">Usuń</button>
@@ -1177,6 +1192,15 @@ function statusBadge(status) {
   const cls = styles[status] || styles.pending
   const label = STATUS_LABELS[status] || status || ''
   return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${cls}" title="${escapeHtml(status || '')}">${escapeHtml(label)}</span>`
+}
+
+/**
+ * Zwraca czytelną etykietę priorytetu.
+ * @param {string} priority
+ * @returns {string}
+ */
+function priorityLabel(priority) {
+  return PRIORITY_LABELS[priority] || priority || '—'
 }
 
 // ============================================================================
@@ -1234,7 +1258,7 @@ async function openTaskDetail(taskId) {
 function renderTaskDetail(task) {
   document.getElementById('detail-title').textContent = task.title || ''
   document.getElementById('detail-description').textContent = task.description || ''
-  document.getElementById('detail-priority').textContent = task.priority || '—'
+  document.getElementById('detail-priority').textContent = priorityLabel(task.priority)
   document.getElementById('detail-repo').textContent = task.git_repo || '—'
   document.getElementById('detail-workstation').textContent = resolveWorkstationName(task.requested_workstation_id)
   document.getElementById('detail-model').textContent = task.requested_model_name || '—'
@@ -1541,6 +1565,83 @@ function setText(id, value) {
   element.textContent = value
 }
 
+/**
+ * Uzupełnia pola widoku Ustawienia aktualnymi preferencjami.
+ * @returns {void}
+ */
+function renderSettingsForm() {
+  const settings = getSettings()
+  document.getElementById('settings-theme').value = settings.theme
+  document.getElementById('settings-language').value = settings.language
+  document.getElementById('settings-default-repo').value = settings.defaultRepo
+  const select = document.getElementById('settings-default-workstation')
+  if (select) {
+    select.innerHTML = [
+      '<option value="">Automatycznie - AI wybierze stację</option>',
+      ...state.workstations.map((workstation) => `<option value="${workstation.id}">${escapeHtml(workstation.display_name || workstation.hostname || 'Stacja')}</option>`),
+    ].join('')
+    select.value = settings.defaultWorkstation
+  }
+}
+
+/**
+ * Zapisuje preferencje UI w localStorage.
+ * @returns {void}
+ */
+function handleSaveSettings() {
+  saveSettings({
+    theme: document.getElementById('settings-theme').value,
+    language: document.getElementById('settings-language').value,
+    defaultRepo: document.getElementById('settings-default-repo').value.trim(),
+    defaultWorkstation: document.getElementById('settings-default-workstation').value,
+  })
+  renderSettingsForm()
+  showToast('Ustawienia zapisane.', TOAST_TYPE.SUCCESS)
+}
+
+/**
+ * Uzupełnia datalistę ostatnio używanymi repozytoriami.
+ * @returns {void}
+ */
+function populateRepoSuggestions() {
+  const datalist = document.getElementById('repo-suggestions')
+  if (!datalist) return
+  const settings = getSettings()
+  const repos = [settings.defaultRepo, ...getRecentRepos()].filter(Boolean)
+  datalist.innerHTML = [...new Set(repos)].map((repo) => `<option value="${escapeHtml(repo)}"></option>`).join('')
+}
+
+/**
+ * Renderuje prostą instrukcję dla konfiguracji stacji.
+ * @returns {void}
+ */
+function renderStationConfigInstruction() {
+  const slots = document.getElementById('station-config-slots').value || '1'
+  const context = document.getElementById('station-config-context').value || 'native'
+  const kv = document.getElementById('station-config-kv').value || 'auto'
+  const sd = document.getElementById('station-config-sd').value === 'true'
+  const schedule = document.getElementById('station-config-schedule').value.trim()
+  const autoUpdate = document.getElementById('station-config-update').value === 'true'
+  const output = document.getElementById('station-config-output')
+  const scheduleLine = schedule ? `Harmonogram: ${schedule}` : 'Harmonogram: wyłączony'
+  output.textContent = [
+    'Na komputerze stacji uruchom:',
+    'Windows: start.bat --config',
+    'macOS/Linux: ./start.sh --config',
+    '',
+    'Wybierz w konfiguratorze:',
+    `Równoległe zadania: ${slots}`,
+    `Kontekst modelu: ${context}`,
+    `KV cache: ${kv}`,
+    `SD: ${sd ? 'włączone' : 'wyłączone'}`,
+    scheduleLine,
+    `Auto-update: ${autoUpdate ? 'włączony' : 'wyłączony'}`,
+    '',
+    'Po zapisie zostaw okno launchera otwarte. Stacja pojawi się w tabeli po pierwszym heartbeat.',
+  ].join('\n')
+  output.classList.remove('hidden')
+}
+
 // ============================================================================
 // MODAL: SUBMIT TASK (3-krokowy wizard)
 // ============================================================================
@@ -1558,7 +1659,15 @@ function openTaskModal() {
   wizard.step = 1
   wizard.template = null
   document.getElementById('form-task').reset()
+  const settings = getSettings()
+  document.getElementById('task-repo').value = settings.defaultRepo || ''
+  populateRepoSuggestions()
   populateTaskWorkstationSelects()
+  const workstationSelect = document.getElementById('task-workstation')
+  if (settings.defaultWorkstation && findWorkstation(settings.defaultWorkstation)) {
+    workstationSelect.value = settings.defaultWorkstation
+    populateTaskModelSelect(settings.defaultWorkstation)
+  }
   renderWizardStep()
   document.getElementById('modal-submit-task').classList.remove('hidden')
 }
@@ -1605,15 +1714,22 @@ function renderWizardStep() {
 function renderReviewSummary() {
   const data = collectTaskFormData()
   const summary = document.getElementById('review-summary')
+  const contextRows = data.context
+    ? [
+      data.context.links ? `<div><span class="text-slate-500">Linki/pliki:</span> ${escapeHtml(data.context.links)}</div>` : '',
+      data.context.requirements ? `<div><span class="text-slate-500">Wymagania:</span> ${escapeHtml(data.context.requirements)}</div>` : '',
+      data.context.avoid ? `<div><span class="text-slate-500">Nie robić:</span> ${escapeHtml(data.context.avoid)}</div>` : '',
+    ].filter(Boolean).join('')
+    : ''
   summary.innerHTML = `
     <div><span class="text-slate-500">Szablon:</span> <strong>${escapeHtml(wizard.template || 'custom')}</strong></div>
-    <div><span class="text-slate-500">Tytuł:</span> <strong>${escapeHtml(data.title)}</strong></div>
-    <div><span class="text-slate-500">Opis:</span> ${escapeHtml(data.description)}</div>
-    <div><span class="text-slate-500">Priorytet:</span> <strong>${escapeHtml(data.priority)}</strong></div>
+    <div><span class="text-slate-500">Polecenie:</span> <strong>${escapeHtml(data.title)}</strong></div>
+    <div><span class="text-slate-500">Szczegóły:</span> ${escapeHtml(data.description)}</div>
+    <div><span class="text-slate-500">Priorytet:</span> <strong>${escapeHtml(priorityLabel(data.priority))}</strong></div>
     <div><span class="text-slate-500">Repo:</span> ${escapeHtml(data.repo || '—')}</div>
-    <div><span class="text-slate-500">Stacja:</span> ${escapeHtml(resolveWorkstationName(data.workstationId))}</div>
+    <div><span class="text-slate-500">Stacja:</span> ${escapeHtml(data.workstationId ? resolveWorkstationName(data.workstationId) : 'Automatycznie - AI wybierze stację')}</div>
     <div><span class="text-slate-500">Model:</span> ${escapeHtml(data.modelName || '—')}</div>
-    ${data.context ? `<div><span class="text-slate-500">Kontekst:</span> <code class="text-xs">${escapeHtml(data.context)}</code></div>` : ''}
+    ${contextRows}
   `
 }
 
@@ -1622,12 +1738,18 @@ function renderReviewSummary() {
  * @returns {Object}
  */
 function collectTaskFormData() {
+  const context = {
+    links: document.getElementById('task-links').value.trim(),
+    requirements: document.getElementById('task-requirements').value.trim(),
+    avoid: document.getElementById('task-avoid').value.trim(),
+  }
+  const hasContext = Object.values(context).some(Boolean)
   return {
     title: document.getElementById('task-title').value.trim(),
     description: document.getElementById('task-description').value.trim(),
     priority: document.getElementById('task-priority').value,
     repo: document.getElementById('task-repo').value.trim(),
-    context: document.getElementById('task-context').value.trim(),
+    context: hasContext ? context : null,
     workstationId: document.getElementById('task-workstation').value,
     modelName: document.getElementById('task-model').value,
     template: wizard.template,
@@ -1641,7 +1763,7 @@ function collectTaskFormData() {
 function validateTaskForm() {
   const data = collectTaskFormData()
   if (!data.title || !data.description) {
-    showToast('Wypełnij tytuł i opis.', TOAST_TYPE.ERROR)
+    showToast('Wypełnij polecenie i szczegóły.', TOAST_TYPE.ERROR)
     return false
   }
   if (data.workstationId && !data.modelName) {
@@ -1722,7 +1844,8 @@ async function submitTaskForm() {
   const data = collectTaskFormData()
   const created = await createTask(data)
   if (created) {
-    showToast('Zadanie wysłane!', TOAST_TYPE.SUCCESS)
+    rememberRepo(data.repo)
+    showToast('Polecenie wysłane do AI.', TOAST_TYPE.SUCCESS)
     closeAllModals()
     await refreshTasks()
   }
@@ -1838,7 +1961,7 @@ function renderAgentsTable(agents) {
       <td class="px-6 py-3 font-medium">${escapeHtml(a.name || '')}</td>
       <td class="px-6 py-3">${agentRoleBadge(a.role)}</td>
       <td class="px-6 py-3">${(a.skills || []).map(s => `<span class="inline-block bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs mr-1">${escapeHtml(s)}</span>`).join('')}</td>
-      <td class="px-6 py-3">${a.concurrency_limit ?? 1}</td>
+      <td class="px-6 py-3">${a.concurrency_limit ?? 1} równocześnie</td>
       <td class="px-6 py-3 space-x-2">
         <button class="agent-edit text-blue-600 hover:underline text-sm" data-id="${a.id}">Edytuj</button>
         <button class="agent-delete text-red-600 hover:underline text-sm" data-id="${a.id}">Usuń</button>
