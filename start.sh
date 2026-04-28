@@ -69,7 +69,7 @@ print_banner() {
   printf '\033[1;36m╠══════════════════════════════════════════════════════════╣\033[0m\n'
   printf '\033[1;36m║\033[0m  Skrypt:    \033[1mstart.sh\033[0m   (na Windows użyj \033[1mstart.bat\033[0m)\n'
   printf '\033[1;36m║\033[0m  Platforma: \033[1m%s\033[0m\n' "$os_label"
-  printf '\033[1;36m║\033[0m  Pomoc:     ./start.sh --help     \u2502   Zatrzymanie: Ctrl+C\n'
+  printf '\033[1;36m║\033[0m  Pomoc:     ./start.sh --help     │   Zatrzymanie: Ctrl+C\n'
   printf '\033[1;36m╚══════════════════════════════════════════════════════════╝\033[0m\n\n'
 
   # Twardy guard: na Windowsie użytkownik powinien użyć start.bat.
@@ -293,11 +293,73 @@ read_config_value() {
 
 # --- Sprawdzenie portów -----------------------------------------------------
 
-check_port_free() {
+# Czy na danym porcie odpowiada już llama-server? (porozumienie z /health)
+is_llama_server_on() {
   local port="$1"
-  if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
-    err "Port $port jest zajęty. Zatrzymaj inny proces (lsof -iTCP:$port) i uruchom ponownie."
-    exit 1
+  curl -fs --max-time 1 "http://127.0.0.1:$port/health" 2>/dev/null \
+    | grep -qi 'status\|slots_idle\|ok'
+}
+
+# Co stoi na porcie? Zwraca 'free' | 'llama' | 'other'.
+port_state() {
+  local port="$1"
+  if ! command -v lsof >/dev/null 2>&1 || ! lsof -iTCP:"$port" -sTCP:LISTEN -t >/dev/null 2>&1; then
+    echo "free"; return
+  fi
+  if is_llama_server_on "$port"; then echo "llama"; else echo "other"; fi
+}
+
+# Znajdź wolny port w zakresie startując od podanego.
+find_free_port() {
+  local p="$1" max="$((p + 50))"
+  while [ "$p" -lt "$max" ]; do
+    [ "$(port_state "$p")" = "free" ] && { echo "$p"; return; }
+    p=$((p + 1))
+  done
+  echo ""
+}
+
+# Decyzja co zrobić z portem 8080 (llama). Modyfikuje globalne LLAMA_PORT
+# i ustawia REUSE_LLAMA=1 jeśli reużywamy istniejącego serwera.
+resolve_llama_port() {
+  REUSE_LLAMA=0
+  local state
+  state="$(port_state "$LLAMA_PORT")"
+  case "$state" in
+    free)
+      log "Port $LLAMA_PORT wolny."
+      ;;
+    llama)
+      warn "Na porcie $LLAMA_PORT już działa llama-server — reużywam go (nie startuję nowego)."
+      REUSE_LLAMA=1
+      ;;
+    other)
+      warn "Port $LLAMA_PORT zajęty przez INNY proces. Szukam wolnego portu…"
+      local alt; alt="$(find_free_port 8090)"
+      if [ -z "$alt" ]; then
+        err "Nie znalazłem wolnego portu w zakresie 8090-8139."
+        err "Sprawdź co stoi na 8080:  lsof -iTCP:$LLAMA_PORT -sTCP:LISTEN"
+        exit 1
+      fi
+      LLAMA_PORT="$alt"
+      log "Llama-server uruchomię na alternatywnym porcie: $LLAMA_PORT"
+      ;;
+  esac
+}
+
+# Decyzja co zrobić z portem 3001 (proxy). Aktualizuje globalne PROXY_PORT.
+resolve_proxy_port() {
+  if [ "$(port_state "$PROXY_PORT")" != "free" ]; then
+    warn "Port $PROXY_PORT zajęty. Szukam wolnego portu dla proxy…"
+    local alt; alt="$(find_free_port 3002)"
+    if [ -z "$alt" ]; then
+      err "Nie znalazłem wolnego portu dla proxy w zakresie 3002-3051."
+      exit 1
+    fi
+    PROXY_PORT="$alt"
+    log "Proxy uruchomię na alternatywnym porcie: $PROXY_PORT"
+    warn "UWAGA: ai-client.js w przeglądarce szuka proxy pod 127.0.0.1:3001."
+    warn "Jeśli badge 'AI lokalny' nie zapali się, zwolnij port 3001 i zrestartuj."
   fi
 }
 
@@ -362,10 +424,12 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+REUSE_LLAMA=0
+
 # --- Main -------------------------------------------------------------------
 
-check_port_free "$LLAMA_PORT"
-check_port_free "$PROXY_PORT"
+resolve_llama_port    # może zmienić LLAMA_PORT i ustawić REUSE_LLAMA
+resolve_proxy_port    # może zmienić PROXY_PORT
 
 GPU_DETECTED="$(download_binary)"
 ensure_config "$GPU_DETECTED"
@@ -373,8 +437,23 @@ ensure_config "$GPU_DETECTED"
 MODEL_PATH="$(read_config_value modelPath)"
 [ -z "$MODEL_PATH" ] && { err "Brak modelPath w config.json"; exit 1; }
 
-start_llama "$MODEL_PATH" "$GPU_DETECTED"
-wait_for_health "http://127.0.0.1:$LLAMA_PORT/health" "llama-server" 90 || exit 1
+# Zsynchronizuj porty w config.json z aktualnymi (mogły się zmienić od ostatniego startu).
+if [ -f "$CONFIG_FILE" ]; then
+  # macOS sed wymaga -i ''
+  sed -i '' -E "s|\"llamaPort\"[[:space:]]*:[[:space:]]*[0-9]+|\"llamaPort\": $LLAMA_PORT|" "$CONFIG_FILE" 2>/dev/null || \
+    sed -i -E "s|\"llamaPort\"[[:space:]]*:[[:space:]]*[0-9]+|\"llamaPort\": $LLAMA_PORT|" "$CONFIG_FILE"
+  sed -i '' -E "s|\"llamaUrl\"[[:space:]]*:[[:space:]]*\"[^\"]+\"|\"llamaUrl\": \"http://127.0.0.1:$LLAMA_PORT\"|" "$CONFIG_FILE" 2>/dev/null || \
+    sed -i -E "s|\"llamaUrl\"[[:space:]]*:[[:space:]]*\"[^\"]+\"|\"llamaUrl\": \"http://127.0.0.1:$LLAMA_PORT\"|" "$CONFIG_FILE"
+  sed -i '' -E "s|\"proxyPort\"[[:space:]]*:[[:space:]]*[0-9]+|\"proxyPort\": $PROXY_PORT|" "$CONFIG_FILE" 2>/dev/null || \
+    sed -i -E "s|\"proxyPort\"[[:space:]]*:[[:space:]]*[0-9]+|\"proxyPort\": $PROXY_PORT|" "$CONFIG_FILE"
+fi
+
+if [ "$REUSE_LLAMA" = "1" ]; then
+  log "Pomijam start llama-server (używam istniejącego na :$LLAMA_PORT)."
+else
+  start_llama "$MODEL_PATH" "$GPU_DETECTED"
+  wait_for_health "http://127.0.0.1:$LLAMA_PORT/health" "llama-server" 90 || exit 1
+fi
 
 start_proxy
 wait_for_health "http://127.0.0.1:$PROXY_PORT/health" "proxy" 15 || exit 1
@@ -398,6 +477,11 @@ cat <<EOF
 EOF
 
 # Trzymaj skrypt aktywny — wait blokuje aż dziecko się zakończy / Ctrl+C.
-LLAMA_PID="$(cat "$LOGS_DIR/llama.pid")"
-PROXY_PID="$(cat "$LOGS_DIR/proxy.pid")"
-wait "$LLAMA_PID" "$PROXY_PID"
+if [ "$REUSE_LLAMA" = "1" ]; then
+  PROXY_PID="$(cat "$LOGS_DIR/proxy.pid")"
+  wait "$PROXY_PID"
+else
+  LLAMA_PID="$(cat "$LOGS_DIR/llama.pid")"
+  PROXY_PID="$(cat "$LOGS_DIR/proxy.pid")"
+  wait "$LLAMA_PID" "$PROXY_PID"
+fi
