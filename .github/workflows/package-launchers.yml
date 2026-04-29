@@ -6,6 +6,7 @@ on:
     paths:
       - 'start.*'
       - 'Aktualizuj.*'
+      - 'update.*'
       - 'local-ai-proxy/**'
       - 'README.md'
       - 'local-ai-proxy/README.md'
@@ -46,17 +47,17 @@ jobs:
           3. Windows sam pobierze portable Node.js, jesli nie ma go w PATH.
           4. Zostaw okno otwarte, kiedy stacja ma wykonywac polecenia AI.
           5. Diagnostyka: uruchom start z flaga --doctor.
-          6. Aktualizacja: uruchom Aktualizuj albo start z flaga --update.
+          6. Aktualizacja: uruchom Aktualizuj. W repo git mozesz tez uzyc start z flaga --update.
 
           Konfiguracja stacji jest lokalna i zapisuje sie w local-ai-proxy/config.json.
           Ten plik nie powinien trafiac do gita.
           TXT
           done
-          cp start.bat start.ps1 Aktualizuj.bat "dist/windows/AgentManager/"
-          cp start.sh start.command Aktualizuj.command "dist/macos/AgentManager/"
-          cp start.sh Aktualizuj.command "dist/linux/AgentManager/"
-          chmod +x dist/macos/AgentManager/start.sh dist/macos/AgentManager/start.command dist/macos/AgentManager/Aktualizuj.command
-          chmod +x dist/linux/AgentManager/start.sh dist/linux/AgentManager/Aktualizuj.command
+          cp start.bat start.ps1 Aktualizuj.bat update.ps1 "dist/windows/AgentManager/"
+          cp start.sh start.command Aktualizuj.command update.sh "dist/macos/AgentManager/"
+          cp start.sh Aktualizuj.command update.sh "dist/linux/AgentManager/"
+          chmod +x dist/macos/AgentManager/start.sh dist/macos/AgentManager/start.command dist/macos/AgentManager/Aktualizuj.command dist/macos/AgentManager/update.sh
+          chmod +x dist/linux/AgentManager/start.sh dist/linux/AgentManager/Aktualizuj.command dist/linux/AgentManager/update.sh
 
       - name: Zip packages
         run: |

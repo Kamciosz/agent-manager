@@ -27,10 +27,14 @@ const DEFAULTS = {
   MAX_TOKENS: 256,
   TEMPERATURE: 0.7,
   TIMEOUT_MS: 600000,
+  CONTEXT_TOKENS: 65536,
+  KV_CACHE: 'q8_0',
   ALLOWED_ORIGINS: ['https://kamciosz.github.io', 'http://localhost', 'http://127.0.0.1'],
 }
 
 const CONFIG_PATH = path.join(__dirname, 'config.json')
+
+const SUPPORTED_KV_CACHE = ['auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4']
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -63,8 +67,8 @@ function loadConfig() {
     console.error('[proxy] Nie udało się wczytać config.json:', error.message)
   }
   const contextMode = normalizeContextMode(cfg.contextMode)
-  const contextSizeTokens = contextMode === 'native' ? 0 : clampInt(cfg.contextSizeTokens, 262144, 1024, 262144)
-  const kvCacheQuantization = normalizeKvCache(cfg.kvCacheQuantization)
+  const contextSizeTokens = contextMode === 'native' ? 0 : clampInt(cfg.contextSizeTokens, DEFAULTS.CONTEXT_TOKENS, 65536, 262144)
+  const kvCacheQuantization = normalizeKvCache(cfg.kvCacheQuantization || DEFAULTS.KV_CACHE)
   return {
     proxyPort: Number(cfg.proxyPort) || DEFAULTS.PROXY_PORT,
     llamaUrl: cfg.llamaUrl || DEFAULTS.LLAMA_URL,
@@ -126,18 +130,18 @@ function normalizeContextMode(value) {
 /**
  * Normalizuje kompresję KV cache do wartości obsługiwanych przez launcher.
  * @param {unknown} value
- * @returns {'auto'|'f16'|'q8_0'|'q4_0'}
+ * @returns {string}
  */
 function normalizeKvCache(value) {
   const raw = String(value || 'auto').trim().toLowerCase()
-  return ['auto', 'f16', 'q8_0', 'q4_0'].includes(raw) ? raw : 'auto'
+  return SUPPORTED_KV_CACHE.includes(raw) ? raw : 'auto'
 }
 
 /**
  * Wylicza efektywną kompresję KV cache dla trybu auto.
  * @param {unknown} value
  * @param {unknown} contextSizeTokens
- * @returns {'f16'|'q8_0'|'q4_0'}
+ * @returns {string}
  */
 function resolveKvCache(value, contextSizeTokens) {
   const normalized = normalizeKvCache(value)

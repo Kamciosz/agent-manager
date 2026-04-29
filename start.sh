@@ -39,6 +39,8 @@ PROXY_PORT=3001
 DEFAULT_SUPABASE_URL=""
 DEFAULT_SUPABASE_KEY=""
 DEFAULT_APP_ORIGIN="https://kamciosz.github.io"
+DEFAULT_CONTEXT_TOKENS=65536
+DEFAULT_KV_CACHE="q8_0"
 
 # --- Parsowanie flag --------------------------------------------------------
 CHANGE_MODEL=0
@@ -91,11 +93,11 @@ check_base_requirements() {
 run_safe_update() {
   local reason="$1" branch local_hash remote_ref remote_hash merge_base
   if ! command -v git >/dev/null 2>&1; then
-    warn "Aktualizacja $reason pominięta: git nie jest dostępny w PATH."
+    warn "Aktualizacja $reason pominięta: git nie jest dostępny w PATH. W instalacji ZIP uruchom plik Aktualizuj."
     return 0
   fi
   if ! git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    warn "Aktualizacja $reason pominięta: katalog nie wygląda jak repo git."
+    warn "Aktualizacja $reason pominięta: katalog nie wygląda jak repo git. W instalacji ZIP uruchom plik Aktualizuj."
     return 0
   fi
   if ! git -C "$ROOT_DIR" diff --quiet --ignore-submodules -- || ! git -C "$ROOT_DIR" diff --cached --quiet --ignore-submodules --; then
@@ -486,7 +488,9 @@ sync_runtime_config_json() {
 const fs = require('node:fs')
 const path = require('node:path')
 const file = process.env.CONFIG_FILE_ENV
-const SAFE_CONTEXT_TOKENS = 8192
+const DEFAULT_CONTEXT_TOKENS = 65536
+const DEFAULT_KV_CACHE = 'q8_0'
+const SUPPORTED_KV_CACHE = ['auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4']
 let cfg = {}
 try {
   cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -506,8 +510,8 @@ cfg.speculativeTokens = clampInt(cfg.speculativeTokens, 4, 1, 16)
 cfg.contextMode = normalizeContextMode(cfg.contextMode, cfg.contextNativeUnsafeAccepted === true)
 cfg.contextSizeTokens = cfg.contextMode === 'native'
   ? 0
-  : clampInt(parseTokenCount(cfg.contextSizeTokens, SAFE_CONTEXT_TOKENS), SAFE_CONTEXT_TOKENS, 1024, 262144)
-cfg.kvCacheQuantization = normalizeKvCache(cfg.kvCacheQuantization)
+  : clampInt(parseTokenCount(cfg.contextSizeTokens, DEFAULT_CONTEXT_TOKENS), DEFAULT_CONTEXT_TOKENS, 65536, 262144)
+cfg.kvCacheQuantization = normalizeKvCache(cfg.kvCacheQuantization || DEFAULT_KV_CACHE)
 cfg.effectiveContextSizeTokens = cfg.contextMode === 'native' ? 0 : cfg.contextSizeTokens
 cfg.contextNativeUnsafeAccepted = cfg.contextMode === 'native'
 cfg.effectiveKvCacheQuantization = resolveKvCache(cfg.kvCacheQuantization, cfg.effectiveContextSizeTokens)
@@ -545,7 +549,7 @@ function normalizeContextMode(value, allowNative = false) {
 
 function normalizeKvCache(value) {
   const raw = String(value || 'auto').trim().toLowerCase()
-  return ['auto', 'f16', 'q8_0', 'q4_0'].includes(raw) ? raw : 'auto'
+  return SUPPORTED_KV_CACHE.includes(raw) ? raw : 'auto'
 }
 
 function resolveKvCache(value, contextSizeTokens) {
@@ -571,7 +575,8 @@ write_advanced_config() {
 const fs = require('node:fs')
 const path = require('node:path')
 const file = process.env.CONFIG_FILE_ENV
-const SAFE_CONTEXT_TOKENS = 8192
+const DEFAULT_CONTEXT_TOKENS = 65536
+const SUPPORTED_KV_CACHE = ['auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4']
 let cfg = {}
 try {
   cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -587,7 +592,7 @@ cfg.contextMode = normalizeContextMode(process.env.CONTEXT_MODE_VALUE, true)
 cfg.contextNativeUnsafeAccepted = cfg.contextMode === 'native'
 cfg.contextSizeTokens = cfg.contextMode === 'native'
   ? 0
-  : clampInt(parseTokenCount(process.env.CONTEXT_SIZE_VALUE, SAFE_CONTEXT_TOKENS), SAFE_CONTEXT_TOKENS, 1024, 262144)
+  : clampInt(parseTokenCount(process.env.CONTEXT_SIZE_VALUE, DEFAULT_CONTEXT_TOKENS), DEFAULT_CONTEXT_TOKENS, 65536, 262144)
 cfg.kvCacheQuantization = normalizeKvCache(process.env.KV_CACHE_VALUE)
 cfg.effectiveContextSizeTokens = cfg.contextMode === 'native' ? 0 : cfg.contextSizeTokens
 cfg.effectiveKvCacheQuantization = resolveKvCache(cfg.kvCacheQuantization, cfg.effectiveContextSizeTokens)
@@ -618,7 +623,7 @@ function normalizeContextMode(value, allowNative = false) {
 
 function normalizeKvCache(value) {
   const raw = String(value || 'auto').trim().toLowerCase()
-  return ['auto', 'f16', 'q8_0', 'q4_0'].includes(raw) ? raw : 'auto'
+  return SUPPORTED_KV_CACHE.includes(raw) ? raw : 'auto'
 }
 
 function resolveKvCache(value, contextSizeTokens) {
@@ -636,8 +641,8 @@ configure_advanced_options() {
   echo "=========================================================="
   echo "  Advanced — opcje wydajności lokalnej stacji"
   echo "=========================================================="
-  echo "  Domyślnie: parallelSlots=1, kontekst=8k, KV=auto, SD=off."
-  echo "  Native/128k/256k są dostępne, ale mogą wymagać bardzo dużo RAM/VRAM."
+  echo "  Domyślnie: parallelSlots=1, kontekst=64k, KV=q8_0 (~50% pamięci KV), SD=off."
+  echo "  256k i native są dostępne, ale mogą wymagać bardzo dużo RAM/VRAM."
   echo "  Zwiększaj sloty tylko gdy masz zapas RAM/VRAM."
   echo "  SD jest eksperymentalne i wymaga osobnego mniejszego modelu GGUF."
   echo
@@ -647,7 +652,7 @@ configure_advanced_options() {
     y|yes|t|tak) ;;
     *)
       sync_runtime_config_json
-      log "Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), context=$(read_config_json_value contextMode extended), KV=$(read_config_json_value kvCacheQuantization auto), SD=$(read_config_json_value sdEnabled false)."
+      log "Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), context=$(read_config_json_value contextMode extended), KV=$(read_config_json_value kvCacheQuantization $DEFAULT_KV_CACHE), SD=$(read_config_json_value sdEnabled false)."
       return
       ;;
   esac
@@ -656,19 +661,19 @@ configure_advanced_options() {
   if [ "$(read_config_json_value contextMode extended)" = "native" ]; then
     context_default="native"
   else
-    context_default="$(read_config_json_value contextSizeTokens 8192)"
+    context_default="$(read_config_json_value contextSizeTokens $DEFAULT_CONTEXT_TOKENS)"
   fi
-  context_choice="$(prompt_with_default "Kontekst modelu: 8k, 32k, 64k, 128k, 256k, native albo liczba tokenów" "$context_default")"
+  context_choice="$(prompt_with_default "Kontekst modelu: 64k, 128k, 256k, native albo liczba tokenów" "$context_default")"
   case "$(printf '%s' "$context_choice" | tr '[:upper:]' '[:lower:]')" in
     native|natywny) context_mode="native"; context_size="0" ;;
-    8k|8192) context_mode="extended"; context_size="8192" ;;
-    32k|32768) context_mode="extended"; context_size="32768" ;;
+    8k|8192) context_mode="extended"; context_size="65536"; warn "Minimum kontekstu to 64k; ustawiam 64k zamiast 8k." ;;
+    32k|32768) context_mode="extended"; context_size="65536"; warn "Minimum kontekstu to 64k; ustawiam 64k zamiast 32k." ;;
     64k|65536) context_mode="extended"; context_size="65536" ;;
     128k|131072) context_mode="extended"; context_size="131072" ;;
     256k|262144) context_mode="extended"; context_size="262144" ;;
     *) context_mode="extended"; context_size="$context_choice" ;;
   esac
-  kv_cache="$(prompt_with_default "Kompresja KV cache: auto, f16, q8_0 albo q4_0" "$(read_config_json_value kvCacheQuantization auto)")"
+  kv_cache="$(prompt_with_default "Kompresja KV cache: q8_0 (~50%), auto, f16, q4_0 albo RotorQuant: planar3/iso3/planar4/iso4/turbo3/turbo4" "$(read_config_json_value kvCacheQuantization $DEFAULT_KV_CACHE)")"
   auto_update_answer="$(prompt_with_default "Automatycznie aktualizować launcher przy starcie? (y/N)" "$(if [ "$(read_config_json_value autoUpdate false)" = "true" ]; then echo y; else echo N; fi)")"
   case "$(printf '%s' "$auto_update_answer" | tr '[:upper:]' '[:lower:]')" in
     y|yes|t|tak) auto_update="true" ;;
@@ -697,7 +702,7 @@ configure_advanced_options() {
 
   write_advanced_config "$parallel_slots" "$sd_enabled" "$draft_model_path" "$speculative_tokens" "$context_mode" "$context_size" "$kv_cache" "$auto_update"
   sync_runtime_config_json
-  log "Zapisano Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), context=$(read_config_json_value contextMode extended)/$(read_config_json_value effectiveContextSizeTokens 8192), KV=$(read_config_json_value effectiveKvCacheQuantization f16), SD=$(read_config_json_value sdEnabled false), autoUpdate=$(read_config_json_value autoUpdate false)."
+  log "Zapisano Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), context=$(read_config_json_value contextMode extended)/$(read_config_json_value effectiveContextSizeTokens $DEFAULT_CONTEXT_TOKENS), KV=$(read_config_json_value effectiveKvCacheQuantization q8_0), SD=$(read_config_json_value sdEnabled false), autoUpdate=$(read_config_json_value autoUpdate false)."
 }
 
 write_schedule_config() {
@@ -1068,9 +1073,39 @@ ensure_runtime_files() {
   fi
 }
 
+LLAMA_FLAG_CACHE_BIN=""
+LLAMA_FLAG_CACHE_TEXT=""
+
+load_llama_flag_text() {
+  local bin="$1"
+  if [ "$LLAMA_FLAG_CACHE_BIN" != "$bin" ]; then
+    LLAMA_FLAG_CACHE_BIN="$bin"
+    LLAMA_FLAG_CACHE_TEXT="$("$bin" --help 2>&1 || true)"
+    if [ -z "$LLAMA_FLAG_CACHE_TEXT" ] && command -v strings >/dev/null 2>&1; then
+      LLAMA_FLAG_CACHE_TEXT="$(strings "$bin" 2>/dev/null || true)"
+    fi
+  fi
+}
+
 llama_supports_flag() {
   local bin="$1" flag="$2"
-  "$bin" --help 2>&1 | grep -q -- "$flag"
+  load_llama_flag_text "$bin"
+  case "$LLAMA_FLAG_CACHE_TEXT" in
+    *"$flag"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+llama_supports_cache_type() {
+  local bin="$1" cache_type="$2"
+  case "$cache_type" in
+    f32|f16|bf16|q8_0|q4_0|q4_1|iq4_nl|q5_0|q5_1) return 0 ;;
+  esac
+  load_llama_flag_text "$bin"
+  case "$LLAMA_FLAG_CACHE_TEXT" in
+    *"$cache_type"*) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # --- Sprawdzenie portów -----------------------------------------------------
@@ -1172,20 +1207,41 @@ start_llama() {
   if [ "$context_size" = "0" ]; then
     warn "Kontekst modelu: native (llama.cpp --ctx-size 0). Modele z natywnym 128k/256k moga wymagać ogromnej pamięci."
   elif [ "$context_size" -ge 131072 ]; then
-    warn "Kontekst ${context_size} tokenów może wymagać bardzo dużo RAM/VRAM. Jeśli pojawi się Compute error/OOM, wybierz 8k przez ./start.sh --config."
+    warn "Kontekst ${context_size} tokenów może wymagać bardzo dużo RAM/VRAM. Jeśli pojawi się Compute error/OOM, wybierz 64k przez ./start.sh --config."
   else
     log "Kontekst modelu: ${context_size} tokenów."
   fi
 
-  kv_requested="$(read_config_json_value kvCacheQuantization auto)"
+  kv_requested="$(read_config_json_value kvCacheQuantization $DEFAULT_KV_CACHE)"
   kv_effective="$(read_config_json_value effectiveKvCacheQuantization f16)"
-  case "$kv_effective" in f16|q8_0|q4_0) ;; *) kv_effective="f16" ;; esac
-  if [ "$kv_effective" != "f16" ]; then
-    if llama_supports_flag "$bin" "--cache-type-k" && llama_supports_flag "$bin" "--cache-type-v"; then
-      extra_args+=( --cache-type-k "$kv_effective" --cache-type-v "$kv_effective" )
-      log "KV cache compression: $kv_effective (requested=$kv_requested)."
-    else
-      warn "config.json chce KV=$kv_effective, ale ten llama-server nie pokazuje --cache-type-k/--cache-type-v. Startuję bez kompresji KV."
+  case "$kv_effective" in f32|f16|bf16|q8_0|q4_0|q4_1|iq4_nl|q5_0|q5_1|planar3|iso3|planar4|iso4|turbo3|turbo4) ;; *) kv_effective="f16" ;; esac
+  if llama_supports_flag "$bin" "--cache-type-k" && llama_supports_flag "$bin" "--cache-type-v"; then
+    if ! llama_supports_cache_type "$bin" "$kv_effective"; then
+      warn "config.json chce KV=$kv_effective, ale ta binarka llama-server nie pokazuje tego typu cache. Używam q8_0 jako stabilnego fallbacku."
+      kv_effective="q8_0"
+    fi
+    extra_args+=( --cache-type-k "$kv_effective" --cache-type-v "$kv_effective" )
+    log "KV cache compression: $kv_effective (requested=$kv_requested)."
+  elif [ "$kv_effective" != "f16" ]; then
+    warn "config.json chce KV=$kv_effective, ale ten llama-server nie pokazuje --cache-type-k/--cache-type-v. Startuję bez kompresji KV."
+  fi
+
+  if [ "$context_size" = "0" ] || [ "$context_size" -ge 65536 ]; then
+    if llama_supports_flag "$bin" "--flash-attn"; then
+      extra_args+=( --flash-attn on )
+      log "Flash Attention: on."
+    fi
+    if llama_supports_flag "$bin" "--cache-ram"; then
+      extra_args+=( --cache-ram 0 )
+      log "Prompt cache RAM: disabled for long-context memory headroom."
+    fi
+    if llama_supports_flag "$bin" "--batch-size"; then
+      extra_args+=( --batch-size 512 )
+      log "Batch size: 512 for lower peak memory."
+    fi
+    if llama_supports_flag "$bin" "--ubatch-size"; then
+      extra_args+=( --ubatch-size 256 )
+      log "Micro-batch size: 256 for lower peak memory."
     fi
   fi
 
@@ -1195,13 +1251,15 @@ start_llama() {
   esac
 
   parallel_slots="$(normalize_parallel_slots "$(read_config_json_value parallelSlots 1)")"
-  if [ "$parallel_slots" -gt 1 ]; then
-    if llama_supports_flag "$bin" "--parallel"; then
-      extra_args+=( --parallel "$parallel_slots" )
+  if llama_supports_flag "$bin" "--parallel"; then
+    extra_args+=( --parallel "$parallel_slots" )
+    if [ "$parallel_slots" -gt 1 ]; then
       log "Advanced parallelSlots=$parallel_slots aktywne w llama-server."
     else
-      warn "Ten llama-server nie pokazuje flagi --parallel w --help. Stacja nadal zgłosi parallelSlots=$parallel_slots, ale serwer modelu zostaje bez tej flagi."
+      log "llama-server parallel slots: 1."
     fi
+  elif [ "$parallel_slots" -gt 1 ]; then
+    warn "Ten llama-server nie pokazuje flagi --parallel w --help. Stacja nadal zgłosi parallelSlots=$parallel_slots, ale serwer modelu zostaje bez tej flagi."
   fi
 
   sd_enabled="$(read_config_json_value sdEnabled false)"
@@ -1210,14 +1268,23 @@ start_llama() {
     speculative_tokens="$(normalize_speculative_tokens "$(read_config_json_value speculativeTokens 4)")"
     if [ -z "$draft_model_path" ] || [ ! -f "$draft_model_path" ]; then
       warn "SD włączone w config.json, ale draft model nie istnieje. Startuję bez SD."
-    elif llama_supports_flag "$bin" "--model-draft"; then
-      extra_args+=( --model-draft "$draft_model_path" )
-      if llama_supports_flag "$bin" "--draft-max"; then
+    elif llama_supports_flag "$bin" "--spec-draft-model" || llama_supports_flag "$bin" "--model-draft"; then
+      if llama_supports_flag "$bin" "--spec-draft-model"; then
+        extra_args+=( --spec-draft-model "$draft_model_path" )
+      else
+        extra_args+=( --model-draft "$draft_model_path" )
+      fi
+      if llama_supports_flag "$bin" "--spec-draft-n-max"; then
+        extra_args+=( --spec-draft-n-max "$speculative_tokens" )
+      elif llama_supports_flag "$bin" "--draft-max"; then
         extra_args+=( --draft-max "$speculative_tokens" )
       fi
-      log "Advanced SD eksperymentalne aktywne: draft=$(basename "$draft_model_path")."
+      if llama_supports_flag "$bin" "--cache-type-k-draft" && llama_supports_flag "$bin" "--cache-type-v-draft"; then
+        extra_args+=( --cache-type-k-draft q8_0 --cache-type-v-draft q8_0 )
+      fi
+      log "Advanced SD aktywne: draft=$(basename "$draft_model_path"), speculativeTokens=$speculative_tokens."
     else
-      warn "SD zapisane w config.json, ale ten llama-server nie pokazuje --model-draft w --help. Startuję bez SD."
+      warn "SD zapisane w config.json, ale ten llama-server nie pokazuje --spec-draft-model/--model-draft w --help. Startuję bez SD."
     fi
   fi
 
@@ -1373,6 +1440,9 @@ run_doctor() {
   fi
 
   if [ -f "$CONFIG_FILE" ]; then
+    if command -v node >/dev/null 2>&1; then
+      sync_runtime_config_json >/dev/null 2>&1 || true
+    fi
     model_path="$(read_config_value modelPath)"
     enrollment_token="$(read_config_value enrollmentToken)"
     station_refresh_token="$(read_config_value stationRefreshToken)"
@@ -1394,7 +1464,7 @@ run_doctor() {
     else
       doctor_line "INFO" "station auth" "missing; full start will ask for dashboard enrollment token"
     fi
-    doctor_line "INFO" "context" "mode=$(read_config_scalar_value contextMode native), tokens=$(read_config_scalar_value contextSizeTokens 0), KV=$(read_config_scalar_value kvCacheQuantization auto)"
+    doctor_line "INFO" "context" "mode=$(read_config_scalar_value contextMode native), tokens=$(read_config_scalar_value contextSizeTokens 0), effective=$(read_config_scalar_value effectiveContextSizeTokens 0), KV=$(read_config_scalar_value kvCacheQuantization $DEFAULT_KV_CACHE)/$(read_config_scalar_value effectiveKvCacheQuantization q8_0)"
     doctor_line "INFO" "autoUpdate" "$(read_config_scalar_value autoUpdate false)"
   else
     doctor_line "INFO" "config.json" "missing; full start will enter first-run configuration"
@@ -1468,7 +1538,7 @@ cat <<EOF
   model          $(basename "$MODEL_PATH")
   backend        $GPU_DETECTED
   parallelSlots  $(read_config_json_value parallelSlots 1)
-  context        $(read_config_json_value contextMode extended) / $(read_config_json_value effectiveContextSizeTokens 8192) tokens
+  context        $(read_config_json_value contextMode extended) / $(read_config_json_value effectiveContextSizeTokens $DEFAULT_CONTEXT_TOKENS) tokens
   KV cache       $(read_config_json_value effectiveKvCacheQuantization f16)
   SD             $(read_config_json_value sdEnabled false)
   autoUpdate     $(read_config_json_value autoUpdate false)

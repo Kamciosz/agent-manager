@@ -101,7 +101,7 @@ AI kierownik przyjmuje i rozdziela zadania między agenty wykonawcze, monitoruje
 - Każde zadanie jest powiązane z jednym repozytorium Git (multi-repo poza MVP).
 - AI kierownik decyduje samodzielnie, ilu agentów potrzeba i jakie profile ma przydzielić.
 - System wspiera tryb autonomiczny i półautonomiczny (wymagające zatwierdzenia użytkownika).
-- Rotorquant jest domyślnym mechanizmem optymalizacji kontekstu dla agentów (konfigurowalny).
+- Domyślna optymalizacja kontekstu to 64k + `q8_0` KV w stock llama.cpp; RotorQuant/Planar/Iso/Turbo są konfigurowalne dla zgodnych buildów.
 - Debugowanie repozytorium jest domyślnie wyłączone; włączane ręcznie.
 
 ## Fazy integracji wykonawczej

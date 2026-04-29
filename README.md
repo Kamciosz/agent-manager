@@ -46,9 +46,9 @@ Najprościej użyj:
 - Windows: [Aktualizuj.bat](Aktualizuj.bat)
 - macOS/Linux: [Aktualizuj.command](Aktualizuj.command)
 
-To uruchamia bezpieczny update launchera. Jeśli repo ma lokalne zmiany, update zostanie pominięty z komunikatem zamiast nadpisywać pliki.
+To uruchamia bezpieczny update launchera. W repo git robi `git pull --ff-only`, a w instalacji z ZIP-a pobiera najnowszy kod z GitHuba i zachowuje lokalne `config.json`, modele, binarki oraz logi. Jeśli repo ma lokalne zmiany, update zostanie pominięty z komunikatem zamiast nadpisywać pliki.
 
-Możesz też użyć flagi:
+W repo git możesz też użyć flagi:
 
 ```bash
 ./start.sh --update

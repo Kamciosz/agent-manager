@@ -177,7 +177,7 @@ Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) działają w trybie przegl
 - **Zero zależności w proxy** — tylko `node:http`, `node:fs`, `node:path`. Nie wymaga `npm install`, działa na każdej instalacji Node 18+.
 - **Tryb przeglądarkowy to nie błąd** — gdy proxy padnie, UI dalej działa jako panel online. Przejście między lokalnym AI a trybem przeglądarkowym jest płynne i widoczne w badge.
 - **Model wybiera użytkownik raz** — pierwsze uruchomienie pyta o URL HF lub ścieżkę. Kolejne starty są ciche; `--change-model` resetuje.
-- **Advanced jest opt-in** — `parallelSlots` domyślnie wynosi `1`, kontekst jest natywny (`--ctx-size 0`), KV cache działa w trybie `auto`, a SD jest domyślnie wyłączone (`sdEnabled=false`).
+- **Advanced jest opt-in** — `parallelSlots` domyślnie wynosi `1`, kontekst startuje jako 64k, KV cache jako `q8_0`, a SD jest domyślnie wyłączone (`sdEnabled=false`). `native` i 256k są świadomymi presetami lokalnego launchera.
 - **Tylko lokalnie** — proxy nasłuchuje wyłącznie na `127.0.0.1`, nie jest udostępniane w sieci i odrzuca nieznany `Origin` HTTP 403.
 
 ## Wspólne stacje robocze (MVP)
@@ -205,7 +205,7 @@ Szkolny komputer
 
 ### Co robi workstation-agent
 
-- loguje się do Supabase kontem operatora stacji,
+- loguje się do Supabase ograniczoną sesją stacji po jednorazowym tokenie instalacyjnym,
 - rejestruje komputer w tabeli `workstations`,
 - publikuje listę lokalnych modeli GGUF do `workstation_models`,
 - odbiera wiadomości i joby przez Supabase,
@@ -218,9 +218,9 @@ Szkolny komputer
 - Jeśli zadanie nie ma wskazanej stacji, AI kierownik wybiera aktywną stację z wolnym slotem. Przy jednej aktywnej stacji pełni ona rolę wykonawcy.
 - Jeśli żadna stacja nie ma wolnego slotu albo zapis jobu się nie uda, przeglądarkowy executor przejmuje rolę pracownika fallbackowego.
 - `parallelSlots` określa, ile jobów lokalny `workstation-agent.js` może próbować obsłużyć naraz. Domyślnie `1`, zakres `1-4`.
-- Kontekst modelu jest ustawieniem lokalnym stacji. Domyślnie launcher używa natywnego kontekstu GGUF; presety do `256k` są dostępne przez terminalowy `--config` i raportowane w metadata stacji.
-- KV cache może być `auto`, `f16`, `q8_0` albo `q4_0`; `auto` wybiera `q8_0` dla długiego kontekstu, jeśli lokalny `llama-server` obsługuje flagi cache type.
-- SD / speculative decoding jest eksperymentalne i domyślnie wyłączone. Launcher przekazuje flagi draft modelu tylko wtedy, gdy lokalny `llama-server --help` pokazuje kompatybilne opcje.
+- Kontekst modelu jest ustawieniem lokalnym stacji. Domyślnie launcher używa `64k` i `q8_0` KV cache, czyli około 50% pamięci KV względem `f16`; presety do `256k` są dostępne przez terminalowy `--config` i raportowane w metadata stacji.
+- RotorQuant/Planar/Iso/Turbo można wybrać jako typ KV cache (`planar3`, `iso3`, `planar4`, `iso4`, `turbo3`, `turbo4`), ale launcher używa ich tylko wtedy, gdy lokalny `llama-server --help` pokazuje wsparcie. W stock llama.cpp fallbackiem jest `q8_0`.
+- SD / speculative decoding jest eksperymentalne i domyślnie wyłączone. Launcher preferuje aktualne flagi `--spec-draft-model` i `--spec-draft-n-max`, a do starszych buildów używa aliasu `--model-draft`.
 
 ### Ważne ograniczenia
 

@@ -10,7 +10,7 @@ Hermes Labyrinth to preset orkiestracji inspirowany stylem pracy wieloagentowej:
 4. Dodaj repozytorium, wymagania i zakazy, jeśli są potrzebne.
 5. Zostaw stację jako **Automatycznie** albo wybierz jedną konkretną stację.
 
-Formularz zapisze w `tasks.context.raw.workflow` role, bramy i zasady przejścia. AI kierownik używa tego kontekstu przy generowaniu instrukcji dla executora albo jobu stacji roboczej.
+Formularz zapisze w `tasks.context.raw.workflow` role, bramy, kontrakt wyjścia i zasady przejścia. AI kierownik używa tego kontekstu przy generowaniu instrukcji dla executora albo jobu stacji roboczej, a Task Detail pokazuje scaloną konsolę decyzji, wiadomości i dowodów.
 
 ## Role
 
@@ -18,20 +18,22 @@ Formularz zapisze w `tasks.context.raw.workflow` role, bramy i zasady przejścia
 |------|----------------------------|
 | Navigator | Ustala trasę zadania, priorytety i bramy przejścia |
 | Scout | Zbiera kontekst z repo, dokumentacji i danych polecenia |
+| Cartographer | Zamienia rozpoznanie w mapę plików, ryzyk i punktów kontrolnych |
 | Builder | Wykonuje zmianę albo przygotowuje instrukcję dla stacji |
-| Verifier | Szuka błędów, regresji i ryzyk bezpieczeństwa |
-| Scribe | Zamyka pracę krótkim raportem dla człowieka |
+| Verifier | Szuka błędów, regresji, brakujących testów i problemów w logach |
+| Scribe | Zamyka pracę raportem z dowodami i pozostałym ryzykiem |
 
 ## Bramy workflow
 
 | Brama | Warunek przejścia |
 |-------|-------------------|
-| Brama wejścia | Cel, repo, ograniczenia i kryterium sukcesu są jasne |
-| Mapa labiryntu | Wybrane są pliki, zależności, ryzyka i kolejność kroków |
-| Podział ról | AI kierownik wie, czy użyć executora, specjalisty czy stacji roboczej |
-| Przejście ścieżki | Zmiany są małe, odwracalne i zgodne z lokalnym stylem |
-| Lustro testera | Wynik przeszedł testy albo ryzyko jest jawnie opisane |
-| Wyjście | Człowiek dostaje zwięzły raport i następny bezpieczny krok |
+| Brama wejścia | Cel, repo, zakres, ograniczenia i kryterium sukcesu są jawne |
+| Mapa labiryntu | Wskazane są pliki, zależności, ryzyka, komendy i kolejność kroków |
+| Wybór ścieżki | Routing wskazuje przeglądarkę, konkretną stację lub fallback i powód wyboru |
+| Przejście ścieżki | Zmiany są małe, spójne z repo i opisane w logu zadania |
+| Ślad dowodowy | Konsola zawiera decyzje, wynik stacji, testy i ostrzeżenia |
+| Lustro testera | Wynik przeszedł sensowną weryfikację albo ryzyko jest jawne |
+| Wyjście | Człowiek dostaje zwięzły raport, dowody i następny bezpieczny krok |
 
 ## Integracja techniczna
 

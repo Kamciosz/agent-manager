@@ -261,6 +261,10 @@
               <div class="text-sm text-slate-500 font-medium">Ukończone</div>
               <div id="stat-done" class="text-3xl font-bold text-emerald-600 mt-2">0</div>
             </div>
+            <div class="bg-white/95 rounded-xl p-6 surface-card stat-card border border-white/80" style="--accent:#0f766e">
+              <div class="text-sm text-slate-500 font-medium">Aktywne stacje</div>
+              <div id="stat-workstations" class="text-3xl font-bold text-teal-700 mt-2">0</div>
+            </div>
           </div>
 
           <!-- Akcja + tabela ostatnich zadań -->
@@ -379,6 +383,22 @@
             </div>
           </div>
 
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6 mb-6">
+            <div class="flex items-start justify-between gap-4 mb-4">
+              <div>
+                <h3 class="text-lg font-semibold text-slate-900">Konsola i ścieżka zadania</h3>
+                <p id="detail-log-path" class="font-mono text-xs text-slate-500 mt-1">Zadania / konsola</p>
+              </div>
+              <button id="btn-clear-task-log"
+                class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-medium px-4 py-2 rounded-lg transition">
+                Wyczyść log
+              </button>
+            </div>
+            <div id="task-console-list" class="space-y-3 max-h-[520px] overflow-auto pr-1">
+              <p class="text-sm text-slate-500">Konsola jest pusta.</p>
+            </div>
+          </div>
+
           <!-- Wiadomości AI -->
           <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6">
             <h3 class="text-lg font-semibold text-slate-900 mb-4">Wiadomości AI</h3>
@@ -419,6 +439,39 @@
 
         <!-- ========== WORKSTATIONS VIEW ========== -->
         <section id="view-workstations" class="view-section hidden">
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80 mb-6 p-6">
+            <div class="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <h3 class="text-lg font-semibold text-slate-900">Plan sali</h3>
+                <p class="text-sm text-slate-500 mt-1">Ułóż stacje w rzędach i kolumnach, np. sala 226: 4 rzędy po 6 komputerów z etykietami 226_2_5.</p>
+              </div>
+            </div>
+            <form id="form-classroom-grid" class="grid md:grid-cols-4 gap-4 items-end mb-5">
+              <label class="block">
+                <span class="block text-sm font-medium text-slate-700 mb-1">Sala</span>
+                <input id="classroom-grid-room" type="text" value="226" placeholder="np. 226"
+                  class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block">
+                <span class="block text-sm font-medium text-slate-700 mb-1">Rzędy</span>
+                <input id="classroom-grid-rows" type="number" min="1" max="12" value="4"
+                  class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block">
+                <span class="block text-sm font-medium text-slate-700 mb-1">Komputery w rzędzie</span>
+                <input id="classroom-grid-cols" type="number" min="1" max="12" value="6"
+                  class="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <button type="submit"
+                class="bg-slate-900 hover:bg-slate-800 text-white font-medium px-4 py-2 rounded-lg transition">
+                Ułóż siatkę
+              </button>
+            </form>
+            <div id="workstation-classroom-grid" class="space-y-4">
+              <p class="text-sm text-slate-500">Brak stacji do ułożenia w siatce.</p>
+            </div>
+          </div>
+
           <div class="bg-white/95 rounded-xl surface-card border border-white/80">
             <div class="p-6 border-b border-slate-200 flex items-center justify-between gap-4">
               <div>
@@ -435,6 +488,7 @@
                 <thead class="bg-slate-50 text-slate-600 text-left">
                   <tr>
                     <th class="px-6 py-3 font-medium">Nazwa</th>
+                    <th class="px-6 py-3 font-medium">Sala / pozycja</th>
                     <th class="px-6 py-3 font-medium">Platforma</th>
                     <th class="px-6 py-3 font-medium">Model</th>
                     <th class="px-6 py-3 font-medium">Status</th>
@@ -444,7 +498,7 @@
                   </tr>
                 </thead>
                 <tbody id="workstations-table-body" class="divide-y divide-slate-100">
-                  <tr><td colspan="7" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>
+                  <tr><td colspan="8" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -530,21 +584,27 @@
                 <input id="station-config-slots" type="number" min="1" max="4" value="1" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
               </label>
               <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <span class="block text-sm font-semibold text-slate-900">Kontekst modelu <span class="help-dot" title="Ile tekstu model może pamiętać. Native jest najbezpieczniejsze.">?</span></span>
+                <span class="block text-sm font-semibold text-slate-900">Kontekst modelu <span class="help-dot" title="Ile tekstu model może pamiętać. Domyślnie 64k, 256k wymaga dużo pamięci.">?</span></span>
                 <select id="station-config-context" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
-                  <option value="native">native</option>
-                  <option value="32768">32k</option>
                   <option value="65536">64k</option>
                   <option value="131072">128k</option>
+                  <option value="262144">256k</option>
+                  <option value="native">native</option>
                 </select>
               </label>
               <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <span class="block text-sm font-semibold text-slate-900">KV cache <span class="help-dot" title="Kompresja pamięci modelu. Auto dobiera bezpieczną wartość.">?</span></span>
+                <span class="block text-sm font-semibold text-slate-900">KV cache <span class="help-dot" title="q8_0 działa w stock llama.cpp. Planar/Iso/Turbo wymagają binarki RotorQuant.">?</span></span>
                 <select id="station-config-kv" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                  <option value="q8_0">q8_0</option>
                   <option value="auto">auto</option>
                   <option value="f16">f16</option>
-                  <option value="q8_0">q8_0</option>
                   <option value="q4_0">q4_0</option>
+                  <option value="planar3">planar3</option>
+                  <option value="iso3">iso3</option>
+                  <option value="planar4">planar4</option>
+                  <option value="iso4">iso4</option>
+                  <option value="turbo3">turbo3</option>
+                  <option value="turbo4">turbo4</option>
                 </select>
               </label>
               <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -608,6 +668,12 @@
               <div id="monitor-workstations-list" class="space-y-3">
                 <p class="text-sm text-slate-500">Brak aktywnych stacji.</p>
               </div>
+              <div class="mt-6 border-t border-slate-200 pt-5">
+                <h3 class="text-lg font-semibold text-slate-900 mb-4">Monitor stacji</h3>
+                <div id="monitor-station-detail">
+                  <p class="text-sm text-slate-500">Wybierz stację, aby zobaczyć monitor.</p>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -670,7 +736,7 @@
               </div>
               <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6">
                 <h3 class="text-lg font-semibold text-slate-900">Kontekst i KV</h3>
-                <p class="text-sm text-slate-600 mt-2">Domyślnie runtime używa natywnego kontekstu modelu. Presety do 256k oraz KV cache auto/q8_0/q4_0 ustawia się lokalnie przez terminalowy config stacji.</p>
+                <p class="text-sm text-slate-600 mt-2">Domyślnie runtime używa 64k i KV q8_0. Presety do 256k oraz KV auto/f16/q8_0/q4_0, a z kompatybilną binarką także Planar/Iso/Turbo, ustawia się lokalnie przez terminalowy config stacji.</p>
               </div>
             </div>
           </div>
@@ -913,6 +979,57 @@
           <input type="number" id="agent-concurrency" min="1" max="10" value="1"
             class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
         </div>
+        <div class="flex justify-end gap-2 pt-4 border-t border-slate-200">
+          <button type="button" class="modal-close px-4 py-2 text-slate-600 hover:text-slate-900 font-medium">
+            Anuluj
+          </button>
+          <button type="submit"
+            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">
+            Zapisz
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================== -->
+  <!-- MODAL: Edycja stacji roboczej                                  -->
+  <!-- ============================================================== -->
+  <div id="modal-workstation-edit" class="hidden fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+      <div class="p-6 border-b border-slate-200 flex items-center justify-between">
+        <h3 class="text-xl font-semibold text-slate-900">Edytuj stację</h3>
+        <button class="modal-close text-slate-500 hover:text-slate-900 text-2xl leading-none">×</button>
+      </div>
+      <form id="form-workstation-edit" class="p-6 space-y-4">
+        <input type="hidden" id="workstation-edit-id" />
+        <label class="block">
+          <span class="block text-sm font-medium text-slate-700 mb-1">Nazwa</span>
+          <input id="workstation-edit-name" type="text" required
+            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+        </label>
+        <div class="grid grid-cols-3 gap-4">
+          <label class="block">
+            <span class="block text-sm font-medium text-slate-700 mb-1">Sala</span>
+            <input id="workstation-edit-room" type="text" placeholder="226"
+              class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+          </label>
+          <label class="block">
+            <span class="block text-sm font-medium text-slate-700 mb-1">Rząd</span>
+            <input id="workstation-edit-row" type="number" min="1" max="99"
+              class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+          </label>
+          <label class="block">
+            <span class="block text-sm font-medium text-slate-700 mb-1">Kolumna</span>
+            <input id="workstation-edit-col" type="number" min="1" max="99"
+              class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+          </label>
+        </div>
+        <label class="block">
+          <span class="block text-sm font-medium text-slate-700 mb-1">Podpis na planie</span>
+          <input id="workstation-edit-label" type="text" placeholder="np. 226_2_5"
+            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+        </label>
         <div class="flex justify-end gap-2 pt-4 border-t border-slate-200">
           <button type="button" class="modal-close px-4 py-2 text-slate-600 hover:text-slate-900 font-medium">
             Anuluj

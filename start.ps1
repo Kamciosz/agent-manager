@@ -23,7 +23,8 @@ $ProxyPort = 3001
 $DefaultSupabaseUrl = ''
 $DefaultSupabaseKey = ''
 $DefaultAppOrigin = 'https://kamciosz.github.io'
-$SafeContextSizeTokens = 8192
+$DefaultContextSizeTokens = 65536
+$DefaultKvCache = 'q8_0'
 $PortableNodeVersion = '22.11.0'
 $NodeExecutable = ''
 
@@ -240,7 +241,7 @@ function Get-ConfigInt([object] $Config, [string] $Name, [int] $Fallback, [int] 
   return [Math]::Max($Min, [Math]::Min($Max, $parsed))
 }
 
-function Convert-TokenCount([object] $Value, [int] $Fallback = $SafeContextSizeTokens) {
+function Convert-TokenCount([object] $Value, [int] $Fallback = $DefaultContextSizeTokens) {
   if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string] $Value)) { return $Fallback }
   $raw = ([string] $Value).Trim().ToLowerInvariant()
   if ($raw -eq 'native' -or $raw -eq 'natywny') { return 0 }
@@ -259,19 +260,19 @@ function Get-NormalizedContextMode([object] $Value, [bool] $AllowNative = $false
 
 function Get-NormalizedKvCache([object] $Value) {
   $raw = ([string] $Value).Trim().ToLowerInvariant()
-  if ($raw -in @('auto', 'f16', 'q8_0', 'q4_0')) { return $raw }
+  if ($raw -in @('auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4')) { return $raw }
   return 'auto'
 }
 
 function Get-EffectiveContextSize([object] $Config) {
   $mode = Get-NormalizedContextMode (Get-ConfigString $Config 'contextMode' 'extended') (Get-ConfigBool $Config 'contextNativeUnsafeAccepted' $false)
   if ($mode -eq 'native') { return 0 }
-  $tokens = Convert-TokenCount (Get-ConfigString $Config 'contextSizeTokens' ([string] $SafeContextSizeTokens)) $SafeContextSizeTokens
-  return [Math]::Max(1024, [Math]::Min(262144, $tokens))
+  $tokens = Convert-TokenCount (Get-ConfigString $Config 'contextSizeTokens' ([string] $DefaultContextSizeTokens)) $DefaultContextSizeTokens
+  return [Math]::Max(65536, [Math]::Min(262144, $tokens))
 }
 
 function Get-EffectiveKvCache([object] $Config) {
-  $kv = Get-NormalizedKvCache (Get-ConfigString $Config 'kvCacheQuantization' 'auto')
+  $kv = Get-NormalizedKvCache (Get-ConfigString $Config 'kvCacheQuantization' $DefaultKvCache)
   if ($kv -ne 'auto') { return $kv }
   if ((Get-EffectiveContextSize $Config) -gt 32768) { return 'q8_0' }
   return 'f16'
@@ -279,10 +280,10 @@ function Get-EffectiveKvCache([object] $Config) {
 
 function Invoke-SafeGitUpdate([string] $Reason) {
   $git = Get-Command git -ErrorAction SilentlyContinue
-  if (-not $git) { Write-StartWarn "Update $Reason skipped: git is not available in PATH."; return }
+  if (-not $git) { Write-StartWarn "Update $Reason skipped: git is not available in PATH. In a ZIP install, run Aktualizuj.bat."; return }
 
   & git -C $RootDir rev-parse --is-inside-work-tree > $null 2>&1
-  if ($LASTEXITCODE -ne 0) { Write-StartWarn "Update $Reason skipped: this folder is not a git repository."; return }
+  if ($LASTEXITCODE -ne 0) { Write-StartWarn "Update $Reason skipped: this folder is not a git repository. In a ZIP install, run Aktualizuj.bat."; return }
 
   & git -C $RootDir diff --quiet --ignore-submodules --
   $dirtyWorktree = $LASTEXITCODE -ne 0
@@ -342,7 +343,7 @@ function Sync-RuntimeConfig {
   $contextSize = if ($contextMode -eq 'native') { 0 } else { Get-EffectiveContextSize $cfg }
   Set-ConfigValue $cfg 'contextSizeTokens' $contextSize
   Set-ConfigValue $cfg 'contextNativeUnsafeAccepted' ($contextMode -eq 'native')
-  Set-ConfigValue $cfg 'kvCacheQuantization' (Get-NormalizedKvCache (Get-ConfigString $cfg 'kvCacheQuantization' 'auto'))
+  Set-ConfigValue $cfg 'kvCacheQuantization' (Get-NormalizedKvCache (Get-ConfigString $cfg 'kvCacheQuantization' $DefaultKvCache))
   Set-ConfigValue $cfg 'effectiveContextSizeTokens' $contextSize
   Set-ConfigValue $cfg 'effectiveKvCacheQuantization' (Get-EffectiveKvCache $cfg)
   if ($null -eq $cfg.PSObject.Properties['autoUpdate']) { Set-ConfigValue $cfg 'autoUpdate' $false }
@@ -730,8 +731,8 @@ function Configure-Advanced {
   Write-Host '=========================================================='
   Write-Host '  Advanced runtime options'
   Write-Host '=========================================================='
-  Write-Host '  Default: parallelSlots=1, context=8k, KV=auto, SD disabled.'
-  Write-Host '  Native/128k/256k are available, but may need a lot of RAM/VRAM.'
+  Write-Host '  Default: parallelSlots=1, context=64k, KV=q8_0 (~50% KV memory), SD disabled.'
+  Write-Host '  256k and native are available, but may need a lot of RAM/VRAM.'
   Write-Host ''
 
   $answer = Prompt-WithDefault 'Configure Advanced now? (y/N)' 'N'
@@ -743,24 +744,24 @@ function Configure-Advanced {
 
   $parallel = Prompt-WithDefault 'parallelSlots (1-4)' ([string] (Get-ConfigInt $cfg 'parallelSlots' 1 1 4))
   $contextDefault = if ((Get-NormalizedContextMode (Get-ConfigString $cfg 'contextMode' 'extended') (Get-ConfigBool $cfg 'contextNativeUnsafeAccepted' $false)) -eq 'native') { 'native' } else { [string] (Get-EffectiveContextSize $cfg) }
-  $contextChoice = Prompt-WithDefault 'Context: 8k, 32k, 64k, 128k, 256k, native or token count' $contextDefault
+  $contextChoice = Prompt-WithDefault 'Context: 64k, 128k, 256k, native or token count' $contextDefault
   switch (($contextChoice.Trim()).ToLowerInvariant()) {
     'native' { $contextMode = 'native'; $contextSize = 0; break }
     'natywny' { $contextMode = 'native'; $contextSize = 0; break }
-    '8k' { $contextMode = 'extended'; $contextSize = 8192; break }
-    '8192' { $contextMode = 'extended'; $contextSize = 8192; break }
-    '32k' { $contextMode = 'extended'; $contextSize = 32768; break }
-    '32768' { $contextMode = 'extended'; $contextSize = 32768; break }
+    '8k' { $contextMode = 'extended'; $contextSize = 65536; Write-StartWarn 'Minimum context is 64k; using 64k instead of 8k.'; break }
+    '8192' { $contextMode = 'extended'; $contextSize = 65536; Write-StartWarn 'Minimum context is 64k; using 64k instead of 8k.'; break }
+    '32k' { $contextMode = 'extended'; $contextSize = 65536; Write-StartWarn 'Minimum context is 64k; using 64k instead of 32k.'; break }
+    '32768' { $contextMode = 'extended'; $contextSize = 65536; Write-StartWarn 'Minimum context is 64k; using 64k instead of 32k.'; break }
     '64k' { $contextMode = 'extended'; $contextSize = 65536; break }
     '65536' { $contextMode = 'extended'; $contextSize = 65536; break }
     '128k' { $contextMode = 'extended'; $contextSize = 131072; break }
     '131072' { $contextMode = 'extended'; $contextSize = 131072; break }
     '256k' { $contextMode = 'extended'; $contextSize = 262144; break }
     '262144' { $contextMode = 'extended'; $contextSize = 262144; break }
-    default { $contextMode = 'extended'; $contextSize = Convert-TokenCount $contextChoice $SafeContextSizeTokens; break }
+    default { $contextMode = 'extended'; $contextSize = Convert-TokenCount $contextChoice $DefaultContextSizeTokens; break }
   }
-  $contextSize = if ($contextMode -eq 'native') { 0 } else { [Math]::Max(1024, [Math]::Min(262144, $contextSize)) }
-  $kvCache = Get-NormalizedKvCache (Prompt-WithDefault 'KV cache compression (auto/f16/q8_0/q4_0)' (Get-ConfigString $cfg 'kvCacheQuantization' 'auto'))
+  $contextSize = if ($contextMode -eq 'native') { 0 } else { [Math]::Max(65536, [Math]::Min(262144, $contextSize)) }
+  $kvCache = Get-NormalizedKvCache (Prompt-WithDefault 'KV cache compression: q8_0 (~50%), auto, f16, q4_0, or RotorQuant planar3/iso3/planar4/iso4/turbo3/turbo4' (Get-ConfigString $cfg 'kvCacheQuantization' $DefaultKvCache))
   $autoDefault = if (Get-ConfigBool $cfg 'autoUpdate' $false) { 'y' } else { 'N' }
   $autoAnswer = Prompt-WithDefault 'Automatically update launcher on startup? (y/N)' $autoDefault
   $autoUpdate = $autoAnswer.ToLowerInvariant() -in @('y', 'yes', 't', 'tak')
@@ -881,10 +882,39 @@ function Ensure-RuntimeFiles([string] $ModelPath) {
 
 function Test-LlamaFlag([string] $Flag) {
   $bin = Get-LlamaBinaryPath
+  if ($script:LlamaFlagCacheBin -eq $bin -and $null -ne $script:LlamaFlagCacheText) {
+    return $script:LlamaFlagCacheText.Contains($Flag)
+  }
+
+  $script:LlamaFlagCacheBin = $bin
+  $script:LlamaFlagCacheText = ''
+  $tempDir = [IO.Path]::GetTempPath()
+  $outFile = Join-Path $tempDir ("agent-manager-llama-help-" + [Guid]::NewGuid().ToString('N') + '.out')
+  $errFile = Join-Path $tempDir ("agent-manager-llama-help-" + [Guid]::NewGuid().ToString('N') + '.err')
   try {
-    $help = & $bin --help 2>&1 | Out-String
-    return $help.Contains($Flag)
-  } catch { return $false }
+    $process = Start-Process -FilePath $bin -ArgumentList '--help' -NoNewWindow -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+    if (-not $process.WaitForExit(15000)) {
+      try { $process.Kill() } catch {}
+      Write-StartWarn 'llama-server --help timed out while checking optional flags; starting with conservative arguments.'
+      return $false
+    }
+    $stdout = if (Test-Path $outFile) { Get-Content -LiteralPath $outFile -Raw -ErrorAction SilentlyContinue } else { '' }
+    $stderr = if (Test-Path $errFile) { Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue } else { '' }
+    $script:LlamaFlagCacheText = "$stdout`n$stderr"
+    return $script:LlamaFlagCacheText.Contains($Flag)
+  } catch {
+    $script:LlamaFlagCacheText = ''
+    return $false
+  } finally {
+    Remove-Item -LiteralPath $outFile, $errFile -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Test-LlamaCacheType([string] $Type) {
+  if ($Type -in @('f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1')) { return $true }
+  [void] (Test-LlamaFlag '--cache-type-k')
+  if ([string]::IsNullOrWhiteSpace($script:LlamaFlagCacheText)) { return $false }
+  return $script:LlamaFlagCacheText.Contains($Type)
 }
 
 function Quote-NativeArgument([string] $Argument) {
@@ -950,27 +980,51 @@ function Start-Llama([string] $ModelPath, [string] $Backend) {
   if ($contextSize -eq 0) {
     Write-StartWarn 'Context: native (llama.cpp --ctx-size 0). Models with native 128k/256k context may need huge memory.'
   } elseif ($contextSize -ge 131072) {
-    Write-StartWarn "Context $contextSize tokens may need a lot of RAM/VRAM. If Compute error/OOM appears, run start.bat --config and choose 8k."
+    Write-StartWarn "Context $contextSize tokens may need a lot of RAM/VRAM. If Compute error/OOM appears, run start.bat --config and choose 64k."
   } else {
     Write-StartLog "Context: $contextSize tokens."
   }
 
   $kvEffective = Get-EffectiveKvCache $cfg
-  $kvRequested = Get-NormalizedKvCache (Get-ConfigString $cfg 'kvCacheQuantization' 'auto')
-  if ($kvEffective -ne 'f16') {
-    if ((Test-LlamaFlag '--cache-type-k') -and (Test-LlamaFlag '--cache-type-v')) {
-      $args += @('--cache-type-k', $kvEffective, '--cache-type-v', $kvEffective)
-      Write-StartLog "KV cache compression: $kvEffective (requested=$kvRequested)."
-    } else {
-      Write-StartWarn "config.json requests KV=$kvEffective, but llama-server does not advertise --cache-type-k/--cache-type-v. Starting without KV compression."
+  $kvRequested = Get-NormalizedKvCache (Get-ConfigString $cfg 'kvCacheQuantization' $DefaultKvCache)
+  if ((Test-LlamaFlag '--cache-type-k') -and (Test-LlamaFlag '--cache-type-v')) {
+    if (-not (Test-LlamaCacheType $kvEffective)) {
+      Write-StartWarn "config.json requests KV=$kvEffective, but this llama-server does not advertise that cache type. Falling back to q8_0."
+      $kvEffective = 'q8_0'
+    }
+    $args += @('--cache-type-k', $kvEffective, '--cache-type-v', $kvEffective)
+    Write-StartLog "KV cache compression: $kvEffective (requested=$kvRequested)."
+  } elseif ($kvEffective -ne 'f16') {
+    Write-StartWarn "config.json requests KV=$kvEffective, but llama-server does not advertise --cache-type-k/--cache-type-v. Starting without KV compression."
+  }
+
+  if (($contextSize -eq 0) -or ($contextSize -ge 65536)) {
+    if (Test-LlamaFlag '--flash-attn') {
+      $args += @('--flash-attn', 'on')
+      Write-StartLog 'Flash Attention: on.'
+    }
+    if (Test-LlamaFlag '--cache-ram') {
+      $args += @('--cache-ram', '0')
+      Write-StartLog 'Prompt cache RAM: disabled for long-context memory headroom.'
+    }
+    if (Test-LlamaFlag '--batch-size') {
+      $args += @('--batch-size', '512')
+      Write-StartLog 'Batch size: 512 for lower peak memory.'
+    }
+    if (Test-LlamaFlag '--ubatch-size') {
+      $args += @('--ubatch-size', '256')
+      Write-StartLog 'Micro-batch size: 256 for lower peak memory.'
     }
   }
   if ($Backend -in @('cuda', 'vulkan')) { $args += @('--n-gpu-layers', '999') }
 
   $parallel = Get-ConfigInt $cfg 'parallelSlots' 1 1 4
-  if ($parallel -gt 1) {
-    if (Test-LlamaFlag '--parallel') { $args += @('--parallel', [string] $parallel) }
-    else { Write-StartWarn 'llama-server does not advertise --parallel; station config still reports parallelSlots.' }
+  if (Test-LlamaFlag '--parallel') {
+    $args += @('--parallel', [string] $parallel)
+    if ($parallel -gt 1) { Write-StartLog "Advanced parallelSlots=$parallel active in llama-server." }
+    else { Write-StartLog 'llama-server parallel slots: 1.' }
+  } elseif ($parallel -gt 1) {
+    Write-StartWarn 'llama-server does not advertise --parallel; station config still reports parallelSlots.'
   }
 
   if (Get-ConfigBool $cfg 'sdEnabled') {
@@ -978,11 +1032,17 @@ function Start-Llama([string] $ModelPath, [string] $Backend) {
     $tokens = Get-ConfigInt $cfg 'speculativeTokens' 4 1 16
     if (-not $draft -or -not (Test-Path -LiteralPath $draft)) {
       Write-StartWarn 'SD enabled but draft model does not exist. Starting without SD.'
-    } elseif (Test-LlamaFlag '--model-draft') {
-      $args += @('--model-draft', $draft)
-      if (Test-LlamaFlag '--draft-max') { $args += @('--draft-max', [string] $tokens) }
+    } elseif ((Test-LlamaFlag '--spec-draft-model') -or (Test-LlamaFlag '--model-draft')) {
+      if (Test-LlamaFlag '--spec-draft-model') { $args += @('--spec-draft-model', $draft) }
+      else { $args += @('--model-draft', $draft) }
+      if (Test-LlamaFlag '--spec-draft-n-max') { $args += @('--spec-draft-n-max', [string] $tokens) }
+      elseif (Test-LlamaFlag '--draft-max') { $args += @('--draft-max', [string] $tokens) }
+      if ((Test-LlamaFlag '--cache-type-k-draft') -and (Test-LlamaFlag '--cache-type-v-draft')) {
+        $args += @('--cache-type-k-draft', 'q8_0', '--cache-type-v-draft', 'q8_0')
+      }
+      Write-StartLog "Advanced SD active: draft=$([IO.Path]::GetFileName($draft)), speculativeTokens=$tokens."
     } else {
-      Write-StartWarn 'This llama-server does not advertise --model-draft. Starting without SD.'
+      Write-StartWarn 'This llama-server does not advertise --spec-draft-model/--model-draft. Starting without SD.'
     }
   }
 
@@ -1146,6 +1206,7 @@ function Invoke-Doctor {
   }
 
   if (Test-Path -LiteralPath $ConfigFile) {
+    Sync-RuntimeConfig
     $cfg = Read-Config
     $modelPath = Get-ConfigString $cfg 'modelPath'
     if ($modelPath -and (Test-Path -LiteralPath $modelPath)) {
@@ -1169,7 +1230,7 @@ function Invoke-Doctor {
     } else {
       Write-DoctorResult 'INFO' 'station auth' 'missing; full start will ask for dashboard enrollment token'
     }
-    Write-DoctorResult 'INFO' 'context' "mode=$(Get-ConfigString $cfg 'contextMode' 'native'), tokens=$(Get-ConfigString $cfg 'contextSizeTokens' '0'), KV=$(Get-ConfigString $cfg 'kvCacheQuantization' 'auto')"
+    Write-DoctorResult 'INFO' 'context' "mode=$(Get-ConfigString $cfg 'contextMode' 'native'), tokens=$(Get-ConfigString $cfg 'contextSizeTokens' '0'), effective=$(Get-ConfigString $cfg 'effectiveContextSizeTokens' '0'), KV=$(Get-ConfigString $cfg 'kvCacheQuantization' $DefaultKvCache)/$(Get-ConfigString $cfg 'effectiveKvCacheQuantization' 'q8_0')"
     Write-DoctorResult 'INFO' 'autoUpdate' "$(Get-ConfigBool $cfg 'autoUpdate' $false)"
   } else {
     Write-DoctorResult 'INFO' 'config.json' 'missing; full start will enter first-run configuration'

@@ -90,7 +90,7 @@ No-code aktualizacja:
 - Windows: dwuklik [`../Aktualizuj.bat`](../Aktualizuj.bat)
 - macOS/Linux: dwuklik [`../Aktualizuj.command`](../Aktualizuj.command)
 
-Oba pliki uruchamiają bezpieczne `--update`. Jeśli repo ma lokalne zmiany, update zostanie pominięty i pokaże komunikat.
+Oba pliki uruchamiają bezpieczny aktualizator. W repo git robią `git pull --ff-only`, a w instalacji z ZIP-a pobierają najnowszy kod z GitHuba i zachowują `local-ai-proxy/config.json`, modele, binarki oraz logi. Jeśli repo ma lokalne zmiany, update zostanie pominięty i pokaże komunikat.
 
 Diagnostyka jest najbezpieczniejszą ścieżką testu po `--help`:
 
@@ -166,22 +166,25 @@ Opcje Advanced są lokalne dla konkretnej stacji roboczej i zapisują się w `lo
 
 `contextMode` określa, jak launcher przekazuje kontekst do `llama-server`:
 
-- Domyślnie: `extended` z `contextSizeTokens=8192`, czyli bezpieczne 8k dla dużych modeli i słabszych GPU.
+- Domyślnie: `extended` z `contextSizeTokens=65536`, czyli 64k jako minimum sensownej pracy agentowej.
+- Domyślna kompresja KV cache to `q8_0`, czyli około 50% pamięci KV względem `f16`.
 - Opcjonalnie: `native`, czyli `--ctx-size 0`. To każe llama.cpp użyć natywnego kontekstu zapisanego w modelu/GGUF; przy modelach 128k/256k może to wymagać ogromnej ilości RAM/VRAM i powodować `Compute error`.
-- Presety opt-in: `32k`, `64k`, `128k`, `256k` albo własna liczba tokenów.
-- Zakres launchera: `1024-262144`; wartości spoza zakresu są przycinane.
+- Presety opt-in: `64k`, `128k`, `256k` albo własna liczba tokenów. Wartości poniżej `64k` są podnoszone do minimum `64k`.
+- Zakres launchera: `65536-262144`; wartości spoza zakresu są przycinane.
 - `256k` jest dostępne, ale może wymagać bardzo dużo RAM/VRAM i modelu, który realnie znosi tak długi kontekst.
 
 ### KV cache compression
 
 `kvCacheQuantization` steruje kompresją cache K/V w `llama-server`, jeśli binary pokazuje flagi `--cache-type-k` i `--cache-type-v`:
 
-- Domyślnie: `auto`.
+- Domyślnie: `q8_0`.
+- `q8_0` to domyślny wybór dla 64k/128k/256k i zwykle daje około 50% zużycia pamięci KV względem `f16`.
 - `auto` używa `f16` dla krótkiego/natywnego kontekstu i `q8_0` dla kontekstu powyżej 32k.
-- Ręczne opcje: `f16`, `q8_0`, `q4_0`.
+- Ręczne opcje stock llama.cpp: `f32`, `f16`, `bf16`, `q8_0`, `q4_0`, `q4_1`, `iq4_nl`, `q5_0`, `q5_1`.
+- Opcje RotorQuant/Planar/Iso/Turbo, tylko z kompatybilnym forkiem/binarką: `planar3`, `iso3`, `planar4`, `iso4`, `turbo3`, `turbo4`.
 - `q8_0` zwykle jest rozsądnym kompromisem dla długiego kontekstu; `q4_0` jest bardziej agresywne i może pogorszyć jakość.
 
-Nie ma tu osobnej magicznej flagi o nazwie `rotroqwant`; launcher używa realnych opcji llama.cpp dla KV cache. Jeśli upstream zmieni nazwy flag, runtime startuje bez kompresji i pokazuje ostrzeżenie zamiast zamykać okno bez wyjaśnienia.
+Dlaczego domyślnie `q8_0`, a nie RotorQuant: `q8_0` działa w stock llama.cpp, więc launcher może go bezpiecznie pakować dla Windows/macOS/Linux. RotorQuant jest lepszym kierunkiem dla mocnej kompresji długiego KV, ale wymaga zgodnej binarki; jeśli wybierzesz `planar3`/`iso3`/`planar4`/`iso4`/`turbo3`/`turbo4`, launcher sprawdzi `llama-server --help` i spadnie do `q8_0`, gdy typ nie jest obsługiwany.
 
 ### `parallelSlots`
 
@@ -202,7 +205,7 @@ SD jest domyślnie **wyłączone** (`sdEnabled: false`). To opcja eksperymentaln
 - wymaga kompatybilnego `llama-server`, który pokazuje odpowiednie flagi w `--help`,
 - może przyspieszyć generowanie, ale na złym zestawie modeli może też je spowolnić.
 
-Launcher zapisuje konfigurację SD tylko po świadomym wejściu w `--advanced`. Jeśli binary `llama-server` nie wspiera draft modelu, runtime startuje standardowo i wypisuje ostrzeżenie.
+Launcher zapisuje konfigurację SD tylko po świadomym wejściu w `--advanced`. Aktualne buildy llama.cpp używają `--spec-draft-model` i `--spec-draft-n-max`; starsze buildy mogą nadal akceptować alias `--model-draft`. Jeśli binary `llama-server` nie wspiera draft modelu, runtime startuje standardowo i wypisuje ostrzeżenie.
 
 ### Auto-update
 
@@ -212,7 +215,7 @@ Launcher zapisuje konfigurację SD tylko po świadomym wejściu w `--advanced`. 
 git pull --ff-only
 ```
 
-Tylko wtedy, gdy katalog jest czystym repo git i nie ma lokalnych zmian. Jeśli są lokalne zmiany, repo jest w detached HEAD albo zdalna historia się rozjechała, aktualizacja jest pomijana z ostrzeżeniem. Jednorazowo możesz wymusić tę samą bezpieczną próbę flagą `--update`.
+Tylko wtedy, gdy katalog jest czystym repo git i nie ma lokalnych zmian. Jeśli są lokalne zmiany, repo jest w detached HEAD albo zdalna historia się rozjechała, aktualizacja jest pomijana z ostrzeżeniem. Jednorazowo możesz wymusić tę samą bezpieczną próbę flagą `--update`. Instalacje z ZIP-a aktualizuj plikiem `Aktualizuj`, bo on ma ścieżkę pobierania paczki z GitHuba.
 
 ## Pliki w tym katalogu
 
@@ -263,7 +266,7 @@ Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci. Dod
 
 **Aplikacja działa wolniej po podłączeniu lokalnego modelu.** AI generuje tekst dłużej niż tryb przeglądarkowy. To normalne — większy kontekst i większy model = wolniej. Pomiar w `logs/proxy.log` (Xms na request).
 
-**Po ustawieniu native/128k/256k model nie startuje, zwraca `Compute error` albo komputer mieli dyskiem.** To prawie zawsze brak RAM/VRAM albo model bez realnego wsparcia długiego kontekstu. Uruchom `./start.sh --config` albo `start.bat --config`, wybierz `8k` i zostaw KV cache na `auto`.
+**Po ustawieniu native/128k/256k model nie startuje, zwraca `Compute error` albo komputer mieli dyskiem.** To prawie zawsze brak RAM/VRAM albo model bez realnego wsparcia długiego kontekstu. Uruchom `./start.sh --config` albo `start.bat --config`, wybierz `64k` i zostaw KV cache na `q8_0`.
 
 **Czy można zrobić lokalny kontener Windows?** Kontener Windows wymaga Windows hosta z obsługą Windows Containers/Hyper-V. Na macOS/Linux nie uruchomimy prawdziwego kontenera Windows z tym launcherem. Zamiast tego repo ma smoke test GitHub Actions na `windows-latest`, który uruchamia PowerShell/BAT w izolowanym runnerze Windows.
 

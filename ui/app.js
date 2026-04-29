@@ -117,6 +117,10 @@ const state = {
   user: null,
   currentView: VIEW.DASHBOARD,
   currentTaskId: null,
+  currentTaskAiMessages: [],
+  currentTaskWorkstationMessages: [],
+  editingWorkstationId: null,
+  selectedMonitorWorkstationId: null,
   agentSkills: [],
   editingAgentId: null,
   tasks: [],
@@ -396,8 +400,11 @@ function bindNavigation() {
   document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
   document.getElementById('btn-generate-station-config').addEventListener('click', renderStationConfigInstruction)
+  document.getElementById('form-classroom-grid')?.addEventListener('submit', handleApplyClassroomGrid)
+  document.getElementById('form-workstation-edit')?.addEventListener('submit', handleWorkstationEditSubmit)
   document.getElementById('form-enrollment-token')?.addEventListener('submit', handleCreateEnrollmentToken)
   document.getElementById('btn-copy-enrollment-token')?.addEventListener('click', copyLatestEnrollmentToken)
+  document.getElementById('btn-clear-task-log')?.addEventListener('click', handleClearTaskLog)
   document.getElementById('btn-back-to-tasks').addEventListener('click', () => {
     cleanupTaskSubscriptions()
     navigateTo(VIEW.TASKS)
@@ -581,11 +588,107 @@ async function getWorkstations() {
 async function refreshWorkstations() {
   const workstations = await getWorkstations()
   state.workstations = workstations
+  if (state.selectedMonitorWorkstationId && !findWorkstation(state.selectedMonitorWorkstationId)) {
+    state.selectedMonitorWorkstationId = null
+  }
   renderWorkstationsTable(workstations)
+  renderClassroomGrid(workstations)
   renderMonitorPanel()
   renderAdvancedRuntimePanel(workstations)
+  renderStats(state.tasks)
   populateTaskWorkstationSelects()
   renderSettingsForm()
+}
+
+/**
+ * Aktualizuje dane porządkowe stacji roboczej.
+ * @param {string} workstationId
+ * @param {Object} payload
+ * @returns {Promise<boolean>}
+ */
+async function updateWorkstation(workstationId, payload) {
+  try {
+    const { error } = await supabase
+      .from('workstations')
+      .update(payload)
+      .eq('id', workstationId)
+    if (error) throw error
+    return true
+  } catch (error) {
+    console.error('[app.js] updateWorkstation failed:', error)
+    showToast('Nie udało się zapisać stacji. Sprawdź migrację bazy i RLS.', TOAST_TYPE.ERROR)
+    return false
+  }
+}
+
+/**
+ * Buduje payload zmiany sali/pozycji z kopią w metadata dla zgodności wstecznej.
+ * @param {Object} workstation
+ * @param {Object} values
+ * @returns {Object}
+ */
+function workstationLocationPayload(workstation, values) {
+  const room = normalizeRoom(values.classroomLabel)
+  const row = normalizeGridNumber(values.gridRow)
+  const col = normalizeGridNumber(values.gridCol)
+  const label = String(values.gridLabel || '').trim() || (room && row && col ? `${room}_${row}_${col}` : '')
+  return {
+    display_name: String(values.displayName || workstation.display_name || workstation.hostname || 'Stacja').trim(),
+    classroom_label: room || null,
+    grid_row: row,
+    grid_col: col,
+    grid_label: label || null,
+    metadata: {
+      ...(workstation.metadata || {}),
+      classroomLabel: room || null,
+      gridRow: row,
+      gridCol: col,
+      gridLabel: label || null,
+    },
+  }
+}
+
+function normalizeRoom(value) {
+  return String(value || '').trim().replace(/\s+/g, '_')
+}
+
+function normalizeGridNumber(value) {
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed) || parsed < 1) return null
+  return Math.min(99, parsed)
+}
+
+function workstationRoom(workstation) {
+  return workstation.classroom_label || workstation.metadata?.classroomLabel || 'Bez sali'
+}
+
+function workstationGridRow(workstation) {
+  return normalizeGridNumber(workstation.grid_row ?? workstation.metadata?.gridRow)
+}
+
+function workstationGridCol(workstation) {
+  return normalizeGridNumber(workstation.grid_col ?? workstation.metadata?.gridCol)
+}
+
+function workstationGridLabel(workstation) {
+  const room = workstationRoom(workstation)
+  const row = workstationGridRow(workstation)
+  const col = workstationGridCol(workstation)
+  return workstation.grid_label || workstation.metadata?.gridLabel || (room !== 'Bez sali' && row && col ? `${room}_${row}_${col}` : workstation.display_name || workstation.hostname || 'Stacja')
+}
+
+function workstationDisplayName(workstation) {
+  return workstation.display_name || workstation.hostname || 'Stacja'
+}
+
+function groupWorkstationsByRoom(workstations) {
+  const groups = new Map()
+  for (const workstation of workstations) {
+    const room = workstationRoom(workstation)
+    if (!groups.has(room)) groups.set(room, [])
+    groups.get(room).push(workstation)
+  }
+  return Array.from(groups.entries()).sort(([left], [right]) => left.localeCompare(right, 'pl'))
 }
 
 function canManageEnrollmentTokens() {
@@ -716,6 +819,72 @@ function renderEnrollmentTokensTable(tokens) {
   })
 }
 
+async function handleApplyClassroomGrid(event) {
+  event.preventDefault()
+  const room = normalizeRoom(document.getElementById('classroom-grid-room')?.value || '')
+  const rows = normalizeGridNumber(document.getElementById('classroom-grid-rows')?.value || 4) || 4
+  const cols = normalizeGridNumber(document.getElementById('classroom-grid-cols')?.value || 6) || 6
+  if (!room) {
+    showToast('Podaj nazwę sali, np. 226.', TOAST_TYPE.ERROR)
+    return
+  }
+  const selected = state.workstations
+    .filter((workstation) => workstationRoom(workstation) === room || workstationRoom(workstation) === 'Bez sali')
+    .sort((left, right) => workstationDisplayName(left).localeCompare(workstationDisplayName(right), 'pl'))
+    .slice(0, rows * cols)
+  if (!selected.length) {
+    showToast('Nie ma stacji do ułożenia w tej sali.', TOAST_TYPE.INFO)
+    return
+  }
+  const results = await Promise.all(selected.map((workstation, index) => {
+    const row = Math.floor(index / cols) + 1
+    const col = (index % cols) + 1
+    return updateWorkstation(workstation.id, workstationLocationPayload(workstation, {
+      displayName: workstationDisplayName(workstation),
+      classroomLabel: room,
+      gridRow: row,
+      gridCol: col,
+      gridLabel: `${room}_${row}_${col}`,
+    }))
+  }))
+  if (results.every(Boolean)) {
+    await refreshWorkstations()
+    showToast(`Ułożono ${selected.length} stacji w sali ${room}.`, TOAST_TYPE.SUCCESS)
+  }
+}
+
+function openWorkstationEditModal(workstationId) {
+  const workstation = findWorkstation(workstationId)
+  if (!workstation) return
+  state.editingWorkstationId = workstationId
+  document.getElementById('workstation-edit-id').value = workstationId
+  document.getElementById('workstation-edit-name').value = workstationDisplayName(workstation)
+  document.getElementById('workstation-edit-room').value = workstationRoom(workstation) === 'Bez sali' ? '' : workstationRoom(workstation)
+  document.getElementById('workstation-edit-row').value = workstationGridRow(workstation) || ''
+  document.getElementById('workstation-edit-col').value = workstationGridCol(workstation) || ''
+  document.getElementById('workstation-edit-label').value = workstation.grid_label || workstation.metadata?.gridLabel || ''
+  document.getElementById('modal-workstation-edit').classList.remove('hidden')
+}
+
+async function handleWorkstationEditSubmit(event) {
+  event.preventDefault()
+  const workstationId = document.getElementById('workstation-edit-id').value
+  const workstation = findWorkstation(workstationId)
+  if (!workstation) return
+  const payload = workstationLocationPayload(workstation, {
+    displayName: document.getElementById('workstation-edit-name').value,
+    classroomLabel: document.getElementById('workstation-edit-room').value,
+    gridRow: document.getElementById('workstation-edit-row').value,
+    gridCol: document.getElementById('workstation-edit-col').value,
+    gridLabel: document.getElementById('workstation-edit-label').value,
+  })
+  const ok = await updateWorkstation(workstationId, payload)
+  if (!ok) return
+  closeAllModals()
+  await refreshWorkstations()
+  showToast('Stacja zapisana.', TOAST_TYPE.SUCCESS)
+}
+
 /**
  * Renderuje tabelę stacji roboczych.
  * @param {Array} workstations
@@ -725,30 +894,170 @@ function renderWorkstationsTable(workstations) {
   const tbody = document.getElementById('workstations-table-body')
   if (!tbody) return
   if (!workstations.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="8" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>'
     return
   }
 
   tbody.innerHTML = workstations.map((workstation) => {
     const models = getWorkstationModelLabels(workstation)
+    const position = workstationGridRow(workstation) && workstationGridCol(workstation)
+      ? `${workstationGridRow(workstation)} / ${workstationGridCol(workstation)}`
+      : '—'
     return `
       <tr class="hover:bg-slate-50">
-        <td class="px-6 py-3 font-medium">${escapeHtml(workstation.display_name || workstation.hostname || '—')}</td>
+        <td class="px-6 py-3 font-medium">${escapeHtml(workstationDisplayName(workstation))}</td>
+        <td class="px-6 py-3 text-slate-600">
+          <div>${escapeHtml(workstationRoom(workstation))}</div>
+          <div class="font-mono text-xs text-slate-400">${escapeHtml(position)} · ${escapeHtml(workstationGridLabel(workstation))}</div>
+        </td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(formatWorkstationPlatform(workstation))}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(workstation.current_model_name || models[0] || '—')}</td>
         <td class="px-6 py-3">${workstationStatusBadge(workstation.status)}</td>
         <td class="px-6 py-3">${workstationAdvancedSummary(workstation)}</td>
         <td class="px-6 py-3 text-slate-500">${formatDate(workstation.last_seen_at)}</td>
         <td class="px-6 py-3 space-x-2">
+          <button class="workstation-edit text-slate-700 hover:underline text-sm" data-id="${workstation.id}">Edytuj</button>
           <button class="workstation-message text-blue-600 hover:underline text-sm" data-id="${workstation.id}">Wyślij wiadomość</button>
         </td>
       </tr>
     `
   }).join('')
 
+  tbody.querySelectorAll('.workstation-edit').forEach((button) => {
+    button.addEventListener('click', () => openWorkstationEditModal(button.dataset.id))
+  })
   tbody.querySelectorAll('.workstation-message').forEach((button) => {
     button.addEventListener('click', () => openWorkstationMessageModal(button.dataset.id, null))
   })
+}
+
+/**
+ * Renderuje graficzny plan sal i stanowisk.
+ * @param {Array} workstations
+ * @returns {void}
+ */
+function renderClassroomGrid(workstations) {
+  const container = document.getElementById('workstation-classroom-grid')
+  if (!container) return
+  if (!workstations.length) {
+    container.innerHTML = '<p class="text-sm text-slate-500">Brak stacji do ułożenia w siatce.</p>'
+    return
+  }
+
+  container.innerHTML = groupWorkstationsByRoom(workstations).map(([room, roomStations]) => {
+    const maxRow = Math.max(1, ...roomStations.map((workstation) => workstationGridRow(workstation) || 1))
+    const maxCol = Math.max(1, ...roomStations.map((workstation) => workstationGridCol(workstation) || 1))
+    const rows = room === 'Bez sali' ? Math.min(2, Math.ceil(roomStations.length / 6) || 1) : maxRow
+    const cols = room === 'Bez sali' ? Math.min(6, Math.max(1, roomStations.length)) : maxCol
+    const cells = []
+    for (let row = 1; row <= rows; row += 1) {
+      for (let col = 1; col <= cols; col += 1) {
+        const station = roomStations.find((workstation) => workstationGridRow(workstation) === row && workstationGridCol(workstation) === col)
+        cells.push(classroomGridCell(room, row, col, station))
+      }
+    }
+    const unplaced = roomStations.filter((workstation) => !workstationGridRow(workstation) || !workstationGridCol(workstation))
+    return `
+      <section class="rounded-lg border border-slate-200 bg-white p-4">
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <div>
+            <h4 class="font-semibold text-slate-900">${escapeHtml(room)}</h4>
+            <div class="text-xs text-slate-500">${roomStations.length} stacji · siatka ${rows} x ${cols}</div>
+          </div>
+        </div>
+        <div class="grid gap-2" style="grid-template-columns: repeat(${cols}, minmax(92px, 1fr));">
+          ${cells.join('')}
+        </div>
+        ${unplaced.length ? `
+          <div class="mt-3 flex flex-wrap gap-2">
+            ${unplaced.map((workstation) => classroomUnplacedChip(workstation)).join('')}
+          </div>
+        ` : ''}
+      </section>
+    `
+  }).join('')
+
+  bindClassroomGridEvents(container)
+}
+
+function classroomGridCell(room, row, col, workstation) {
+  const cellAttrs = `data-room="${escapeHtml(room)}" data-row="${row}" data-col="${col}"`
+  if (!workstation) {
+    return `<button type="button" class="classroom-drop min-h-[74px] rounded-lg border border-dashed border-slate-300 bg-slate-50 text-xs text-slate-400 hover:border-blue-300 hover:bg-blue-50" ${cellAttrs}>${row}.${col}</button>`
+  }
+  const stale = isStaleWorkstation(workstation)
+  const busy = workstation.status === 'busy'
+  const cls = stale ? 'border-red-200 bg-red-50' : busy ? 'border-blue-200 bg-blue-50' : 'border-emerald-200 bg-emerald-50'
+  return `
+    <button type="button" draggable="true" class="classroom-tile classroom-drop min-h-[74px] rounded-lg border ${cls} p-2 text-left hover:ring-2 hover:ring-blue-200" data-id="${workstation.id}" ${cellAttrs}>
+      <div class="flex items-center justify-between gap-2">
+        <span class="font-mono text-xs text-slate-500">${escapeHtml(workstationGridLabel(workstation))}</span>
+        <span class="h-2 w-2 rounded-full ${stale ? 'bg-red-500' : busy ? 'bg-blue-500' : 'bg-emerald-500'}"></span>
+      </div>
+      <div class="mt-1 font-semibold text-slate-900 truncate">${escapeHtml(workstationDisplayName(workstation))}</div>
+      <div class="text-xs text-slate-500 truncate">${escapeHtml(workstationActiveJobs(workstation) + '/' + workstationParallelSlots(workstation) + ' slotów')}</div>
+    </button>
+  `
+}
+
+function classroomUnplacedChip(workstation) {
+  return `
+    <button type="button" draggable="true" class="classroom-tile rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700 hover:border-blue-300" data-id="${workstation.id}">
+      ${escapeHtml(workstationDisplayName(workstation))}
+    </button>
+  `
+}
+
+function bindClassroomGridEvents(container) {
+  container.querySelectorAll('.classroom-tile').forEach((tile) => {
+    tile.addEventListener('click', () => openWorkstationEditModal(tile.dataset.id))
+    tile.addEventListener('dragstart', (event) => {
+      event.dataTransfer?.setData('text/workstation-id', tile.dataset.id)
+    })
+  })
+  container.querySelectorAll('.classroom-drop').forEach((cell) => {
+    cell.addEventListener('dragover', (event) => event.preventDefault())
+    cell.addEventListener('drop', (event) => handleClassroomDrop(event, cell))
+  })
+}
+
+async function handleClassroomDrop(event, cell) {
+  event.preventDefault()
+  const draggedId = event.dataTransfer?.getData('text/workstation-id')
+  if (!draggedId) return
+  const dragged = findWorkstation(draggedId)
+  if (!dragged) return
+  const targetId = cell.dataset.id || null
+  const target = targetId ? findWorkstation(targetId) : null
+  const room = normalizeRoom(cell.dataset.room)
+  const row = normalizeGridNumber(cell.dataset.row)
+  const col = normalizeGridNumber(cell.dataset.col)
+  const updates = [
+    updateWorkstation(dragged.id, workstationLocationPayload(dragged, {
+      displayName: workstationDisplayName(dragged),
+      classroomLabel: room,
+      gridRow: row,
+      gridCol: col,
+      gridLabel: `${room}_${row}_${col}`,
+    })),
+  ]
+  if (target && target.id !== dragged.id) {
+    const originalRoom = workstationRoom(dragged)
+    const originalRow = workstationGridRow(dragged)
+    const originalCol = workstationGridCol(dragged)
+    updates.push(updateWorkstation(target.id, workstationLocationPayload(target, {
+      displayName: workstationDisplayName(target),
+      classroomLabel: originalRoom,
+      gridRow: originalRow,
+      gridCol: originalCol,
+      gridLabel: originalRoom !== 'Bez sali' && originalRow && originalCol ? `${originalRoom}_${originalRow}_${originalCol}` : workstationGridLabel(target),
+    })))
+  }
+  const results = await Promise.all(updates)
+  if (results.every(Boolean)) {
+    await refreshWorkstations()
+    showToast('Pozycja stacji zapisana.', TOAST_TYPE.SUCCESS)
+  }
 }
 
 /**
@@ -941,6 +1250,7 @@ function renderMonitorPanel() {
   setText('monitor-stale-workstations', staleStations.length)
   renderMonitorActiveTasks(activeTasks)
   renderMonitorWorkstations(state.workstations)
+  renderSelectedMonitorWorkstation()
 }
 
 /**
@@ -994,15 +1304,63 @@ function renderMonitorWorkstations(workstations) {
     const stale = isStaleWorkstation(workstation)
     const staleText = stale ? 'Może stać: brak świeżego heartbeat' : `Heartbeat ${formatDate(workstation.last_seen_at)}`
     return `
-      <div class="border ${stale ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-white'} rounded-lg px-4 py-3">
+      <button type="button" class="monitor-workstation w-full text-left border ${stale ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-white'} rounded-lg px-4 py-3 hover:ring-2 hover:ring-blue-100" data-id="${workstation.id}">
         <div class="flex items-center justify-between gap-3">
-          <div class="font-medium text-slate-900 truncate">${escapeHtml(workstation.display_name || workstation.hostname || 'Stacja')}</div>
+          <div class="font-medium text-slate-900 truncate">${escapeHtml(workstationGridLabel(workstation))} · ${escapeHtml(workstationDisplayName(workstation))}</div>
           ${workstationStatusBadge(workstation.status)}
         </div>
-        <div class="text-xs text-slate-500 mt-1">Sloty: ${workstationActiveJobs(workstation)}/${workstationParallelSlots(workstation)} · ${escapeHtml(workstationContextLabel(workstation))} · ${escapeHtml(staleText)}</div>
-      </div>
+        <div class="text-xs text-slate-500 mt-1">${escapeHtml(workstationRoom(workstation))} · Sloty: ${workstationActiveJobs(workstation)}/${workstationParallelSlots(workstation)} · ${escapeHtml(workstationContextLabel(workstation))} · ${escapeHtml(staleText)}</div>
+      </button>
     `
   }).join('')
+  list.querySelectorAll('.monitor-workstation').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.selectedMonitorWorkstationId = button.dataset.id
+      renderSelectedMonitorWorkstation()
+    })
+  })
+}
+
+function renderSelectedMonitorWorkstation() {
+  const container = document.getElementById('monitor-station-detail')
+  if (!container) return
+  const workstation = findWorkstation(state.selectedMonitorWorkstationId) || state.workstations[0]
+  if (!workstation) {
+    container.innerHTML = '<p class="text-sm text-slate-500">Wybierz stację, aby zobaczyć monitor.</p>'
+    return
+  }
+  state.selectedMonitorWorkstationId = workstation.id
+  const models = getWorkstationModelLabels(workstation)
+  const metadata = workstation.metadata || {}
+  const stale = isStaleWorkstation(workstation)
+  container.innerHTML = `
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h4 class="font-semibold text-slate-900">${escapeHtml(workstationGridLabel(workstation))}</h4>
+        <div class="text-sm text-slate-500">${escapeHtml(workstationDisplayName(workstation))} · ${escapeHtml(workstationRoom(workstation))}</div>
+      </div>
+      ${workstationStatusBadge(stale ? 'offline' : workstation.status)}
+    </div>
+    <dl class="grid grid-cols-2 gap-3 mt-4 text-sm">
+      <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Sloty</dt><dd class="font-mono text-slate-900">${workstationActiveJobs(workstation)}/${workstationParallelSlots(workstation)}</dd></div>
+      <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Kontekst</dt><dd class="font-mono text-slate-900">${escapeHtml(workstationContextLabel(workstation))}</dd></div>
+      <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">KV</dt><dd class="font-mono text-slate-900">${escapeHtml(workstationKvCacheLabel(workstation))}</dd></div>
+      <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">SD</dt><dd class="font-mono text-slate-900">${workstationSdEnabled(workstation) ? 'on' : 'off'}</dd></div>
+      <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Platforma</dt><dd class="text-slate-900">${escapeHtml(formatWorkstationPlatform(workstation))}</dd></div>
+      <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Heartbeat</dt><dd class="text-slate-900">${escapeHtml(formatDate(workstation.last_seen_at))}</dd></div>
+    </dl>
+    <div class="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+      <div class="text-xs font-semibold uppercase text-slate-500 mb-2">Modele</div>
+      <div class="flex flex-wrap gap-2 text-xs">
+        ${(models.length ? models : [workstation.current_model_name || 'brak modeli']).map((model) => `<span class="rounded-full bg-slate-100 px-2 py-1 text-slate-700">${escapeHtml(model)}</span>`).join('')}
+      </div>
+    </div>
+    <div class="mt-4 rounded-lg border border-slate-200 bg-slate-950 p-3 font-mono text-xs text-slate-100 overflow-auto">
+      <div>proxy: ${escapeHtml(String(metadata.proxyPort || '—'))} · llama: ${escapeHtml(String(metadata.llamaPort || '—'))}</div>
+      <div>tryb: ${escapeHtml(metadata.optimizationMode || 'standard')} · timeout: ${escapeHtml(String(metadata.generationTimeoutMs || '—'))}ms</div>
+      <div>ostatni stan: ${escapeHtml(stale ? 'heartbeat stale' : 'aktywny')}</div>
+    </div>
+  `
 }
 
 /**
@@ -1122,10 +1480,22 @@ function populateTaskWorkstationSelects() {
 
   workstationSelect.innerHTML = [
     '<option value="">Automatycznie - AI wybierze stację</option>',
-    ...state.workstations.map((workstation) => `<option value="${workstation.id}">${escapeHtml(workstation.display_name || workstation.hostname || 'Stacja')} (${escapeHtml(workstation.status || 'offline')})</option>`),
+    groupedWorkstationOptionsHtml(state.workstations, true),
   ].join('')
 
   populateTaskModelSelect(workstationSelect.value)
+}
+
+function groupedWorkstationOptionsHtml(workstations, includeStatus = false) {
+  return groupWorkstationsByRoom(workstations).map(([room, roomStations]) => `
+    <optgroup label="${escapeHtml(room)}">
+      ${roomStations.map((workstation) => {
+        const name = workstationDisplayName(workstation)
+        const suffix = includeStatus ? ` (${workstation.status || 'offline'})` : ''
+        return `<option value="${workstation.id}">${escapeHtml(workstationGridLabel(workstation))} - ${escapeHtml(name + suffix)}</option>`
+      }).join('')}
+    </optgroup>
+  `).join('')
 }
 
 /**
@@ -1230,11 +1600,14 @@ async function sendWorkstationMessage({ workstationId, taskId, content }) {
 function renderTaskWorkstationMessages(messages) {
   const list = document.getElementById('workstation-messages-list')
   if (!list) return
+  state.currentTaskWorkstationMessages = messages
   if (!messages.length) {
     list.innerHTML = '<p class="text-slate-500 text-sm">Brak wiadomości do stacji roboczej</p>'
+    renderTaskConsole()
     return
   }
   list.innerHTML = messages.map((message) => workstationMessageHtml(message)).join('')
+  renderTaskConsole()
 }
 
 /**
@@ -1245,8 +1618,10 @@ function renderTaskWorkstationMessages(messages) {
 function appendTaskWorkstationMessage(message) {
   const list = document.getElementById('workstation-messages-list')
   if (!list) return
+  state.currentTaskWorkstationMessages = [...state.currentTaskWorkstationMessages, message]
   if (list.querySelector('p.text-slate-500')) list.innerHTML = ''
   list.insertAdjacentHTML('beforeend', workstationMessageHtml(message))
+  renderTaskConsole()
 }
 
 /**
@@ -1268,6 +1643,66 @@ function workstationMessageHtml(message) {
   `
 }
 
+function renderTaskConsole() {
+  const list = document.getElementById('task-console-list')
+  if (!list) return
+  const events = [
+    ...state.currentTaskAiMessages.map((message) => ({ ...message, source: 'ai' })),
+    ...state.currentTaskWorkstationMessages.map((message) => ({ ...message, source: 'workstation' })),
+  ].sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime())
+  if (!events.length) {
+    list.innerHTML = '<p class="text-sm text-slate-500">Konsola jest pusta.</p>'
+    return
+  }
+  list.innerHTML = events.map((event, index) => taskConsoleEventHtml(event, index)).join('')
+}
+
+function taskConsoleEventHtml(event, index) {
+  const isStation = event.source === 'workstation'
+  const actor = isStation ? event.sender_label || 'stacja' : event.from_agent || 'agent'
+  const target = isStation ? resolveWorkstationName(event.workstation_id) : event.to_agent || 'agent'
+  const type = isStation ? event.message_type || 'event' : event.type || 'event'
+  const color = isStation ? 'border-emerald-300 bg-emerald-50' : 'border-blue-300 bg-blue-50'
+  return `
+    <div class="grid grid-cols-[84px_1fr] gap-3">
+      <div class="pt-2 text-right font-mono text-xs text-slate-400">${String(index + 1).padStart(2, '0')}</div>
+      <div class="border-l-4 ${color} rounded-r-lg px-4 py-3">
+        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500 mb-1">
+          <span class="font-semibold text-slate-700">${escapeHtml(actor)}</span>
+          <span>→</span>
+          <span>${escapeHtml(target)}</span>
+          <span class="uppercase">[${escapeHtml(type)}]</span>
+          <span>${formatDate(event.created_at)}</span>
+        </div>
+        <pre class="whitespace-pre-wrap break-words text-sm text-slate-800 font-sans">${escapeHtml(event.content || '')}</pre>
+      </div>
+    </div>
+  `
+}
+
+async function handleClearTaskLog() {
+  if (!state.currentTaskId) return
+  if (!confirm('Wyczyścić logi tego zadania? Usunięte zostaną wiadomości AI i wiadomości stacji przypięte do zadania.')) return
+  try {
+    const [aiResult, stationResult] = await Promise.all([
+      supabase.from('messages').delete().eq('task_id', state.currentTaskId),
+      supabase.from('workstation_messages').delete().eq('task_id', state.currentTaskId),
+    ])
+    if (aiResult.error) throw aiResult.error
+    if (stationResult.error) throw stationResult.error
+    state.currentTaskAiMessages = []
+    state.currentTaskWorkstationMessages = []
+    renderMessages([])
+    renderTaskWorkstationMessages([])
+    renderTaskConsole()
+    await refreshMonitorLog()
+    showToast('Log zadania wyczyszczony.', TOAST_TYPE.SUCCESS)
+  } catch (error) {
+    console.error('[app.js] handleClearTaskLog failed:', error)
+    showToast('Nie udało się wyczyścić logów. Sprawdź polityki RLS dla delete.', TOAST_TYPE.ERROR)
+  }
+}
+
 /**
  * Renderuje statystyki na kartach dashboardu.
  * @param {Array} tasks
@@ -1283,6 +1718,7 @@ function renderStats(tasks) {
   setText('stat-pending', counts.pending)
   setText('stat-in-progress', counts.in_progress)
   setText('stat-done', counts.done)
+  setText('stat-workstations', state.workstations.filter((workstation) => !isStaleWorkstation(workstation) && ['online', 'busy'].includes(workstation.status)).length)
 }
 
 /**
@@ -1367,6 +1803,8 @@ function priorityLabel(priority) {
  */
 async function openTaskDetail(taskId) {
   state.currentTaskId = taskId
+  state.currentTaskAiMessages = []
+  state.currentTaskWorkstationMessages = []
   navigateTo(VIEW.TASK_DETAIL)
   cleanupTaskSubscriptions()
 
@@ -1379,10 +1817,13 @@ async function openTaskDetail(taskId) {
   renderTimeline(task.status)
 
   const messages = await getMessagesForTask(taskId)
+  state.currentTaskAiMessages = messages
   renderMessages(messages)
 
   const workstationMessages = await getWorkstationMessagesForTask(taskId)
+  state.currentTaskWorkstationMessages = workstationMessages
   renderTaskWorkstationMessages(workstationMessages)
+  renderTaskConsole()
 
   // Subskrybuj zmiany zadania (UPDATE) i nowe wiadomości (INSERT)
   state.detailSubscription = subscribeToTask(taskId, (updated) => {
@@ -1417,6 +1858,7 @@ function renderTaskDetail(task) {
   document.getElementById('detail-model').textContent = task.requested_model_name || '—'
   document.getElementById('detail-created').textContent = formatDate(task.created_at)
   document.getElementById('detail-id').textContent = task.id
+  setText('detail-log-path', `Zadania / ${task.title || 'bez tytułu'} / konsola / ${String(task.id).slice(0, 8)}`)
   document.getElementById('btn-delete-task-detail').dataset.taskId = task.id
   document.getElementById('btn-task-send-workstation-message').disabled = !task.requested_workstation_id
   document.getElementById('btn-task-send-workstation-message').dataset.workstationId = task.requested_workstation_id || ''
@@ -1479,11 +1921,14 @@ function computeTimelineIndex(status) {
  */
 function renderMessages(messages) {
   const list = document.getElementById('messages-list')
+  state.currentTaskAiMessages = messages
   if (!messages.length) {
     list.innerHTML = '<p class="text-slate-500 text-sm">Brak wiadomości</p>'
+    renderTaskConsole()
     return
   }
   list.innerHTML = messages.map((m) => messageHtml(m)).join('')
+  renderTaskConsole()
 }
 
 /**
@@ -1493,8 +1938,10 @@ function renderMessages(messages) {
  */
 function appendMessage(msg) {
   const list = document.getElementById('messages-list')
+  state.currentTaskAiMessages = [...state.currentTaskAiMessages, msg]
   if (list.querySelector('p.text-slate-500')) list.innerHTML = ''
   list.insertAdjacentHTML('beforeend', messageHtml(msg))
+  renderTaskConsole()
 }
 
 /**
@@ -1715,6 +2162,9 @@ function cleanupAppSession() {
   stopExecutor()
   state.user = null
   state.currentTaskId = null
+  state.currentTaskAiMessages = []
+  state.currentTaskWorkstationMessages = []
+  state.selectedMonitorWorkstationId = null
 }
 
 /**
@@ -1745,7 +2195,7 @@ function renderSettingsForm() {
   if (select) {
     select.innerHTML = [
       '<option value="">Automatycznie - AI wybierze stację</option>',
-      ...state.workstations.map((workstation) => `<option value="${workstation.id}">${escapeHtml(workstation.display_name || workstation.hostname || 'Stacja')}</option>`),
+      groupedWorkstationOptionsHtml(state.workstations),
     ].join('')
     select.value = settings.defaultWorkstation
   }
@@ -1803,6 +2253,9 @@ function renderStationConfigInstruction() {
     `SD: ${sd ? 'włączone' : 'wyłączone'}`,
     scheduleLine,
     `Auto-update: ${autoUpdate ? 'włączony' : 'wyłączony'}`,
+    kv.startsWith('planar') || kv.startsWith('iso') || kv.startsWith('turbo')
+      ? 'Uwaga: Planar/Iso/Turbo wymagają builda llama.cpp zgodnego z RotorQuant; stock llama.cpp spadnie do q8_0.'
+      : 'q8_0 jest domyślnym wyborem dla stock llama.cpp i długiego kontekstu.',
     '',
     'Po zapisie zostaw okno launchera otwarte. Stacja pojawi się w tabeli po pierwszym heartbeat.',
   ].join('\n')
@@ -1849,6 +2302,7 @@ function closeAllModals() {
   document.getElementById('modal-submit-task').classList.add('hidden')
   document.getElementById('modal-agent').classList.add('hidden')
   document.getElementById('modal-workstation-message').classList.add('hidden')
+  document.getElementById('modal-workstation-edit')?.classList.add('hidden')
   document.getElementById('modal-help').classList.add('hidden')
 }
 

@@ -92,16 +92,18 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 
 ### 9. Stacje robocze
 
-- Tabela: Nazwa | Platforma | Model | Status | Advanced | Ostatnio widziana | Akcje.
-- Główna akcja w wierszu: `Wyślij wiadomość`.
+- Tabela: Nazwa | Sala / pozycja | Platforma | Model | Status | Advanced | Ostatnio widziana | Akcje.
+- Główne akcje w wierszu: `Edytuj` i `Wyślij wiadomość`.
 - Widok ma charakter operacyjny: pokazuje komputery uruchomione przez `start.command` / `start.sh`, a nie ręcznie tworzone rekordy.
 - Kolumna `Advanced` pokazuje `activeJobs/parallelSlots`, kontekst, KV cache oraz stan SD.
+- Panel `Plan sali` układa stacje w siatkę sali, np. `226`, 4 rzędy po 6 komputerów, z podpisami `226_2_5`. Pozycje można zmieniać przez edycję stacji albo przeciąganie kafelków.
 
 ### 10. Monitor
 
 - Karty: aktywne zadania, wolne sloty stacji, stacje bez świeżego heartbeat.
 - Lista `Zadania w ruchu` pozwala wejść bezpośrednio do Task Detail.
 - Lista `Stacje robocze` pokazuje status, sloty i ostrzeżenie `Może stać`, gdy heartbeat jest stary.
+- Panel `Monitor stacji` pokazuje szczegóły wybranej stacji: sloty, kontekst, KV, SD, platformę, heartbeat, modele i porty runtime.
 - `Live log` zbiera ostatnie wpisy z `messages` i `workstation_messages`, w tym postęp jobów ze stacji.
 
 ### 11. Advanced runtime
@@ -111,9 +113,9 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 - Widok `Stacje robocze` zawiera prosty konfigurator pól: równoległe zadania, kontekst modelu, KV cache, SD, harmonogram i auto-update. UI generuje instrukcję dla launchera, ale nie zapisuje lokalnego `config.json` przez przeglądarkę.
 - Stacja w poleceniu ma tryb `Automatycznie - AI wybierze stację` albo dokładnie jedną wskazaną stację.
 - `parallelSlots` jest ustawieniem lokalnego runtime; domyślnie `1`, zakres `1-4`.
-- Kontekst jest ustawieniem lokalnego runtime; domyślnie bezpieczne `8k`, opcjonalnie `native` i presety do `256k`.
-- KV cache ma tryby `auto`, `f16`, `q8_0`, `q4_0`; `auto` wybiera kompresję dopiero przy długim kontekście.
-- SD jest domyślnie wyłączone i opisane jako eksperymentalne; wymaga draft modelu oraz kompatybilnego `llama-server`.
+- Kontekst jest ustawieniem lokalnego runtime; domyślnie `64k` z `q8_0` KV cache (~50% pamięci KV), opcjonalnie `native` i presety do `256k`.
+- KV cache ma tryby stock llama.cpp (`auto`, `f16`, `q8_0`, `q4_0` i pokrewne) oraz zaawansowane typy RotorQuant/Planar/Iso/Turbo (`planar3`, `iso3`, `planar4`, `iso4`, `turbo3`, `turbo4`) dla kompatybilnych buildów.
+- SD jest domyślnie wyłączone i opisane jako eksperymentalne; wymaga draft modelu oraz kompatybilnego `llama-server` z aktualnymi flagami speculative decoding.
 - Frontend tylko pokazuje te ustawienia. Zapis odbywa się lokalnie przez `start.sh --config`, `start.bat --config`, `--advanced` albo domyślne wartości w launcherze.
 
 ### 12. Wiadomość do stacji

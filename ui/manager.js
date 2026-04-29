@@ -491,9 +491,11 @@ async function generateInstructions(task) {
       labyrinthBlock,
       'Tytuł: ' + (task.title || ''),
       'Opis: ' + (task.description || ''),
-      'Odpowiedz wyłącznie tekstem instrukcji, bez wstępu. Maksymalnie 5 punktów.',
+      isHermesLabyrinthTask(task)
+        ? 'Odpowiedz wyłącznie instrukcją z sekcjami: Mapa, Ścieżka, Dowody, Weryfikacja, Raport końcowy.'
+        : 'Odpowiedz wyłącznie tekstem instrukcji, bez wstępu. Maksymalnie 5 punktów.',
     ].filter(Boolean).join('\n')
-    const text = await generate(prompt, { maxTokens: isHermesLabyrinthTask(task) ? 220 : 120, temperature: 0.5 })
+    const text = await generate(prompt, { maxTokens: isHermesLabyrinthTask(task) ? 360 : 120, temperature: 0.5 })
     return text || fallback
   } catch (error) {
     console.warn('[manager.js] AI fallback (instructions):', error.message)

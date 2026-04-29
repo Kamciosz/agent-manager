@@ -19,8 +19,9 @@
   "scheduleEnabled": false,
   "parallelSlots": 1,
   "contextMode": "extended",
-  "contextSizeTokens": 8192,
-  "kvCacheQuantization": "auto",
+  "contextSizeTokens": 65536,
+  "kvCacheQuantization": "q8_0",
+  "kvCacheAdvancedValues": ["planar3", "iso3", "planar4", "iso4", "turbo3", "turbo4"],
   "generationTimeoutMs": 600000,
   "sdEnabled": false,
   "autoUpdate": false

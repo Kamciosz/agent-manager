@@ -16,12 +16,16 @@ const { getScheduleState, normalizeSchedule } = require('./runtime-schedule')
 const CONFIG_PATH = path.join(__dirname, 'config.json')
 const LOGS_DIR = path.join(__dirname, 'logs')
 
+const SUPPORTED_KV_CACHE = ['auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4']
+
 const DEFAULTS = {
   POLL_MS: 8000,
   HEARTBEAT_MS: 15000,
   MESSAGE_POLL_MS: 6000,
   AUTH_RETRY_MS: [3000, 7000, 15000, 30000],
   GENERATION_TIMEOUT_MS: 600000,
+  CONTEXT_TOKENS: 65536,
+  KV_CACHE: 'q8_0',
 }
 
 let activeJobs = 0
@@ -50,8 +54,8 @@ function loadConfig() {
   }
   const schedule = normalizeSchedule(raw)
   const contextMode = normalizeContextMode(raw.contextMode)
-  const contextSizeTokens = contextMode === 'native' ? 0 : clampInt(raw.contextSizeTokens, 262144, 1024, 262144)
-  const kvCacheQuantization = normalizeKvCache(raw.kvCacheQuantization)
+  const contextSizeTokens = contextMode === 'native' ? 0 : clampInt(raw.contextSizeTokens, DEFAULTS.CONTEXT_TOKENS, 65536, 262144)
+  const kvCacheQuantization = normalizeKvCache(raw.kvCacheQuantization || DEFAULTS.KV_CACHE)
   if (raw.scheduleEnabled === true && !schedule.valid) {
     log('Niepoprawny harmonogram w config.json - wylaczam schedule dla tej sesji.', raw.scheduleStart, raw.scheduleEnd)
   }
@@ -107,7 +111,7 @@ function normalizeContextMode(value) {
 
 function normalizeKvCache(value) {
   const raw = String(value || 'auto').trim().toLowerCase()
-  return ['auto', 'f16', 'q8_0', 'q4_0'].includes(raw) ? raw : 'auto'
+  return SUPPORTED_KV_CACHE.includes(raw) ? raw : 'auto'
 }
 
 function resolveKvCache(value, contextSizeTokens) {
@@ -508,8 +512,11 @@ function buildJobPrompt(job) {
     'Opis: ' + (payload.description || ''),
     'Repo: ' + (payload.git_repo || '-'),
     'Kontekst: ' + JSON.stringify(payload.context || {}),
+    payload.context?.raw?.workflow?.id === 'hermes-labyrinth'
+      ? 'Dla Hermes Labyrinth odpowiedz sekcjami: Mapa, Sciezka, Dowody, Weryfikacja, Raport koncowy.'
+      : '',
     'Odpowiedz po polsku. Jesli generujesz kod, dolacz go w jednej odpowiedzi.',
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 }
 
 async function callLocalProxy(cfg, prompt) {
