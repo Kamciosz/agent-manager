@@ -307,6 +307,37 @@
                 </button>
               </div>
             </div>
+            <div class="grid md:grid-cols-[1fr_180px_180px_auto] gap-3 p-4 border-b border-slate-100 bg-slate-50/70">
+              <label class="block">
+                <span class="sr-only">Szukaj poleceń</span>
+                <input id="tasks-filter-query" type="search" placeholder="Szukaj po tytule, opisie, repo lub stacji"
+                  class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+              </label>
+              <label class="block">
+                <span class="sr-only">Status</span>
+                <select id="tasks-filter-status" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                  <option value="">Wszystkie statusy</option>
+                  <option value="pending">Oczekuje</option>
+                  <option value="analyzing">Analiza</option>
+                  <option value="in_progress">W toku</option>
+                  <option value="done">Gotowe</option>
+                  <option value="failed">Błąd</option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="sr-only">Priorytet</span>
+                <select id="tasks-filter-priority" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+                  <option value="">Wszystkie priorytety</option>
+                  <option value="high">Wysoki</option>
+                  <option value="medium">Średni</option>
+                  <option value="low">Niski</option>
+                </select>
+              </label>
+              <button id="btn-clear-task-filters" type="button" class="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-white">
+                Wyczyść
+              </button>
+              <div id="tasks-filter-summary" class="md:col-span-4 text-xs text-slate-500">Pokazuję wszystkie polecenia.</div>
+            </div>
             <div id="tasks-table-wrapper" class="overflow-x-auto">
               <table class="w-full text-sm">
                 <thead class="bg-slate-50 text-slate-600 text-left">

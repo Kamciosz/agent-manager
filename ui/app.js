@@ -145,6 +145,7 @@ const state = {
   editingWorkstationId: null,
   selectedMonitorWorkstationId: null,
   taskViewMode: loadTaskViewMode(),
+  taskFilters: { query: '', status: '', priority: '' },
   classroomLayouts: loadClassroomLayouts(),
   agentSkills: [],
   editingAgentId: null,
@@ -425,6 +426,10 @@ function bindNavigation() {
   document.querySelectorAll('.task-view-toggle').forEach((button) => {
     button.addEventListener('click', () => setTaskViewMode(button.dataset.mode))
   })
+  document.getElementById('tasks-filter-query')?.addEventListener('input', handleTaskFiltersChange)
+  document.getElementById('tasks-filter-status')?.addEventListener('change', handleTaskFiltersChange)
+  document.getElementById('tasks-filter-priority')?.addEventListener('change', handleTaskFiltersChange)
+  document.getElementById('btn-clear-task-filters')?.addEventListener('click', clearTaskFilters)
   document.getElementById('btn-logout').addEventListener('click', handleLogout)
   document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
@@ -583,12 +588,65 @@ async function getMessagesForTask(taskId) {
 async function refreshTasks() {
   const tasks = await getTasks()
   state.tasks = tasks
-  renderTasksTable('tasks-table-body', tasks)
-  renderTasksTable('tasks-table-body-full', tasks)
-  renderTaskCards(tasks)
+  renderFilteredTasks()
   applyTaskViewMode()
   renderStats(tasks)
   renderMonitorPanel()
+}
+
+function renderFilteredTasks() {
+  const filtered = getFilteredTasks()
+  renderTasksTable('tasks-table-body', filtered)
+  renderTasksTable('tasks-table-body-full', filtered)
+  renderTaskCards(filtered)
+  renderTaskFilterSummary(filtered.length, state.tasks.length)
+}
+
+function handleTaskFiltersChange() {
+  state.taskFilters = {
+    query: document.getElementById('tasks-filter-query')?.value.trim().toLowerCase() || '',
+    status: document.getElementById('tasks-filter-status')?.value || '',
+    priority: document.getElementById('tasks-filter-priority')?.value || '',
+  }
+  renderFilteredTasks()
+  applyTaskViewMode()
+}
+
+function clearTaskFilters() {
+  const query = document.getElementById('tasks-filter-query')
+  const status = document.getElementById('tasks-filter-status')
+  const priority = document.getElementById('tasks-filter-priority')
+  if (query) query.value = ''
+  if (status) status.value = ''
+  if (priority) priority.value = ''
+  handleTaskFiltersChange()
+}
+
+function getFilteredTasks() {
+  const { query, status, priority } = state.taskFilters
+  return state.tasks.filter((task) => {
+    if (status && task.status !== status) return false
+    if (priority && task.priority !== priority) return false
+    if (!query) return true
+    const haystack = [
+      task.title,
+      task.description,
+      task.git_repo,
+      STATUS_LABELS[task.status],
+      priorityLabel(task.priority),
+      resolveWorkstationName(task.requested_workstation_id),
+    ].filter(Boolean).join(' ').toLowerCase()
+    return haystack.includes(query)
+  })
+}
+
+function renderTaskFilterSummary(visibleCount, totalCount) {
+  const el = document.getElementById('tasks-filter-summary')
+  if (!el) return
+  const active = Object.values(state.taskFilters).some(Boolean)
+  el.textContent = active
+    ? `Pokazuję ${visibleCount} z ${totalCount} poleceń.`
+    : `Pokazuję wszystkie polecenia (${totalCount}).`
 }
 
 // ============================================================================
@@ -628,6 +686,7 @@ async function refreshWorkstations() {
   renderClassroomGrid(workstations)
   renderMonitorPanel()
   renderAdvancedRuntimePanel(workstations)
+  renderFilteredTasks()
   renderStats(state.tasks)
   populateTaskWorkstationSelects()
   renderSettingsForm()

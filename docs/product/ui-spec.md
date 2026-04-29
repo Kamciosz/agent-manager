@@ -113,6 +113,7 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 - Formularz dodawania polecenia nie pokazuje `parallelSlots`, SD ani JSON. Te ustawienia należą do konfiguracji stacji roboczej.
 - Widok `Stacje robocze` zawiera konfigurator pól lokalnego runtime: tryb operator/classroom, przyjmowanie jobów, porty, origin aplikacji, ścieżkę modelu, równoległe zadania, kontekst modelu, KV cache, SD, draft model, timeout, harmonogram start/koniec, zachowanie poza oknem pracy, dump diagnostyczny i auto-update. UI generuje instrukcję oraz podgląd `config.json`, ale nie zapisuje lokalnego pliku przez przeglądarkę.
 - Siatki sal można tworzyć, zmieniać i usuwać bez kasowania rekordów stacji; usunięcie siatki zdejmuje przypisanie sali/pozycji z komputerów tej sali.
+- Lista poleceń ma filtry po tekście, statusie i priorytecie, działające wspólnie dla widoku listy i kafelków.
 - Stacja w poleceniu ma tryb `Automatycznie - AI wybierze stację`, dokładnie jedną wskazaną stację z listy albo wybór kafelkiem.
 - `parallelSlots` jest ustawieniem lokalnego runtime; domyślnie `1`, zakres `1-4`.
 - Kontekst jest ustawieniem lokalnego runtime; domyślnie `64k` z `q8_0` KV cache (~50% pamięci KV), opcjonalnie `native` i presety do `256k`.

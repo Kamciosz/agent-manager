@@ -135,9 +135,10 @@ Manualny test UI po tej rundzie:
 11. Usuń siatkę sali `226`; rekordy stacji mają zostać, ale sala/pozycje powinny się wyczyścić i trafić do nieprzypisanych.
 12. W konfiguratorze stacji wybierz tryb `operator`, ustaw porty, timeout, `18:00-08:00`, `wait`, `finish-current`, dump i wygeneruj instrukcję; podgląd `config.json` ma zawierać te pola.
 13. W **Polecenia** przełącz widok z listy na kafelki i utwórz polecenie, wybierając stację kafelkiem.
-14. Wyślij do stacji komendy `Odśwież`, `Wstrzymaj`, `Wznów` i `Aktualizuj` z tabeli stacji oraz z monitora; w logu stacji wynik powinien być podpisany jako `system`.
-15. W konfiguratorze KV wybierz `iso3/iso3` albo `planar3/f16`; stock llama.cpp ma spaść do `q8_0/q8_0`, a kompatybilny build RotorQuant ma przyjąć osobne typy K/V.
-16. Utwórz proste polecenie `2 + 2`; odpowiedź stacji ma zawierać bezpośredni wynik, bez przepisywania pól `Tytuł`, `Opis`, `Repo` ani `Kontekst`.
+14. Użyj filtrów poleceń po statusie, priorytecie i tekście; ten sam wynik ma być widoczny w liście i kafelkach.
+15. Wyślij do stacji komendy `Odśwież`, `Wstrzymaj`, `Wznów` i `Aktualizuj` z tabeli stacji oraz z monitora; w logu stacji wynik powinien być podpisany jako `system`.
+16. W konfiguratorze KV wybierz `iso3/iso3` albo `planar3/f16`; stock llama.cpp ma spaść do `q8_0/q8_0`, a kompatybilny build RotorQuant ma przyjąć osobne typy K/V.
+17. Utwórz proste polecenie `2 + 2`; odpowiedź stacji ma zawierać bezpośredni wynik, bez przepisywania pól `Tytuł`, `Opis`, `Repo` ani `Kontekst`.
 
 ---
 

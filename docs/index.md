@@ -28,6 +28,7 @@ Mapa całej dokumentacji projektu. Czytaj w kolejności odpowiadającej etapowi 
 | [product/ui-spec.md](product/ui-spec.md) | Specyfikacja UI/UX — ekrany, persony, UX rules |
 | [product/hermes-labyrinth.md](product/hermes-labyrinth.md) | Preset Hermes Labyrinth: role, bramy i integracja z Agent Manager |
 | [product/bad-mood-qa.md](product/bad-mood-qa.md) | Krytyczny QA alpha: tester i nietechniczny użytkownik |
+| [product/tester-review-2026-04-29.md](product/tester-review-2026-04-29.md) | Review testera: funkcje, oczekiwania, realne działanie, braki i inspiracje konkurencyjne |
 
 ## Implementacja
 
