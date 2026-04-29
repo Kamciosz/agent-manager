@@ -212,7 +212,9 @@ function Set-ConfigValue([object] $Config, [string] $Name, $Value) {
 }
 
 function Save-Config([object] $Config) {
-  $Config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ConfigFile -Encoding UTF8
+  $json = ($Config | ConvertTo-Json -Depth 8) + [Environment]::NewLine
+  $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+  [System.IO.File]::WriteAllText($ConfigFile, $json, $utf8NoBom)
 }
 
 function Get-ConfigString([object] $Config, [string] $Name, [string] $Fallback = '') {

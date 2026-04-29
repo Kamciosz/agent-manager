@@ -38,6 +38,13 @@ const CORS_HEADERS = {
   'Access-Control-Max-Age': '86400',
 }
 
+function parseJsonFile(filePath) {
+  let content = fs.readFileSync(filePath, 'utf8')
+  if (content.charCodeAt(0) === 0xfeff) content = content.slice(1)
+  if (content.startsWith('\u00ef\u00bb\u00bf')) content = content.slice(3)
+  return JSON.parse(content)
+}
+
 // ============================================================================
 // KONFIGURACJA
 // ============================================================================
@@ -50,7 +57,7 @@ function loadConfig() {
   let cfg = {}
   try {
     if (fs.existsSync(CONFIG_PATH)) {
-      cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+      cfg = parseJsonFile(CONFIG_PATH)
     }
   } catch (error) {
     console.error('[proxy] Nie udało się wczytać config.json:', error.message)

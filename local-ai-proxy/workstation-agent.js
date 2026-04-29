@@ -33,10 +33,17 @@ function log(...args) {
   console.log('[workstation-agent]', ...args)
 }
 
+function parseJsonFile(filePath) {
+  let content = fs.readFileSync(filePath, 'utf8')
+  if (content.charCodeAt(0) === 0xfeff) content = content.slice(1)
+  if (content.startsWith('\u00ef\u00bb\u00bf')) content = content.slice(3)
+  return JSON.parse(content)
+}
+
 function loadConfig() {
   let raw
   try {
-    raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    raw = parseJsonFile(CONFIG_PATH)
   } catch (error) {
     throw new Error(`Nie moge wczytac local-ai-proxy/config.json (${error.message}). Uruchom start.bat --config albo ./start.sh --config i przejdz konfiguracje stacji jeszcze raz.`)
   }
@@ -180,7 +187,7 @@ async function signInWithRetry(cfg, attempts = 5) {
 
 function readLocalConfig() {
   try {
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+    return parseJsonFile(CONFIG_PATH)
   } catch {
     return {}
   }
