@@ -62,9 +62,9 @@ Jeśli Windows pokazuje ostrzeżenie bezpieczeństwa dla pliku pobranego z inter
 Unblock-File .\start.ps1
 ```
 
-Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Na Windowsie, jeśli brakuje Node.js, najpierw pobierze portable Node do `local-ai-proxy\bin`. Launcher dobiera paczkę do backendu GPU, ale jeśli upstream nie publikuje dokładnego wariantu, używa bezpiecznego fallbacku CPU zamiast przerywać start. Zapyta też jednorazowo o dane stacji roboczej dla Supabase oraz origin aplikacji Pages, żeby `workstation-agent.js` mógł odbierać joby, a lokalny proxy wpuszczał tylko zaufaną stronę. Kolejne uruchomienia są bez pytań.
+Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Na Windowsie, jeśli brakuje Node.js, najpierw pobierze portable Node do `local-ai-proxy\bin`. Launcher dobiera paczkę do backendu GPU, ale jeśli upstream nie publikuje dokładnego wariantu, używa bezpiecznego fallbacku CPU zamiast przerywać start. Zapyta też jednorazowo o token instalacyjny stacji z dashboardu oraz origin aplikacji Pages, żeby `workstation-agent.js` mógł odbierać joby, a lokalny proxy wpuszczał tylko zaufaną stronę. Kolejne uruchomienia są bez pytań.
 
-Launcher nie ma wpisanego domyślnego projektu Supabase. Wklejasz własny Project URL i publishable/anon key z panelu Supabase. Przykład konfiguracji bez sekretów: [`config.example.json`](config.example.json).
+Launcher nie ma wpisanego domyślnego projektu Supabase. Wklejasz własny Project URL, publishable/anon key i token stacji wygenerowany w dashboardzie. Hasło operatora nie jest zapisywane lokalnie. Przykład konfiguracji bez sekretów: [`config.example.json`](config.example.json).
 
 Po starcie otwórz aplikację (GitHub Pages albo `ui/index.html`). W headerze pojawi się badge:
 - 🟢 **AI lokalny: <nazwa-modelu>** — proxy działa, manager/executor używają prawdziwego LLM.
@@ -142,7 +142,7 @@ Windows:
 start.bat --config
 ```
 
-`--config` zapisuje lokalne ustawienia do `local-ai-proxy/config.json`: dane stacji Supabase, dozwolone originy aplikacji, `parallelSlots`, kontekst modelu, kompresję KV cache, auto-update, SD oraz harmonogram. Wszystkie pola mają bezpieczne zakresy i są normalizowane przy starcie, więc literówka w liczbie tokenów albo zbyt duża wartość nie powinna wysadzić launchera bez czytelnego ostrzeżenia.
+`--config` zapisuje lokalne ustawienia do `local-ai-proxy/config.json`: URL Supabase, publishable key, token instalacyjny stacji, dozwolone originy aplikacji, `parallelSlots`, kontekst modelu, kompresję KV cache, auto-update, SD oraz harmonogram. Przy pierwszym starcie agent wymienia token instalacyjny na ograniczoną sesję stacji i usuwa token z configu. Wszystkie pola mają bezpieczne zakresy i są normalizowane przy starcie, więc literówka w liczbie tokenów albo zbyt duża wartość nie powinna wysadzić launchera bez czytelnego ostrzeżenia.
 
 Najważniejsze pola bezpieczeństwa:
 
@@ -150,8 +150,9 @@ Najważniejsze pola bezpieczeństwa:
 |------|-----------|
 | `supabaseUrl` | URL Twojego projektu Supabase |
 | `supabaseAnonKey` | Publishable/anon key, nie service-role key |
+| `enrollmentToken` | Jednorazowy token z dashboardu; po redeem jest usuwany z configu |
+| `stationRefreshToken` | Ograniczona sesja techniczna stacji; nie jest hasłem operatora |
 | `allowedOrigins` | Strony, które mogą wołać lokalny proxy, np. `https://twoj-login.github.io` |
-| `workstationPassword` | Lokalnie zapisane hasło operatora stacji; plik jest gitignored |
 
 Jeśli przenosisz stację do innego forka, uruchom `--config` i popraw `allowedOrigins`. Inaczej proxy zwróci HTTP 403 dla nieznanej strony.
 
@@ -219,7 +220,7 @@ Tylko wtedy, gdy katalog jest czystym repo git i nie ma lokalnych zmian. Jeśli 
 | `bin/`    | Pobrany binary `llama-server` (gitignored) |
 | `models/` | Pobrane / podlinkowane pliki `.gguf` (gitignored) |
 | `logs/`   | Logi z `llama-server`, proxy i agenta stacji + pliki PID |
-| `config.json` | Wybrany model, porty, backend GPU, dane stacji, `allowedOrigins` i opcje runtime (gitignored) |
+| `config.json` | Wybrany model, porty, backend GPU, token/sesja stacji, `allowedOrigins` i opcje runtime (gitignored) |
 | `config.example.json` | Bezpieczny przykład konfiguracji bez prawdziwych sekretów |
 
 ## Endpointy proxy

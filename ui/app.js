@@ -121,11 +121,13 @@ const state = {
   editingAgentId: null,
   tasks: [],
   workstations: [],
+  enrollmentTokens: [],
   allTasksSubscription: null,
   detailSubscription: null,
   messagesSubscription: null,
   taskWorkstationMessagesSubscription: null,
   workstationsSubscription: null,
+  enrollmentTokensSubscription: null,
   monitorLogSubscription: null,
 }
 
@@ -217,11 +219,15 @@ async function handleAuthenticated(user) {
   document.getElementById('user-email').textContent = user.email
 
   // Krok 1: załaduj dane do widoków
-  await Promise.all([refreshTasks(), refreshAgents(), refreshWorkstations(), refreshMonitorLog()])
+  const loadJobs = [refreshTasks(), refreshAgents(), refreshWorkstations(), refreshMonitorLog()]
+  if (canManageEnrollmentTokens()) loadJobs.push(refreshEnrollmentTokens())
+  await Promise.all(loadJobs)
+  renderEnrollmentPanelVisibility()
 
   // Krok 2: subskrybuj globalne zmiany w `tasks` aby odświeżać dashboard
   subscribeToAllTasks()
   subscribeToWorkstationsBoard()
+  if (canManageEnrollmentTokens()) subscribeToEnrollmentTokens()
   subscribeToMonitorLog()
 
   // Krok 3: sprawdź dostępność lokalnego AI proxy (badge w headerze)
@@ -390,6 +396,8 @@ function bindNavigation() {
   document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
   document.getElementById('btn-generate-station-config').addEventListener('click', renderStationConfigInstruction)
+  document.getElementById('form-enrollment-token')?.addEventListener('submit', handleCreateEnrollmentToken)
+  document.getElementById('btn-copy-enrollment-token')?.addEventListener('click', copyLatestEnrollmentToken)
   document.getElementById('btn-back-to-tasks').addEventListener('click', () => {
     cleanupTaskSubscriptions()
     navigateTo(VIEW.TASKS)
@@ -578,6 +586,134 @@ async function refreshWorkstations() {
   renderAdvancedRuntimePanel(workstations)
   populateTaskWorkstationSelects()
   renderSettingsForm()
+}
+
+function canManageEnrollmentTokens() {
+  return state.user && state.user.app_metadata?.role !== 'workstation' && state.user.user_metadata?.role !== 'workstation'
+}
+
+function renderEnrollmentPanelVisibility() {
+  const panel = document.getElementById('workstation-enrollment-panel')
+  if (!panel) return
+  panel.classList.toggle('hidden', !canManageEnrollmentTokens())
+}
+
+async function getEnrollmentTokens() {
+  try {
+    const { data, error } = await supabase
+      .from('workstation_enrollment_tokens')
+      .select('id, created_by_user_id, assigned_workstation_name, expires_at, uses_allowed, used_count, revoked_at, last_redeemed_at, last_redeemed_metadata, created_at')
+      .order('created_at', { ascending: false })
+      .limit(50)
+    if (error) throw error
+    return data || []
+  } catch (error) {
+    console.error('[app.js] getEnrollmentTokens failed:', error)
+    showToast('Błąd pobierania tokenów stacji.', TOAST_TYPE.ERROR)
+    return []
+  }
+}
+
+async function refreshEnrollmentTokens() {
+  if (!canManageEnrollmentTokens()) return
+  state.enrollmentTokens = await getEnrollmentTokens()
+  renderEnrollmentTokensTable(state.enrollmentTokens)
+}
+
+async function handleCreateEnrollmentToken(event) {
+  event.preventDefault()
+  if (!canManageEnrollmentTokens()) return
+  const workstationName = document.getElementById('enrollment-workstation-name').value.trim()
+  const expiresHours = Number(document.getElementById('enrollment-expires-hours').value || 24)
+  const usesAllowed = Math.max(1, Math.min(50, Number(document.getElementById('enrollment-uses').value || 1)))
+  const expiresAt = new Date(Date.now() + Math.max(1, expiresHours) * 60 * 60 * 1000).toISOString()
+  try {
+    const { data, error } = await supabase.functions.invoke('create-workstation-enrollment', {
+      body: { workstationName, expiresAt, usesAllowed },
+    })
+    if (error) throw error
+    showOneTimeEnrollmentToken(data?.token || '')
+    document.getElementById('form-enrollment-token').reset()
+    document.getElementById('enrollment-expires-hours').value = '24'
+    document.getElementById('enrollment-uses').value = '1'
+    await refreshEnrollmentTokens()
+    showToast('Token stacji wygenerowany.', TOAST_TYPE.SUCCESS)
+  } catch (error) {
+    console.error('[app.js] handleCreateEnrollmentToken failed:', error)
+    showToast('Nie udało się wygenerować tokenu. Sprawdź Edge Function i sekrety Supabase.', TOAST_TYPE.ERROR)
+  }
+}
+
+function showOneTimeEnrollmentToken(token) {
+  const container = document.getElementById('enrollment-token-once')
+  const value = document.getElementById('enrollment-token-value')
+  if (!container || !value) return
+  value.textContent = token || 'Brak tokenu w odpowiedzi funkcji.'
+  container.classList.remove('hidden')
+}
+
+async function copyLatestEnrollmentToken() {
+  const value = document.getElementById('enrollment-token-value')?.textContent || ''
+  if (!value || value.startsWith('Brak tokenu')) return
+  try {
+    await navigator.clipboard.writeText(value)
+    showToast('Token skopiowany.', TOAST_TYPE.SUCCESS)
+  } catch (error) {
+    console.error('[app.js] copyLatestEnrollmentToken failed:', error)
+    showToast('Nie udało się skopiować tokenu.', TOAST_TYPE.ERROR)
+  }
+}
+
+async function revokeEnrollmentToken(id) {
+  if (!canManageEnrollmentTokens()) return
+  if (!confirm('Cofnąć ten token instalacyjny? Nie będzie można go użyć do nowej stacji.')) return
+  try {
+    const { error } = await supabase
+      .from('workstation_enrollment_tokens')
+      .update({ revoked_at: new Date().toISOString() })
+      .eq('id', id)
+    if (error) throw error
+    await refreshEnrollmentTokens()
+    showToast('Token cofnięty.', TOAST_TYPE.SUCCESS)
+  } catch (error) {
+    console.error('[app.js] revokeEnrollmentToken failed:', error)
+    showToast('Nie udało się cofnąć tokenu.', TOAST_TYPE.ERROR)
+  }
+}
+
+function enrollmentTokenStatus(token) {
+  if (token.revoked_at) return { label: 'cofnięty', cls: 'bg-red-100 text-red-700' }
+  if (new Date(token.expires_at).getTime() <= Date.now()) return { label: 'wygasł', cls: 'bg-slate-200 text-slate-700' }
+  if (Number(token.used_count || 0) >= Number(token.uses_allowed || 1)) return { label: 'użyty', cls: 'bg-blue-100 text-blue-700' }
+  return { label: 'aktywny', cls: 'bg-emerald-100 text-emerald-700' }
+}
+
+function renderEnrollmentTokensTable(tokens) {
+  const tbody = document.getElementById('enrollment-tokens-table-body')
+  if (!tbody) return
+  if (!tokens.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-6 text-center text-slate-500">Brak tokenów instalacyjnych.</td></tr>'
+    return
+  }
+  tbody.innerHTML = tokens.map((token) => {
+    const status = enrollmentTokenStatus(token)
+    const used = `${Number(token.used_count || 0)}/${Number(token.uses_allowed || 1)}`
+    return `
+      <tr class="hover:bg-slate-50">
+        <td class="px-6 py-3 font-medium">${escapeHtml(token.assigned_workstation_name || 'Dowolna stacja')}</td>
+        <td class="px-6 py-3"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${status.cls}">${escapeHtml(status.label)}</span></td>
+        <td class="px-6 py-3 font-mono text-xs text-slate-700">${escapeHtml(used)}</td>
+        <td class="px-6 py-3 text-slate-500">${formatDate(token.expires_at)}</td>
+        <td class="px-6 py-3 text-slate-500">${token.last_redeemed_at ? formatDate(token.last_redeemed_at) : '—'}</td>
+        <td class="px-6 py-3 text-right">
+          <button class="enrollment-revoke text-red-600 hover:underline text-sm" data-id="${token.id}" ${token.revoked_at ? 'disabled' : ''}>Cofnij</button>
+        </td>
+      </tr>
+    `
+  }).join('')
+  tbody.querySelectorAll('.enrollment-revoke').forEach((button) => {
+    button.addEventListener('click', () => revokeEnrollmentToken(button.dataset.id))
+  })
 }
 
 /**
@@ -1484,6 +1620,16 @@ function subscribeToWorkstationsBoard() {
     .subscribe()
 }
 
+function subscribeToEnrollmentTokens() {
+  if (state.enrollmentTokensSubscription) return
+  state.enrollmentTokensSubscription = supabase
+    .channel('workstation-enrollment-tokens')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'workstation_enrollment_tokens' }, () => {
+      refreshEnrollmentTokens()
+    })
+    .subscribe()
+}
+
 /**
  * Subskrybuje zdarzenia logów monitora.
  * @returns {void}
@@ -1547,6 +1693,10 @@ function cleanupGlobalSubscriptions() {
   if (state.workstationsSubscription) {
     supabase.removeChannel(state.workstationsSubscription)
     state.workstationsSubscription = null
+  }
+  if (state.enrollmentTokensSubscription) {
+    supabase.removeChannel(state.enrollmentTokensSubscription)
+    state.enrollmentTokensSubscription = null
   }
   if (state.monitorLogSubscription) {
     supabase.removeChannel(state.monitorLogSubscription)

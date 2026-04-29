@@ -1,0 +1,2 @@
+[functions.redeem-workstation-enrollment]
+verify_jwt = false

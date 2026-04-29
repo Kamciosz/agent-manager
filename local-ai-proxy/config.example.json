@@ -8,8 +8,8 @@
   "workstationName": "Moja stacja",
   "supabaseUrl": "https://YOUR-PROJECT.supabase.co",
   "supabaseAnonKey": "sb_publishable_YOUR_KEY_OR_LEGACY_ANON_KEY",
-  "workstationEmail": "operator@example.com",
-  "workstationPassword": "CHANGE-ME-LOCAL-ONLY",
+  "enrollmentToken": "amst_TOKEN_FROM_DASHBOARD",
+  "stationRefreshToken": "CREATED_AFTER_ENROLLMENT_DO_NOT_COMMIT",
   "allowedOrigins": [
     "https://YOUR-GITHUB-LOGIN.github.io",
     "http://localhost",

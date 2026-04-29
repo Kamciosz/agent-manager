@@ -33,7 +33,7 @@ Stacja robocza to komputer, który uruchamia lokalny model GGUF przez llama.cpp 
 | macOS | dwuklik [start.command](start.command) | dwuklik [Aktualizuj.command](Aktualizuj.command) | `./start.sh --doctor` |
 | Linux | `./start.sh` | `./Aktualizuj.command` | `./start.sh --doctor` |
 
-3. Pierwszy start zapyta o model GGUF, nazwę stacji i dane Supabase. Na Windowsie launcher sam pobierze portable Node.js, jeśli nie ma go w PATH.
+3. W dashboardzie wygeneruj token instalacyjny w widoku **Stacje robocze** i wklej go przy pierwszym starcie. Launcher nie pyta o hasło operatora. Na Windowsie sam pobierze portable Node.js, jeśli nie ma go w PATH.
 4. Zostaw okno launchera otwarte, kiedy komputer ma wykonywać polecenia.
 5. Stacja pojawi się w aplikacji w widoku **Stacje robocze**.
 
@@ -65,9 +65,10 @@ Zobacz [FORK_GUIDE.md](FORK_GUIDE.md). W skrócie:
 1. Fork repozytorium.
 2. Utwórz projekt Supabase.
 3. Wklej migracje SQL z [supabase/migrations](supabase/migrations) w Supabase SQL Editor albo zastosuj je przez Supabase CLI/tools.
-4. Dodaj `SUPABASE_URL` i `SUPABASE_ANON_KEY` do GitHub Secrets.
-5. Włącz GitHub Pages z GitHub Actions.
-6. Uruchom workflow **Deploy**.
+4. Wdróż Edge Functions z [supabase/functions](supabase/functions) i ustaw w Supabase sekret `SUPABASE_SERVICE_ROLE_KEY` tylko dla funkcji; gotowe komendy są w [FORK_GUIDE.md](FORK_GUIDE.md).
+5. Dodaj `SUPABASE_URL` i `SUPABASE_ANON_KEY` do GitHub Secrets.
+6. Włącz GitHub Pages z GitHub Actions.
+7. Uruchom workflow **Deploy**.
 
 Deploy GitHub Pages publikuje UI. Migracje bazy są jawne i nie są wykonywane przez workflow Pages.
 
@@ -75,6 +76,8 @@ Deploy GitHub Pages publikuje UI. Migracje bazy są jawne i nie są wykonywane p
 
 - Publiczny `anon/publishable key` Supabase może być użyty w frontendzie, ale dane chroni RLS.
 - Launchery nie mają już wpisanego domyślnego projektu Supabase. Każdy fork podaje własny URL i key.
+- Stacje używają jednorazowego tokenu instalacyjnego z dashboardu. Hasło operatora nie jest zapisywane lokalnie; po aktywacji stacja dostaje ograniczoną sesję techniczną.
+- Supabase service-role key jest potrzebny tylko w sekretach Edge Functions i nie może trafić do GitHub Pages, launcherów ani `config.json`.
 - Lokalny proxy akceptuje tylko skonfigurowane originy aplikacji oraz localhost.
 - `local-ai-proxy/config.json`, modele, binarki i logi są ignorowane przez git.
 - CI ma guard blokujący przypadkowe dodanie lokalnego configu i oczywistych sekretów.

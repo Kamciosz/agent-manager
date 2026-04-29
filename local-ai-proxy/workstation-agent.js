@@ -1,7 +1,7 @@
 /**
  * @file workstation-agent.js
  * @description Lekki agent lokalny dla szkolnej stacji roboczej. Loguje sie do
- *              Supabase kontem operatora, rejestruje komputer, publikuje liste
+ *              Supabase ograniczona tozsamoscia stacji, rejestruje komputer, publikuje liste
  *              modeli GGUF, odbiera wiadomosci i kolejke jobow oraz wykonuje je
  *              przez lokalny proxy AI dzialajacy na 127.0.0.1.
  *
@@ -50,6 +50,14 @@ function loadConfig() {
   return {
     supabaseUrl: raw.supabaseUrl,
     supabaseAnonKey: raw.supabaseAnonKey,
+    enrollmentToken: raw.enrollmentToken,
+    stationAccessToken: raw.stationAccessToken,
+    stationRefreshToken: raw.stationRefreshToken,
+    stationTokenExpiresAt: Number(raw.stationTokenExpiresAt) || 0,
+    stationUserId: raw.stationUserId,
+    stationUserEmail: raw.stationUserEmail,
+    stationOwnerUserId: raw.stationOwnerUserId,
+    stationEnrollmentTokenId: raw.stationEnrollmentTokenId,
     workstationEmail: raw.workstationEmail,
     workstationPassword: raw.workstationPassword,
     workstationName: raw.workstationName || os.hostname(),
@@ -100,10 +108,19 @@ function resolveKvCache(value, contextSizeTokens) {
 }
 
 function ensureRequiredConfig(cfg) {
-  const required = ['supabaseUrl', 'supabaseAnonKey', 'workstationEmail', 'workstationPassword']
+  const required = ['supabaseUrl', 'supabaseAnonKey']
   const missing = required.filter((key) => !cfg[key])
   if (missing.length) {
     throw new Error(`Brak wymaganych pol w config.json: ${missing.join(', ')}. Uruchom start.bat --config albo ./start.sh --config i uzupelnij konfiguracje stacji.`)
+  }
+  const hasStationSession = Boolean(cfg.stationRefreshToken || cfg.stationAccessToken)
+  const hasEnrollmentToken = Boolean(cfg.enrollmentToken)
+  const hasLegacyPassword = Boolean(cfg.workstationEmail && cfg.workstationPassword)
+  if (!hasStationSession && !hasEnrollmentToken && !hasLegacyPassword) {
+    throw new Error('Brak tokenu stacji. Wygeneruj token instalacyjny w dashboardzie i uruchom start.bat --config albo ./start.sh --config.')
+  }
+  if (hasLegacyPassword && !hasStationSession && !hasEnrollmentToken) {
+    log('Uwaga: uzywam legacy loginu operatora z config.json. Wygeneruj token stacji w dashboardzie, zeby nie trzymac hasla operatora lokalnie.')
   }
 }
 
@@ -161,9 +178,123 @@ async function signInWithRetry(cfg, attempts = 5) {
   throw new Error('Supabase auth retry exhausted')
 }
 
+function readLocalConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
+function saveLocalConfigPatch(cfg, patch, deleteKeys = []) {
+  const raw = readLocalConfig()
+  for (const key of deleteKeys) delete raw[key]
+  Object.assign(raw, patch)
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2) + '\n')
+  for (const key of deleteKeys) delete cfg[key]
+  Object.assign(cfg, patch)
+}
+
+function stationSessionFromConfig(cfg) {
+  return {
+    access_token: cfg.stationAccessToken,
+    refresh_token: cfg.stationRefreshToken,
+    expires_at: cfg.stationTokenExpiresAt || null,
+    user: {
+      id: cfg.stationUserId,
+      email: cfg.stationUserEmail || 'workstation@local',
+      user_metadata: {
+        role: 'workstation',
+        owner_user_id: cfg.stationOwnerUserId || null,
+        enrollment_token_id: cfg.stationEnrollmentTokenId || null,
+      },
+      app_metadata: {
+        role: 'workstation',
+        owner_user_id: cfg.stationOwnerUserId || null,
+        enrollment_token_id: cfg.stationEnrollmentTokenId || null,
+      },
+    },
+  }
+}
+
+function hasFreshStationAccessToken(cfg) {
+  if (!cfg.stationAccessToken || !cfg.stationTokenExpiresAt) return false
+  return Number(cfg.stationTokenExpiresAt) > Math.floor(Date.now() / 1000) + 60
+}
+
+function saveStationSession(cfg, data) {
+  const session = data.session || data
+  const station = data.station || {}
+  if (!session.access_token || !session.refresh_token || !session.user?.id) {
+    throw new Error('Enrollment endpoint did not return a complete station session')
+  }
+  saveLocalConfigPatch(cfg, {
+    stationAccessToken: session.access_token,
+    stationRefreshToken: session.refresh_token,
+    stationTokenExpiresAt: Number(session.expires_at) || Math.floor(Date.now() / 1000) + Number(session.expires_in || 3600),
+    stationUserId: session.user.id,
+    stationUserEmail: station.email || session.user.email || '',
+    stationOwnerUserId: station.owner_user_id || session.user.app_metadata?.owner_user_id || session.user.user_metadata?.owner_user_id || cfg.stationOwnerUserId || '',
+    stationEnrollmentTokenId: station.enrollment_token_id || session.user.app_metadata?.enrollment_token_id || session.user.user_metadata?.enrollment_token_id || cfg.stationEnrollmentTokenId || '',
+  }, ['enrollmentToken', 'workstationEmail', 'workstationPassword'])
+  log('Zapisano ograniczona sesje stacji. Haslo operatora nie jest przechowywane lokalnie.')
+  return stationSessionFromConfig(cfg)
+}
+
+async function redeemEnrollmentToken(cfg) {
+  if (!cfg.enrollmentToken) throw new Error('Missing enrollment token')
+  const response = await fetch(`${cfg.supabaseUrl}/functions/v1/redeem-workstation-enrollment`, {
+    method: 'POST',
+    headers: {
+      apikey: cfg.supabaseAnonKey,
+      Authorization: `Bearer ${cfg.supabaseAnonKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      token: cfg.enrollmentToken,
+      workstationName: cfg.workstationName || os.hostname(),
+      hostname: os.hostname(),
+      os: os.platform(),
+      arch: os.arch(),
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`Enrollment token redeem failed: HTTP ${response.status} ${await responseDetail(response)}`)
+  }
+  return saveStationSession(cfg, await response.json())
+}
+
+async function refreshStationSession(cfg) {
+  if (!cfg.stationRefreshToken) {
+    if (hasFreshStationAccessToken(cfg)) return stationSessionFromConfig(cfg)
+    throw new Error('Brak refresh tokenu stacji. Wygeneruj nowy token instalacyjny w dashboardzie.')
+  }
+  const response = await fetch(`${cfg.supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: {
+      apikey: cfg.supabaseAnonKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ refresh_token: cfg.stationRefreshToken }),
+  })
+  if (!response.ok) {
+    throw new Error(`Station session refresh failed: HTTP ${response.status} ${await responseDetail(response)}`)
+  }
+  return saveStationSession(cfg, await response.json())
+}
+
+async function authenticate(cfg) {
+  if (hasFreshStationAccessToken(cfg)) return stationSessionFromConfig(cfg)
+  if (cfg.stationRefreshToken) return refreshStationSession(cfg)
+  if (cfg.enrollmentToken) return redeemEnrollmentToken(cfg)
+  return signInWithRetry(cfg)
+}
+
 async function refreshSession(cfg) {
   log('Odswiezam sesje Supabase po bledzie 401.')
-  authSession = await signInWithRetry(cfg, 2)
+  authSession = cfg.stationRefreshToken || cfg.stationAccessToken
+    ? await refreshStationSession(cfg)
+    : await signInWithRetry(cfg, 2)
   return authSession
 }
 
@@ -190,7 +321,7 @@ async function restInsert(cfg, session, table, rows, retry = true) {
     method: 'POST',
     headers: buildHeaders(session.access_token, cfg.supabaseAnonKey, {
       'Content-Type': 'application/json',
-      Prefer: 'return=representation',
+      Prefer: 'return=minimal',
     }),
     body: JSON.stringify(rows),
   })
@@ -200,7 +331,7 @@ async function restInsert(cfg, session, table, rows, retry = true) {
   if (!response.ok) {
     throw new Error(`${table} insert failed: HTTP ${response.status} ${await responseDetail(response)}`)
   }
-  return response.json()
+  return []
 }
 
 async function restPatch(cfg, session, table, filter, payload, retry = true) {
@@ -208,7 +339,7 @@ async function restPatch(cfg, session, table, filter, payload, retry = true) {
     method: 'PATCH',
     headers: buildHeaders(session.access_token, cfg.supabaseAnonKey, {
       'Content-Type': 'application/json',
-      Prefer: 'return=representation',
+      Prefer: 'return=minimal',
     }),
     body: JSON.stringify(payload),
   })
@@ -218,7 +349,7 @@ async function restPatch(cfg, session, table, filter, payload, retry = true) {
   if (!response.ok) {
     throw new Error(`${table} patch failed: HTTP ${response.status} ${await responseDetail(response)}`)
   }
-  return response.json()
+  return []
 }
 
 async function restSelect(cfg, session, table, query, retry = true) {
@@ -271,10 +402,15 @@ function scanModels(cfg) {
 }
 
 function workstationPayload(cfg, userId, statusOverride) {
+  const ownerUserId = cfg.stationOwnerUserId || userId
+  const stationUserId = cfg.stationUserId || userId
   return {
     display_name: cfg.workstationName,
     hostname: os.hostname(),
-    operator_user_id: userId,
+    operator_user_id: ownerUserId,
+    owner_user_id: ownerUserId,
+    station_user_id: stationUserId,
+    enrollment_token_id: cfg.stationEnrollmentTokenId || null,
     os: os.platform(),
     arch: os.arch(),
     gpu_backend: cfg.backend,
@@ -301,6 +437,7 @@ function workstationPayload(cfg, userId, statusOverride) {
       effectiveKvCacheQuantization: cfg.effectiveKvCacheQuantization,
       autoUpdate: cfg.autoUpdate,
       optimizationMode: cfg.optimizationMode,
+      authMode: cfg.stationUserId ? 'station-token' : 'legacy-operator-password',
       scheduleOutsideAction: cfg.scheduleOutsideAction,
       scheduleEndAction: cfg.scheduleEndAction,
       scheduleDumpOnStop: cfg.scheduleDumpOnStop,
@@ -557,8 +694,8 @@ async function shutdown(cfg, session) {
 async function main() {
   const cfg = loadConfig()
   ensureRequiredConfig(cfg)
-  authSession = await signInWithRetry(cfg)
-  log('Zalogowano do Supabase jako:', authSession.user.email)
+  authSession = await authenticate(cfg)
+  log('Zalogowano do Supabase jako:', authSession.user.email || authSession.user.id)
 
   await upsertWorkstation(cfg, authSession)
   await syncModels(cfg, authSession)

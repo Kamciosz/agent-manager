@@ -50,7 +50,28 @@ W Supabase przejdź do **Settings → API** i skopiuj:
 
 Publishable/anon key może być użyty publicznie w frontendzie, ale bezpieczeństwo danych zależy od RLS. Nie używaj service-role key w tym repozytorium.
 
-## Krok 5 — dodaj GitHub Secrets
+## Krok 5 — wdróż Edge Functions dla tokenów stacji
+
+Tokeny instalacyjne stacji wymagają zaufanej funkcji po stronie Supabase. Wdróż funkcje z [supabase/functions](supabase/functions):
+
+- `create-workstation-enrollment`,
+- `redeem-workstation-enrollment`.
+
+W Supabase ustaw sekret `SUPABASE_SERVICE_ROLE_KEY` wyłącznie dla Edge Functions. Nie dodawaj go do GitHub Secrets Pages, kodu UI, launchera ani `config.json`.
+
+Przykład przez Supabase CLI:
+
+```bash
+supabase link --project-ref TWOJ_PROJECT_REF
+supabase secrets set SUPABASE_SERVICE_ROLE_KEY=WKLEJ_SERVICE_ROLE_KEY_Z_PANELU_SUPABASE
+supabase functions deploy create-workstation-enrollment
+supabase functions deploy redeem-workstation-enrollment --no-verify-jwt
+```
+
+`SUPABASE_URL` i `SUPABASE_ANON_KEY` są dostępne dla Edge Functions z runtime Supabase; service-role key ustawiasz osobno, tylko jako sekret funkcji.
+`redeem-workstation-enrollment` ma wyłączone JWT verification, bo stacja nie ma jeszcze sesji użytkownika; sekretem wejściowym jest jednorazowy token instalacyjny.
+
+## Krok 6 — dodaj GitHub Secrets
 
 W swoim forku GitHub:
 
@@ -58,13 +79,13 @@ W swoim forku GitHub:
 2. Dodaj sekret `SUPABASE_URL` z Project URL.
 3. Dodaj sekret `SUPABASE_ANON_KEY` z publishable/anon key.
 
-## Krok 6 — włącz GitHub Pages
+## Krok 7 — włącz GitHub Pages
 
 1. Wejdź w **Settings → Pages**.
 2. W sekcji **Source** wybierz **GitHub Actions**.
 3. Zapisz ustawienie.
 
-## Krok 7 — uruchom deploy
+## Krok 8 — uruchom deploy
 
 1. Wejdź w **Actions**.
 2. Wybierz workflow **Deploy to GitHub Pages**.
@@ -78,13 +99,14 @@ Deploy robi tylko dwie rzeczy:
 
 Nie dotyka schematu Supabase.
 
-## Krok 8 — pierwsze konto
+## Krok 9 — pierwsze konto
 
 1. Otwórz swoją aplikację Pages.
 2. Zarejestruj konto.
-3. Dodaj pierwsze polecenie albo podłącz stację roboczą.
+3. W widoku **Stacje robocze** wygeneruj token instalacyjny.
+4. Dodaj pierwsze polecenie albo podłącz stację roboczą.
 
-## Krok 9 — lokalna stacja robocza
+## Krok 10 — lokalna stacja robocza
 
 Na komputerze, który ma uruchamiać lokalny model GGUF:
 
@@ -98,10 +120,11 @@ Pierwszy start zapyta o:
 - nazwę stacji,
 - Supabase URL,
 - publishable/anon key,
-- konto operatora stacji,
+- token instalacyjny z dashboardu,
 - origin aplikacji Pages, np. `https://twoj-login.github.io`.
 
 Origin jest potrzebny, bo lokalny proxy nie przyjmuje już requestów z dowolnej strony.
+Hasło operatora nie jest wpisywane na stacji i nie powinno pojawić się w `local-ai-proxy/config.json`.
 
 ## Aktualizacje
 

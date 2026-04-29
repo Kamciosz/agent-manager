@@ -778,13 +778,12 @@ configure_schedule_options() {
 }
 
 upsert_workstation_config() {
-  local workstation_name="$1" supabase_url="$2" supabase_key="$3" workstation_email="$4" workstation_password="$5" app_origin="$6"
+  local workstation_name="$1" supabase_url="$2" supabase_key="$3" enrollment_token="$4" app_origin="$5"
   CONFIG_FILE_ENV="$CONFIG_FILE" \
   WORKSTATION_NAME_VALUE="$workstation_name" \
   SUPABASE_URL_VALUE="$supabase_url" \
   SUPABASE_KEY_VALUE="$supabase_key" \
-  WORKSTATION_EMAIL_VALUE="$workstation_email" \
-  WORKSTATION_PASSWORD_VALUE="$workstation_password" \
+  ENROLLMENT_TOKEN_VALUE="$enrollment_token" \
   APP_ORIGIN_VALUE="$app_origin" \
   node <<'NODE'
 const fs = require('node:fs')
@@ -798,8 +797,11 @@ try {
 cfg.workstationName = process.env.WORKSTATION_NAME_VALUE || cfg.workstationName || ''
 cfg.supabaseUrl = process.env.SUPABASE_URL_VALUE || cfg.supabaseUrl || ''
 cfg.supabaseAnonKey = process.env.SUPABASE_KEY_VALUE || cfg.supabaseAnonKey || ''
-cfg.workstationEmail = process.env.WORKSTATION_EMAIL_VALUE || cfg.workstationEmail || ''
-cfg.workstationPassword = process.env.WORKSTATION_PASSWORD_VALUE || cfg.workstationPassword || ''
+cfg.enrollmentToken = process.env.ENROLLMENT_TOKEN_VALUE || cfg.enrollmentToken || ''
+if (cfg.enrollmentToken) {
+  delete cfg.workstationEmail
+  delete cfg.workstationPassword
+}
 const origins = new Set(Array.isArray(cfg.allowedOrigins) ? cfg.allowedOrigins : [])
 for (const origin of ['http://localhost', 'http://127.0.0.1']) origins.add(origin)
 const appOrigin = (process.env.APP_ORIGIN_VALUE || '').trim().replace(/\/+$/, '')
@@ -845,16 +847,24 @@ NODE
 }
 
 ensure_workstation_config() {
-  local workstation_name supabase_url supabase_key workstation_email workstation_password app_origin
+  local workstation_name supabase_url supabase_key enrollment_token station_refresh_token station_access_token workstation_email workstation_password app_origin
   workstation_name="$(read_config_value workstationName)"
   supabase_url="$(read_config_value supabaseUrl)"
   supabase_key="$(read_config_value supabaseAnonKey)"
+  enrollment_token="$(read_config_value enrollmentToken)"
+  station_refresh_token="$(read_config_value stationRefreshToken)"
+  station_access_token="$(read_config_value stationAccessToken)"
   workstation_email="$(read_config_value workstationEmail)"
   workstation_password="$(read_config_value workstationPassword)"
   app_origin="$(read_config_value appOrigin)"
 
+  if [ -n "$workstation_name" ] && [ -n "$supabase_url" ] && [ -n "$supabase_key" ] && { [ -n "$station_refresh_token" ] || [ -n "$station_access_token" ] || [ -n "$enrollment_token" ]; }; then
+    log "Używam zapisanej konfiguracji stacji roboczej/tokenu stacji."
+    return
+  fi
+
   if [ -n "$workstation_name" ] && [ -n "$supabase_url" ] && [ -n "$supabase_key" ] && [ -n "$workstation_email" ] && [ -n "$workstation_password" ]; then
-    log "Używam zapisanej konfiguracji stacji roboczej."
+    warn "Używam legacy konfiguracji z hasłem operatora. Wygeneruj token stacji w dashboardzie i uruchom ./start.sh --config, żeby usunąć hasło z config.json."
     return
   fi
 
@@ -862,23 +872,24 @@ ensure_workstation_config() {
   echo "=========================================================="
   echo "  Konfiguracja stacji roboczej (jednorazowo)"
   echo "=========================================================="
-  echo "  Ta stacja zaloguje się do Supabase i będzie odbierać joby"
-  echo "  wysyłane z aplikacji w przeglądarce."
+  echo "  Ta stacja użyje tokenu instalacyjnego z dashboardu."
+  echo "  Nie wpisuj tu hasła operatora — launcher go nie zapisuje."
   echo
 
   workstation_name="$(prompt_with_default "Nazwa stacji" "${workstation_name:-$(hostname)}")"
   echo "  Supabase URL i publishable key skopiujesz z własnego projektu Supabase."
-  echo "  Nie ma tu domyślnego klucza produkcyjnego, żeby fork był bezpieczny."
+  echo "  Token stacji wygenerujesz w dashboardzie: Stacje robocze → Tokeny instalacyjne."
   supabase_url="$(prompt_with_default "Supabase URL" "${supabase_url:-$DEFAULT_SUPABASE_URL}")"
   supabase_key="$(prompt_with_default "Supabase publishable key" "${supabase_key:-$DEFAULT_SUPABASE_KEY}")"
-  workstation_email="$(prompt_with_default "Email operatora stacji" "$workstation_email")"
-  if [ -z "$workstation_password" ]; then
-    workstation_password="$(prompt_secret_value "Hasło operatora stacji")"
+  enrollment_token="$(prompt_with_default "Token instalacyjny stacji" "$enrollment_token")"
+  if [ -z "$enrollment_token" ]; then
+    err "Brak tokenu instalacyjnego. Wygeneruj token w dashboardzie: Stacje robocze → Tokeny instalacyjne."
+    exit 1
   fi
   app_origin="$(prompt_with_default "Adres aplikacji GitHub Pages (origin, bez ścieżki)" "${app_origin:-$DEFAULT_APP_ORIGIN}")"
 
-  upsert_workstation_config "$workstation_name" "$supabase_url" "$supabase_key" "$workstation_email" "$workstation_password" "$app_origin"
-  log "Zapisano konfigurację stacji roboczej w config.json"
+  upsert_workstation_config "$workstation_name" "$supabase_url" "$supabase_key" "$enrollment_token" "$app_origin"
+  log "Zapisano konfigurację stacji roboczej w config.json. Token zostanie wymieniony na ograniczoną sesję stacji przy starcie."
 }
 
 ensure_config() {
@@ -1086,7 +1097,8 @@ port_state() {
 
 # Znajdź wolny port w zakresie startując od podanego.
 find_free_port() {
-  local p="$1" max="$((p + 50))"
+  local p="$1" max
+  max="$((p + 50))"
   while [ "$p" -lt "$max" ]; do
     [ "$(port_state "$p")" = "free" ] && { echo "$p"; return; }
     p=$((p + 1))
@@ -1346,6 +1358,9 @@ run_doctor() {
 
   if [ -f "$CONFIG_FILE" ]; then
     model_path="$(read_config_value modelPath)"
+    enrollment_token="$(read_config_value enrollmentToken)"
+    station_refresh_token="$(read_config_value stationRefreshToken)"
+    station_access_token="$(read_config_value stationAccessToken)"
     workstation_email="$(read_config_value workstationEmail)"
     if [ -n "$model_path" ] && [ -f "$model_path" ]; then
       doctor_line "OK" "config.json modelPath" "$model_path"
@@ -1354,10 +1369,14 @@ run_doctor() {
     else
       doctor_line "INFO" "config.json modelPath" "missing; full start will ask for a GGUF model"
     fi
-    if [ -n "$workstation_email" ]; then
-      doctor_line "OK" "workstation credentials" "email configured: $workstation_email"
+    if [ -n "$station_refresh_token" ] || [ -n "$station_access_token" ]; then
+      doctor_line "OK" "station auth" "restricted station session configured"
+    elif [ -n "$enrollment_token" ]; then
+      doctor_line "INFO" "station auth" "enrollment token saved; full start will redeem it"
+    elif [ -n "$workstation_email" ]; then
+      doctor_line "WARN" "station auth" "legacy operator password config: $workstation_email"
     else
-      doctor_line "INFO" "workstation credentials" "missing; full start will ask for Supabase workstation login"
+      doctor_line "INFO" "station auth" "missing; full start will ask for dashboard enrollment token"
     fi
     doctor_line "INFO" "context" "mode=$(read_config_scalar_value contextMode native), tokens=$(read_config_scalar_value contextSizeTokens 0), KV=$(read_config_scalar_value kvCacheQuantization auto)"
     doctor_line "INFO" "autoUpdate" "$(read_config_scalar_value autoUpdate false)"

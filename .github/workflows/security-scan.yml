@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t tracked_files < <(git ls-files | grep -v '^.github/workflows/security-scan.yml$')
-          if grep -nE 'sb_secret_|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|service_role' "${tracked_files[@]}"; then
+          if grep -nE 'sb_secret_|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*c2VydmljZV9yb2xl[A-Za-z0-9_-]*\.[A-Za-z0-9_-]{10,}' "${tracked_files[@]}"; then
             echo "High-risk secret-like literal found. Remove it or move it to GitHub Secrets."
             exit 1
           fi

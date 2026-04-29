@@ -316,7 +316,7 @@ await supabase.auth.signOut()
 
 ```js
 const { data: { user } } = await supabase.auth.getUser()
-// user.id, user.email, user.user_metadata.role
+// user.id, user.email, user.app_metadata.role
 ```
 
 ---

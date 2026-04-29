@@ -8,7 +8,7 @@ Ten dokument zapisuje test w dwóch rolach: bardzo surowy tester oraz nietechnic
 |---------|--------|------------------------|
 | Launcher miał prawdziwy domyślny URL/key Supabase | Forki mogły przypadkiem podpinać się pod cudzy projekt | Naprawione: launchery wymagają własnych danych |
 | Lokalny proxy miał CORS `*` | Dowolna strona mogła próbować wołać lokalny LLM użytkownika | Naprawione: allowlista originów |
-| `config.json` może zawierać hasło operatora | Przypadkowy commit byłby krytyczny | Ograniczone: gitignore + CI guard + config example |
+| `config.json` zawierał hasło operatora w legacy flow | Uczeń z dostępem do pliku mógłby próbować wejść do panelu | Naprawione kierunkowo: nowy flow używa tokenu instalacyjnego i ograniczonej sesji stacji; legacy pokazuje ostrzeżenie migracyjne |
 | Brak jawnego RLS enable dla bazowych tabel w aktualnych migracjach | Polityki bez RLS nie bronią danych | Naprawione migracją jawnie włączającą RLS |
 | FORK_GUIDE obiecywał automatyczne migracje | Użytkownik kończył z pustą/niedziałającą bazą | Naprawione: deploy UI i migracje są rozdzielone |
 | Windows/macOS/Linux nie miały symetrycznych smoke testów | Poprawka jednej platformy mogła psuć drugą | Ograniczone: dodany unix smoke, Windows smoke już istnieje |

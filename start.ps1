@@ -670,12 +670,20 @@ function Ensure-WorkstationConfig {
   $name = Get-ConfigString $cfg 'workstationName'
   $url = Get-ConfigString $cfg 'supabaseUrl'
   $key = Get-ConfigString $cfg 'supabaseAnonKey'
+  $enrollmentToken = Get-ConfigString $cfg 'enrollmentToken'
+  $stationRefreshToken = Get-ConfigString $cfg 'stationRefreshToken'
+  $stationAccessToken = Get-ConfigString $cfg 'stationAccessToken'
   $email = Get-ConfigString $cfg 'workstationEmail'
   $password = Get-ConfigString $cfg 'workstationPassword'
   $appOrigin = Get-ConfigString $cfg 'appOrigin' $DefaultAppOrigin
 
+  if ($name -and $url -and $key -and ($stationRefreshToken -or $stationAccessToken -or $enrollmentToken)) {
+    Write-StartLog 'Using saved workstation station-token config.'
+    return
+  }
+
   if ($name -and $url -and $key -and $email -and $password) {
-    Write-StartLog 'Using saved workstation config.'
+    Write-StartWarn 'Using legacy operator password config. Generate a station token in the dashboard and run start.bat --config to remove operator password from config.json.'
     return
   }
 
@@ -684,19 +692,23 @@ function Ensure-WorkstationConfig {
   Write-Host '  Workstation config'
   Write-Host '=========================================================='
   Write-Host '  Copy Supabase URL and publishable key from your own Supabase project.'
-  Write-Host '  This launcher does not ship a production default key.'
+  Write-Host '  Paste a station enrollment token from Dashboard -> Workstations.'
+  Write-Host '  Do not type the operator password here; it is not stored by this launcher.'
   $name = Prompt-WithDefault 'Workstation name' ($(if ($name) { $name } else { $env:COMPUTERNAME }))
   $url = Prompt-WithDefault 'Supabase URL' ($(if ($url) { $url } else { $DefaultSupabaseUrl }))
   $key = Prompt-WithDefault 'Supabase publishable key' ($(if ($key) { $key } else { $DefaultSupabaseKey }))
-  $email = Prompt-WithDefault 'Operator email' $email
-  if (-not $password) { $password = Prompt-Secret 'Operator password' }
+  $enrollmentToken = Prompt-WithDefault 'Station enrollment token' $enrollmentToken
+  if (-not $enrollmentToken) { throw 'Missing station enrollment token. Generate it in Dashboard -> Workstations -> installation tokens.' }
   $appOrigin = Prompt-WithDefault 'GitHub Pages app origin, without path' $appOrigin
 
   Set-ConfigValue $cfg 'workstationName' $name
   Set-ConfigValue $cfg 'supabaseUrl' $url
   Set-ConfigValue $cfg 'supabaseAnonKey' $key
-  Set-ConfigValue $cfg 'workstationEmail' $email
-  Set-ConfigValue $cfg 'workstationPassword' $password
+  Set-ConfigValue $cfg 'enrollmentToken' $enrollmentToken
+  if ($enrollmentToken) {
+    if ($null -ne $cfg.PSObject.Properties['workstationEmail']) { $cfg.PSObject.Properties.Remove('workstationEmail') }
+    if ($null -ne $cfg.PSObject.Properties['workstationPassword']) { $cfg.PSObject.Properties.Remove('workstationPassword') }
+  }
   Set-ConfigValue $cfg 'appOrigin' (($appOrigin.Trim()).TrimEnd('/'))
   $origins = New-Object System.Collections.Generic.List[string]
   foreach ($origin in @('http://localhost', 'http://127.0.0.1', (($appOrigin.Trim()).TrimEnd('/')))) {
@@ -705,7 +717,7 @@ function Ensure-WorkstationConfig {
   Set-ConfigValue $cfg 'allowedOrigins' $origins.ToArray()
   if ($null -eq $cfg.PSObject.Properties['acceptsJobs']) { Set-ConfigValue $cfg 'acceptsJobs' $true }
   Save-Config $cfg
-  Write-StartLog 'Saved workstation config.'
+  Write-StartLog 'Saved workstation config. The enrollment token will be exchanged for a restricted station session at startup.'
 }
 
 function Configure-Advanced {
@@ -1124,11 +1136,18 @@ function Invoke-Doctor {
       Write-DoctorResult 'INFO' 'config.json modelPath' 'missing; full start will ask for a GGUF model'
     }
 
+    $enrollmentToken = Get-ConfigString $cfg 'enrollmentToken'
+    $stationRefreshToken = Get-ConfigString $cfg 'stationRefreshToken'
+    $stationAccessToken = Get-ConfigString $cfg 'stationAccessToken'
     $email = Get-ConfigString $cfg 'workstationEmail'
-    if ($email) {
-      Write-DoctorResult 'OK' 'workstation credentials' "email configured: $email"
+    if ($stationRefreshToken -or $stationAccessToken) {
+      Write-DoctorResult 'OK' 'station auth' 'restricted station session configured'
+    } elseif ($enrollmentToken) {
+      Write-DoctorResult 'INFO' 'station auth' 'enrollment token saved; full start will redeem it'
+    } elseif ($email) {
+      Write-DoctorResult 'WARN' 'station auth' "legacy operator password config: $email"
     } else {
-      Write-DoctorResult 'INFO' 'workstation credentials' 'missing; full start will ask for Supabase workstation login'
+      Write-DoctorResult 'INFO' 'station auth' 'missing; full start will ask for dashboard enrollment token'
     }
     Write-DoctorResult 'INFO' 'context' "mode=$(Get-ConfigString $cfg 'contextMode' 'native'), tokens=$(Get-ConfigString $cfg 'contextSizeTokens' '0'), KV=$(Get-ConfigString $cfg 'kvCacheQuantization' 'auto')"
     Write-DoctorResult 'INFO' 'autoUpdate' "$(Get-ConfigBool $cfg 'autoUpdate' $false)"
