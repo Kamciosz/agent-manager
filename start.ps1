@@ -23,6 +23,8 @@ $ProxyPort = 3001
 $DefaultSupabaseUrl = ''
 $DefaultSupabaseKey = ''
 $DefaultAppOrigin = 'https://kamciosz.github.io'
+$PortableNodeVersion = '22.11.0'
+$NodeExecutable = ''
 
 $ChangeModel = $false
 $AdvancedConfig = $false
@@ -91,6 +93,103 @@ function Assert-Command([string] $Name, [string] $Hint) {
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
     throw "Missing required command: $Name. $Hint"
   }
+}
+
+function Get-NodeMajorVersion([string] $NodePath) {
+  try {
+    $version = (& $NodePath --version 2>$null | Select-Object -First 1)
+    if ($version -match '^v(\d+)\.') { return [int] $matches[1] }
+  } catch {}
+  return 0
+}
+
+function Use-NodeExecutable([string] $NodePath, [string] $SourceLabel) {
+  $script:NodeExecutable = $NodePath
+  $nodeDir = Split-Path -Parent $NodePath
+  $pathParts = @($env:PATH -split ';' | Where-Object { $_ })
+  if ($pathParts -notcontains $nodeDir) {
+    $env:PATH = "$nodeDir;$env:PATH"
+  }
+  $version = (& $NodePath --version 2>$null | Select-Object -First 1)
+  Write-StartLog "Node.js ready: $version ($SourceLabel)"
+}
+
+function Get-PortableNodeArch {
+  $arch = $env:PROCESSOR_ARCHITEW6432
+  if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
+  if ($arch -eq 'ARM64') { return 'arm64' }
+  return 'x64'
+}
+
+function Get-LocalNodeExecutable {
+  if (-not (Test-Path -LiteralPath $BinDir)) { return $null }
+  $known = Join-Path $BinDir ("node-v{0}-win-{1}\node.exe" -f $PortableNodeVersion, (Get-PortableNodeArch))
+  if (Test-Path -LiteralPath $known) { return $known }
+  $found = Get-ChildItem -LiteralPath $BinDir -Recurse -File -Filter 'node.exe' -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match '\\node-v\d+\.\d+\.\d+-win-' } |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+  if ($found) { return $found.FullName }
+  return $null
+}
+
+function Install-PortableNode {
+  if ($NoPull) {
+    throw 'Node.js was not found and --no-pull prevents downloading portable Node. Install Node.js 18+ or run start.bat without --no-pull once.'
+  }
+  $arch = Get-PortableNodeArch
+  $version = $PortableNodeVersion
+  $folderName = "node-v$version-win-$arch"
+  $targetDir = Join-Path $BinDir $folderName
+  $targetExe = Join-Path $targetDir 'node.exe'
+  if (Test-Path -LiteralPath $targetExe) { return $targetExe }
+
+  $zip = Join-Path $BinDir ("_node-$version-win-$arch.zip")
+  $url = "https://nodejs.org/dist/v$version/$folderName.zip"
+  if ($env:AGENT_MANAGER_NODE_ZIP_URI) { $url = $env:AGENT_MANAGER_NODE_ZIP_URI }
+
+  Write-StartWarn 'Node.js 18+ was not found in PATH. Downloading portable Node.js locally; administrator rights are not needed.'
+  Write-StartLog "Downloading Node.js: $url"
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+  Expand-Archive -LiteralPath $zip -DestinationPath $BinDir -Force
+  Remove-Item -LiteralPath $zip -Force
+
+  if (Test-Path -LiteralPath $targetExe) { return $targetExe }
+  $found = Get-ChildItem -LiteralPath $BinDir -Recurse -File -Filter 'node.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($found) { return $found.FullName }
+  throw "Portable Node.js was extracted, but node.exe was not found under $BinDir"
+}
+
+function Ensure-NodeRuntime {
+  $systemNode = Get-Command node -ErrorAction SilentlyContinue
+  if ($systemNode) {
+    $systemPath = $systemNode.Source
+    if ((Get-NodeMajorVersion $systemPath) -ge 18) {
+      Use-NodeExecutable $systemPath 'system PATH'
+      return
+    }
+    Write-StartWarn "System Node.js is older than 18: $systemPath. A portable Node.js will be used instead."
+  }
+
+  $localNode = Get-LocalNodeExecutable
+  if ($localNode -and (Get-NodeMajorVersion $localNode) -ge 18) {
+    Use-NodeExecutable $localNode 'portable local-ai-proxy\bin'
+    return
+  }
+
+  $installedNode = Install-PortableNode
+  if ((Get-NodeMajorVersion $installedNode) -lt 18) {
+    throw "Downloaded Node.js is too old or cannot run: $installedNode"
+  }
+  Use-NodeExecutable $installedNode 'portable local-ai-proxy\bin'
+}
+
+function Get-NodeExecutable {
+  if ($script:NodeExecutable) { return $script:NodeExecutable }
+  $node = Get-Command node -ErrorAction SilentlyContinue
+  if ($node) { return $node.Source }
+  return 'node'
 }
 
 function Read-Config {
@@ -863,11 +962,11 @@ function Start-Llama([string] $ModelPath, [string] $Backend) {
 }
 
 function Start-Proxy {
-  return Start-LoggedProcess 'proxy' 'node' @((Join-Path $ProxyDir 'proxy.js')) $ProxyDir (Join-Path $LogsDir 'proxy.log') (Join-Path $LogsDir 'proxy.err.log')
+  return Start-LoggedProcess 'proxy' (Get-NodeExecutable) @((Join-Path $ProxyDir 'proxy.js')) $ProxyDir (Join-Path $LogsDir 'proxy.log') (Join-Path $LogsDir 'proxy.err.log')
 }
 
 function Start-WorkstationAgent {
-  return Start-LoggedProcess 'workstation-agent' 'node' @((Join-Path $ProxyDir 'workstation-agent.js')) $ProxyDir (Join-Path $LogsDir 'workstation-agent.log') (Join-Path $LogsDir 'workstation-agent.err.log')
+  return Start-LoggedProcess 'workstation-agent' (Get-NodeExecutable) @((Join-Path $ProxyDir 'workstation-agent.js')) $ProxyDir (Join-Path $LogsDir 'workstation-agent.log') (Join-Path $LogsDir 'workstation-agent.err.log')
 }
 
 function Wait-Health([string] $Url, [string] $Name, [int] $MaxSeconds) {
@@ -977,10 +1076,16 @@ function Invoke-Doctor {
 
   $node = Get-Command node -ErrorAction SilentlyContinue
   if ($node) {
-    $nodeVersion = (& node --version 2>$null | Select-Object -First 1)
+    $nodeVersion = (& $node.Source --version 2>$null | Select-Object -First 1)
     Write-DoctorResult 'OK' 'Node.js' "$nodeVersion at $($node.Source)"
   } else {
-    Write-DoctorResult 'WARN' 'Node.js' 'not found; full runtime requires Node.js 18+'
+    $localNode = Get-LocalNodeExecutable
+    if ($localNode) {
+      $nodeVersion = (& $localNode --version 2>$null | Select-Object -First 1)
+      Write-DoctorResult 'OK' 'Node.js' "$nodeVersion portable at $localNode"
+    } else {
+      Write-DoctorResult 'WARN' 'Node.js' 'not found in PATH; full start will download portable Node.js into local-ai-proxy\bin'
+    }
   }
 
   Write-DoctorResult 'INFO' 'Port 8080' (Get-PortState 8080)
@@ -1049,7 +1154,7 @@ try {
   } elseif (Get-ConfigBool (Read-Config) 'autoUpdate' $false) {
     Invoke-SafeGitUpdate 'autoUpdate'
   }
-  Assert-Command 'node' 'Install Node.js 18+: https://nodejs.org'
+  Ensure-NodeRuntime
   Resolve-LlamaPort
   Resolve-ProxyPort
 

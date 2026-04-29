@@ -43,9 +43,10 @@ jobs:
 
           1. Uruchom plik startowy dla swojego systemu.
           2. Pierwszy start zapyta o model GGUF i dane Supabase stacji.
-          3. Zostaw okno otwarte, kiedy stacja ma wykonywac polecenia AI.
-          4. Diagnostyka: uruchom start z flaga --doctor.
-          5. Aktualizacja: uruchom Aktualizuj albo start z flaga --update.
+          3. Windows sam pobierze portable Node.js, jesli nie ma go w PATH.
+          4. Zostaw okno otwarte, kiedy stacja ma wykonywac polecenia AI.
+          5. Diagnostyka: uruchom start z flaga --doctor.
+          6. Aktualizacja: uruchom Aktualizuj albo start z flaga --update.
 
           Konfiguracja stacji jest lokalna i zapisuje sie w local-ai-proxy/config.json.
           Ten plik nie powinien trafiac do gita.

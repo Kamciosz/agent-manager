@@ -19,9 +19,8 @@ plik .gguf w models/         ← model wybrany przy pierwszym starcie
 
 ## Wymagania
 
-- **Node.js 18+** (proxy używa wbudowanego `fetch` i `AbortController`).
-- **macOS / Linux**: `bash`, `curl`, `unzip`. Apple Silicon → backend Metal, NVIDIA → CUDA, AMD → ROCm, w pozostałych przypadkach Vulkan/CPU.
-- **Windows 10/11**: `cmd.exe` + PowerShell (są domyślnie). `start.bat` jest tylko bezpiecznym wrapperem, a właściwa logika działa w `start.ps1`. NVIDIA → CUDA, w pozostałych Vulkan/CPU.
+- **macOS / Linux**: Node.js 18+, `bash`, `curl`, `unzip`. Apple Silicon → backend Metal, NVIDIA → CUDA, AMD → ROCm, w pozostałych przypadkach Vulkan/CPU.
+- **Windows 10/11**: `cmd.exe` + PowerShell (są domyślnie). Jeśli `node` nie istnieje w PATH, `start.ps1` pobierze portable Node.js do `local-ai-proxy\bin` bez instalatora i bez uprawnień administratora. NVIDIA → CUDA, w pozostałych Vulkan/CPU.
 - **Model GGUF**: dowolny plik `.gguf` z HuggingFace (np. `Qwen2.5-3B-Instruct-Q4_K_M.gguf`). Mniejsze modele (3B–7B) działają na laptopach bez GPU.
 
 ## Jak uruchomić
@@ -63,7 +62,7 @@ Jeśli Windows pokazuje ostrzeżenie bezpieczeństwa dla pliku pobranego z inter
 Unblock-File .\start.ps1
 ```
 
-Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Launcher dobiera paczkę do backendu GPU, ale jeśli upstream nie publikuje dokładnego wariantu, używa bezpiecznego fallbacku CPU zamiast przerywać start. Zapyta też jednorazowo o dane stacji roboczej dla Supabase oraz origin aplikacji Pages, żeby `workstation-agent.js` mógł odbierać joby, a lokalny proxy wpuszczał tylko zaufaną stronę. Kolejne uruchomienia są bez pytań.
+Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Na Windowsie, jeśli brakuje Node.js, najpierw pobierze portable Node do `local-ai-proxy\bin`. Launcher dobiera paczkę do backendu GPU, ale jeśli upstream nie publikuje dokładnego wariantu, używa bezpiecznego fallbacku CPU zamiast przerywać start. Zapyta też jednorazowo o dane stacji roboczej dla Supabase oraz origin aplikacji Pages, żeby `workstation-agent.js` mógł odbierać joby, a lokalny proxy wpuszczał tylko zaufaną stronę. Kolejne uruchomienia są bez pytań.
 
 Launcher nie ma wpisanego domyślnego projektu Supabase. Wklejasz własny Project URL i publishable/anon key z panelu Supabase. Przykład konfiguracji bez sekretów: [`config.example.json`](config.example.json).
 
@@ -235,6 +234,8 @@ OPTIONS *        →  204 + nagłówki CORS dla dozwolonego Origin
 Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci. Dodatkowo sprawdza nagłówek `Origin`: domyślnie wpuszcza oficjalne Pages i localhost, a origin Twojego forka dodajesz przez `--config`.
 
 ## Troubleshooting
+
+**Windows: `Missing required command: node`.** Zaktualizuj launcher. Obecny `start.ps1` nie wymaga ręcznej instalacji Node.js: przy pełnym starcie pobierze portable Node lokalnie do `local-ai-proxy\bin`. Jeśli używasz `--no-pull`, zdejmij tę flagę przy pierwszym starcie albo zainstaluj Node.js 18+ ręcznie.
 
 **Port 8080 lub 3001 zajęty.** Skrypt zatrzyma się z komunikatem. Sprawdź proces: `lsof -iTCP:8080` (mac/Linux) lub `netstat -ano | findstr :8080` (Windows). Albo zmień `proxyPort` w `config.json`.
 

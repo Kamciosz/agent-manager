@@ -33,7 +33,7 @@ Stacja robocza to komputer, który uruchamia lokalny model GGUF przez llama.cpp 
 | macOS | dwuklik [start.command](start.command) | dwuklik [Aktualizuj.command](Aktualizuj.command) | `./start.sh --doctor` |
 | Linux | `./start.sh` | `./Aktualizuj.command` | `./start.sh --doctor` |
 
-3. Pierwszy start zapyta o model GGUF, nazwę stacji i dane Supabase.
+3. Pierwszy start zapyta o model GGUF, nazwę stacji i dane Supabase. Na Windowsie launcher sam pobierze portable Node.js, jeśli nie ma go w PATH.
 4. Zostaw okno launchera otwarte, kiedy komputer ma wykonywać polecenia.
 5. Stacja pojawi się w aplikacji w widoku **Stacje robocze**.
 

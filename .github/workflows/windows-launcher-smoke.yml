@@ -57,6 +57,15 @@ jobs:
           powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --doctor 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-ps1-doctor.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Safe doctor path without Node in PATH
+        shell: powershell
+        run: |
+          $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
+          & $powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --doctor 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-ps1-doctor-no-node-path.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Select-String -Path artifacts\windows-launcher\start-ps1-doctor-no-node-path.txt -Pattern 'portable Node.js|Node.js' | Out-Null
+
       - name: Upload smoke artifacts
         if: always()
         uses: actions/upload-artifact@v4
