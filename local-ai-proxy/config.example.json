@@ -10,6 +10,7 @@
   "supabaseAnonKey": "sb_publishable_YOUR_KEY_OR_LEGACY_ANON_KEY",
   "enrollmentToken": "amst_TOKEN_FROM_DASHBOARD",
   "stationRefreshToken": "CREATED_AFTER_ENROLLMENT_DO_NOT_COMMIT",
+  "stationMode": "classroom",
   "allowedOrigins": [
     "https://YOUR-GITHUB-LOGIN.github.io",
     "http://localhost",
@@ -21,7 +22,7 @@
   "contextMode": "extended",
   "contextSizeTokens": 65536,
   "kvCacheQuantization": "q8_0",
-  "kvCacheAdvancedValues": ["planar3", "iso3", "planar4", "iso4", "turbo3", "turbo4"],
+  "kvCacheAdvancedValues": ["iso3/iso3", "planar3/f16", "planar3", "iso3", "planar4", "iso4", "turbo3", "turbo4"],
   "generationTimeoutMs": 600000,
   "sdEnabled": false,
   "autoUpdate": false

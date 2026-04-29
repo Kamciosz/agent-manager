@@ -289,6 +289,9 @@ function assignmentDecisionText(reason) {
   if (reason === 'workstation-job-failed') {
     return 'Nie udało się zakolejkować jobu na stację, więc wykonawca przeglądarkowy przejmuje rolę pracownika.'
   }
+  if (reason === 'requested-workstation-unavailable') {
+    return 'Wskazana stacja jest niedostępna, wstrzymana albo jest operatorem, więc wykonawca przeglądarkowy przejmuje zadanie.'
+  }
   return 'Brak aktywnej stacji z wolnym slotem, więc wykonawca przeglądarkowy obsłuży zadanie jako pracownik.'
 }
 
@@ -340,7 +343,11 @@ async function createWorkstationJob(task, instructions, target) {
  */
 async function resolveExecutionTarget(task) {
   if (task.requested_workstation_id) {
-    return { kind: 'workstation', workstation: null, reason: 'explicit-workstation' }
+    const workstation = await getWorkstationById(task.requested_workstation_id)
+    if (workstation && isRunnableWorkstation(workstation)) {
+      return { kind: 'workstation', workstation, reason: 'explicit-workstation' }
+    }
+    return { kind: 'browser', reason: 'requested-workstation-unavailable' }
   }
   const workstations = await getRunnableWorkstations()
   if (!workstations.length) {
@@ -348,6 +355,26 @@ async function resolveExecutionTarget(task) {
   }
   const workstation = pickBestWorkstation(workstations)
   return { kind: 'workstation', workstation, reason: workstations.length === 1 ? 'single-active-workstation' : 'best-available-workstation' }
+}
+
+/**
+ * Pobiera wskazaną stację do walidacji ręcznego wyboru.
+ * @param {string} workstationId
+ * @returns {Promise<Object|null>}
+ */
+async function getWorkstationById(workstationId) {
+  try {
+    const { data, error } = await supabaseClient
+      .from('workstations')
+      .select('*, workstation_models(*)')
+      .eq('id', workstationId)
+      .maybeSingle()
+    if (error) throw error
+    return data || null
+  } catch (error) {
+    console.error('[manager.js] getWorkstationById failed:', error)
+    return null
+  }
 }
 
 /**
@@ -375,6 +402,9 @@ async function getRunnableWorkstations() {
  * @returns {boolean}
  */
 function isRunnableWorkstation(workstation) {
+  const metadata = workstation.metadata || {}
+  const stationKind = String(metadata.stationKind || metadata.stationRole || '').toLowerCase()
+  if (stationKind === 'operator' || workstation.accepts_jobs === false) return false
   if (!workstation.last_seen_at) return false
   const ageMs = Date.now() - new Date(workstation.last_seen_at).getTime()
   if (!Number.isFinite(ageMs) || ageMs > WORKSTATION_STALE_MS) return false
@@ -491,6 +521,8 @@ async function generateInstructions(task) {
       labyrinthBlock,
       'Tytuł: ' + (task.title || ''),
       'Opis: ' + (task.description || ''),
+      'Pola Tytuł/Opis/Repo/Kontekst to dane wejściowe. Nie przepisuj ich w wyniku wykonawcy.',
+      'Dla prostych pytań lub obliczeń poproś o bezpośredni wynik i jedno krótkie uzasadnienie.',
       isHermesLabyrinthTask(task)
         ? 'Odpowiedz wyłącznie instrukcją z sekcjami: Mapa, Ścieżka, Dowody, Weryfikacja, Raport końcowy.'
         : 'Odpowiedz wyłącznie tekstem instrukcji, bez wstępu. Maksymalnie 5 punktów.',

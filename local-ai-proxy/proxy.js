@@ -134,6 +134,10 @@ function normalizeContextMode(value) {
  */
 function normalizeKvCache(value) {
   const raw = String(value || 'auto').trim().toLowerCase()
+  if (raw.includes('/')) {
+    const [keyType, valueType] = raw.split('/').map((part) => part.trim())
+    return SUPPORTED_KV_CACHE.includes(keyType) && SUPPORTED_KV_CACHE.includes(valueType) ? `${keyType}/${valueType}` : 'auto'
+  }
   return SUPPORTED_KV_CACHE.includes(raw) ? raw : 'auto'
 }
 

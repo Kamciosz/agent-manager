@@ -84,6 +84,29 @@ const STATUS_LABELS = {
 
 const WORKSTATION_STALE_MS = 2 * 60 * 1000
 
+const UI_STORAGE_KEYS = {
+  taskViewMode: 'agent-manager-task-view-mode',
+  classroomLayouts: 'agent-manager-classroom-layouts',
+}
+
+const TASK_VIEW_MODE = {
+  LIST: 'list',
+  CARDS: 'cards',
+}
+
+const WORKSTATION_KIND = {
+  CLASSROOM: 'classroom',
+  OPERATOR: 'operator',
+}
+
+const WORKSTATION_COMMAND_LABELS = {
+  update: 'Aktualizuj',
+  pause: 'Wstrzymaj',
+  resume: 'Wznów',
+  refresh: 'Odśwież',
+  shutdown: 'Wyłącz',
+}
+
 const PRIORITY_LABELS = {
   low: 'Niski',
   medium: 'Średni',
@@ -121,6 +144,8 @@ const state = {
   currentTaskWorkstationMessages: [],
   editingWorkstationId: null,
   selectedMonitorWorkstationId: null,
+  taskViewMode: loadTaskViewMode(),
+  classroomLayouts: loadClassroomLayouts(),
   agentSkills: [],
   editingAgentId: null,
   tasks: [],
@@ -357,6 +382,7 @@ async function handleLogout() {
  * @returns {void}
  */
 function navigateTo(viewName) {
+  if (viewName === VIEW.TASKS) viewName = VIEW.DASHBOARD
   const target = document.getElementById(`view-${viewName}`)
   if (!target) {
     console.warn('[app.js] missing view:', viewName)
@@ -368,7 +394,7 @@ function navigateTo(viewName) {
 
   // Aktualizuj tytuł strony i podświetlenie linków sidebar
   const titles = {
-    dashboard: 'Dashboard',
+    dashboard: 'Polecenia',
     tasks: 'Polecenia',
     'task-detail': 'Szczegóły polecenia',
     agents: 'Profile agentów',
@@ -396,6 +422,9 @@ function bindNavigation() {
   document.querySelectorAll('.nav-link').forEach((link) => {
     link.addEventListener('click', () => navigateTo(link.dataset.view))
   })
+  document.querySelectorAll('.task-view-toggle').forEach((button) => {
+    button.addEventListener('click', () => setTaskViewMode(button.dataset.mode))
+  })
   document.getElementById('btn-logout').addEventListener('click', handleLogout)
   document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
@@ -407,7 +436,7 @@ function bindNavigation() {
   document.getElementById('btn-clear-task-log')?.addEventListener('click', handleClearTaskLog)
   document.getElementById('btn-back-to-tasks').addEventListener('click', () => {
     cleanupTaskSubscriptions()
-    navigateTo(VIEW.TASKS)
+    navigateTo(VIEW.DASHBOARD)
   })
   document.getElementById('btn-delete-task-detail').addEventListener('click', () => {
     if (!state.currentTaskId) return
@@ -552,8 +581,10 @@ async function getMessagesForTask(taskId) {
 async function refreshTasks() {
   const tasks = await getTasks()
   state.tasks = tasks
-  renderTasksTable('tasks-table-body', tasks.slice(0, 10))
+  renderTasksTable('tasks-table-body', tasks)
   renderTasksTable('tasks-table-body-full', tasks)
+  renderTaskCards(tasks)
+  applyTaskViewMode()
   renderStats(tasks)
   renderMonitorPanel()
 }
@@ -628,22 +659,34 @@ async function updateWorkstation(workstationId, payload) {
  * @returns {Object}
  */
 function workstationLocationPayload(workstation, values) {
+  const kind = values.stationKind === WORKSTATION_KIND.OPERATOR ? WORKSTATION_KIND.OPERATOR : WORKSTATION_KIND.CLASSROOM
+  const previousKind = workstationKind(workstation)
   const room = normalizeRoom(values.classroomLabel)
   const row = normalizeGridNumber(values.gridRow)
   const col = normalizeGridNumber(values.gridCol)
-  const label = String(values.gridLabel || '').trim() || (room && row && col ? `${room}_${row}_${col}` : '')
+  const classroomRows = normalizeGridNumber(values.classroomRows)
+  const classroomCols = normalizeGridNumber(values.classroomCols)
+  const label = kind === WORKSTATION_KIND.CLASSROOM
+    ? String(values.gridLabel || '').trim() || (room && row && col ? `${room}_${row}_${col}` : '')
+    : String(values.gridLabel || '').trim()
   return {
     display_name: String(values.displayName || workstation.display_name || workstation.hostname || 'Stacja').trim(),
-    classroom_label: room || null,
-    grid_row: row,
-    grid_col: col,
+    accepts_jobs: kind === WORKSTATION_KIND.CLASSROOM
+      ? (previousKind === WORKSTATION_KIND.OPERATOR ? true : workstation.accepts_jobs !== false)
+      : false,
+    classroom_label: kind === WORKSTATION_KIND.CLASSROOM ? room || null : null,
+    grid_row: kind === WORKSTATION_KIND.CLASSROOM ? row : null,
+    grid_col: kind === WORKSTATION_KIND.CLASSROOM ? col : null,
     grid_label: label || null,
     metadata: {
       ...(workstation.metadata || {}),
-      classroomLabel: room || null,
-      gridRow: row,
-      gridCol: col,
+      stationKind: kind,
+      classroomLabel: kind === WORKSTATION_KIND.CLASSROOM ? room || null : null,
+      gridRow: kind === WORKSTATION_KIND.CLASSROOM ? row : null,
+      gridCol: kind === WORKSTATION_KIND.CLASSROOM ? col : null,
       gridLabel: label || null,
+      classroomRows: kind === WORKSTATION_KIND.CLASSROOM ? classroomRows || workstation.metadata?.classroomRows || null : null,
+      classroomCols: kind === WORKSTATION_KIND.CLASSROOM ? classroomCols || workstation.metadata?.classroomCols || null : null,
     },
   }
 }
@@ -689,6 +732,105 @@ function groupWorkstationsByRoom(workstations) {
     groups.get(room).push(workstation)
   }
   return Array.from(groups.entries()).sort(([left], [right]) => left.localeCompare(right, 'pl'))
+}
+
+function workstationKind(workstation) {
+  const raw = String(workstation.metadata?.stationKind || workstation.metadata?.stationRole || '').trim().toLowerCase()
+  if (raw === WORKSTATION_KIND.OPERATOR) return WORKSTATION_KIND.OPERATOR
+  return WORKSTATION_KIND.CLASSROOM
+}
+
+function isClassroomWorkstation(workstation) {
+  return workstationKind(workstation) === WORKSTATION_KIND.CLASSROOM
+}
+
+function classroomWorkstations(workstations = state.workstations) {
+  return workstations.filter(isClassroomWorkstation)
+}
+
+function selectableWorkstations(workstations = state.workstations) {
+  return classroomWorkstations(workstations).filter((workstation) => workstation.accepts_jobs !== false)
+}
+
+function workstationKindLabel(workstation) {
+  return workstationKind(workstation) === WORKSTATION_KIND.OPERATOR ? 'Operator' : 'Sala'
+}
+
+function workstationKindBadge(workstation) {
+  const operator = workstationKind(workstation) === WORKSTATION_KIND.OPERATOR
+  const cls = operator ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-700'
+  return `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${cls}">${operator ? 'operator' : 'stacja szkolna'}</span>`
+}
+
+function loadTaskViewMode() {
+  const saved = localStorage.getItem(UI_STORAGE_KEYS.taskViewMode)
+  return saved === TASK_VIEW_MODE.CARDS ? TASK_VIEW_MODE.CARDS : TASK_VIEW_MODE.LIST
+}
+
+function setTaskViewMode(mode) {
+  state.taskViewMode = mode === TASK_VIEW_MODE.CARDS ? TASK_VIEW_MODE.CARDS : TASK_VIEW_MODE.LIST
+  localStorage.setItem(UI_STORAGE_KEYS.taskViewMode, state.taskViewMode)
+  applyTaskViewMode()
+}
+
+function applyTaskViewMode() {
+  const cards = state.taskViewMode === TASK_VIEW_MODE.CARDS
+  document.getElementById('tasks-table-wrapper')?.classList.toggle('hidden', cards)
+  document.getElementById('tasks-cards')?.classList.toggle('hidden', !cards)
+  document.querySelectorAll('.task-view-toggle').forEach((button) => {
+    const active = button.dataset.mode === state.taskViewMode
+    button.classList.toggle('bg-slate-900', active)
+    button.classList.toggle('text-white', active)
+    button.classList.toggle('bg-slate-100', !active)
+    button.classList.toggle('text-slate-700', !active)
+  })
+}
+
+function loadClassroomLayouts() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(UI_STORAGE_KEYS.classroomLayouts) || '[]')
+    return Array.isArray(parsed) ? parsed.map(normalizeClassroomLayout).filter(Boolean) : []
+  } catch {
+    return []
+  }
+}
+
+function normalizeClassroomLayout(layout) {
+  const room = normalizeRoom(layout?.room || layout?.classroomLabel || '')
+  if (!room) return null
+  return {
+    room,
+    rows: Math.max(1, Math.min(12, normalizeGridNumber(layout?.rows) || 4)),
+    cols: Math.max(1, Math.min(12, normalizeGridNumber(layout?.cols) || 6)),
+  }
+}
+
+function saveClassroomLayouts(layouts) {
+  state.classroomLayouts = layouts.map(normalizeClassroomLayout).filter(Boolean)
+  localStorage.setItem(UI_STORAGE_KEYS.classroomLayouts, JSON.stringify(state.classroomLayouts))
+}
+
+function upsertClassroomLayout(room, rows, cols) {
+  const normalized = normalizeClassroomLayout({ room, rows, cols })
+  if (!normalized) return
+  const next = state.classroomLayouts.filter((layout) => layout.room !== normalized.room)
+  next.push(normalized)
+  saveClassroomLayouts(next.sort((left, right) => left.room.localeCompare(right.room, 'pl')))
+}
+
+function classroomLayoutsFor(workstations) {
+  const byRoom = new Map(state.classroomLayouts.map((layout) => [layout.room, { ...layout }]))
+  for (const workstation of classroomWorkstations(workstations)) {
+    const room = workstationRoom(workstation)
+    if (room === 'Bez sali') continue
+    const row = workstationGridRow(workstation) || 1
+    const col = workstationGridCol(workstation) || 1
+    const existing = byRoom.get(room) || { room, rows: 1, cols: 1 }
+    existing.rows = Math.max(existing.rows, row, normalizeGridNumber(workstation.metadata?.classroomRows) || 1)
+    existing.cols = Math.max(existing.cols, col, normalizeGridNumber(workstation.metadata?.classroomCols) || 1)
+    byRoom.set(room, existing)
+  }
+  return Array.from(byRoom.values()).sort((left, right) => left.room.localeCompare(right.room, 'pl'))
 }
 
 function canManageEnrollmentTokens() {
@@ -828,12 +970,14 @@ async function handleApplyClassroomGrid(event) {
     showToast('Podaj nazwę sali, np. 226.', TOAST_TYPE.ERROR)
     return
   }
-  const selected = state.workstations
+  upsertClassroomLayout(room, rows, cols)
+  const selected = classroomWorkstations(state.workstations)
     .filter((workstation) => workstationRoom(workstation) === room || workstationRoom(workstation) === 'Bez sali')
     .sort((left, right) => workstationDisplayName(left).localeCompare(workstationDisplayName(right), 'pl'))
     .slice(0, rows * cols)
   if (!selected.length) {
-    showToast('Nie ma stacji do ułożenia w tej sali.', TOAST_TYPE.INFO)
+    renderClassroomGrid(state.workstations)
+    showToast(`Zapisano pustą siatkę sali ${room}.`, TOAST_TYPE.SUCCESS)
     return
   }
   const results = await Promise.all(selected.map((workstation, index) => {
@@ -841,7 +985,10 @@ async function handleApplyClassroomGrid(event) {
     const col = (index % cols) + 1
     return updateWorkstation(workstation.id, workstationLocationPayload(workstation, {
       displayName: workstationDisplayName(workstation),
+      stationKind: WORKSTATION_KIND.CLASSROOM,
       classroomLabel: room,
+      classroomRows: rows,
+      classroomCols: cols,
       gridRow: row,
       gridCol: col,
       gridLabel: `${room}_${row}_${col}`,
@@ -859,6 +1006,7 @@ function openWorkstationEditModal(workstationId) {
   state.editingWorkstationId = workstationId
   document.getElementById('workstation-edit-id').value = workstationId
   document.getElementById('workstation-edit-name').value = workstationDisplayName(workstation)
+  document.getElementById('workstation-edit-kind').value = workstationKind(workstation)
   document.getElementById('workstation-edit-room').value = workstationRoom(workstation) === 'Bez sali' ? '' : workstationRoom(workstation)
   document.getElementById('workstation-edit-row').value = workstationGridRow(workstation) || ''
   document.getElementById('workstation-edit-col').value = workstationGridCol(workstation) || ''
@@ -873,6 +1021,7 @@ async function handleWorkstationEditSubmit(event) {
   if (!workstation) return
   const payload = workstationLocationPayload(workstation, {
     displayName: document.getElementById('workstation-edit-name').value,
+    stationKind: document.getElementById('workstation-edit-kind').value,
     classroomLabel: document.getElementById('workstation-edit-room').value,
     gridRow: document.getElementById('workstation-edit-row').value,
     gridCol: document.getElementById('workstation-edit-col').value,
@@ -894,7 +1043,7 @@ function renderWorkstationsTable(workstations) {
   const tbody = document.getElementById('workstations-table-body')
   if (!tbody) return
   if (!workstations.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="9" class="px-6 py-8 text-center text-slate-500">Brak aktywnych stacji. Uruchom start.command/start.sh na wybranym komputerze.</td></tr>'
     return
   }
 
@@ -906,6 +1055,7 @@ function renderWorkstationsTable(workstations) {
     return `
       <tr class="hover:bg-slate-50">
         <td class="px-6 py-3 font-medium">${escapeHtml(workstationDisplayName(workstation))}</td>
+        <td class="px-6 py-3">${workstationKindBadge(workstation)}</td>
         <td class="px-6 py-3 text-slate-600">
           <div>${escapeHtml(workstationRoom(workstation))}</div>
           <div class="font-mono text-xs text-slate-400">${escapeHtml(position)} · ${escapeHtml(workstationGridLabel(workstation))}</div>
@@ -915,9 +1065,12 @@ function renderWorkstationsTable(workstations) {
         <td class="px-6 py-3">${workstationStatusBadge(workstation.status)}</td>
         <td class="px-6 py-3">${workstationAdvancedSummary(workstation)}</td>
         <td class="px-6 py-3 text-slate-500">${formatDate(workstation.last_seen_at)}</td>
-        <td class="px-6 py-3 space-x-2">
+        <td class="px-6 py-3">
+          <div class="flex flex-wrap gap-2">
           <button class="workstation-edit text-slate-700 hover:underline text-sm" data-id="${workstation.id}">Edytuj</button>
           <button class="workstation-message text-blue-600 hover:underline text-sm" data-id="${workstation.id}">Wyślij wiadomość</button>
+          ${isClassroomWorkstation(workstation) ? workstationCommandButtons(workstation) : ''}
+          </div>
         </td>
       </tr>
     `
@@ -929,6 +1082,30 @@ function renderWorkstationsTable(workstations) {
   tbody.querySelectorAll('.workstation-message').forEach((button) => {
     button.addEventListener('click', () => openWorkstationMessageModal(button.dataset.id, null))
   })
+  tbody.querySelectorAll('.workstation-command').forEach((button) => {
+    button.addEventListener('click', () => sendWorkstationCommand(button.dataset.id, button.dataset.command))
+  })
+}
+
+function workstationCommandButtons(workstation) {
+  const commands = ['update', 'pause', 'resume', 'refresh']
+  return commands.map((command) => `
+    <button class="workstation-command text-slate-600 hover:text-slate-900 hover:underline text-sm" data-id="${workstation.id}" data-command="${command}">${WORKSTATION_COMMAND_LABELS[command]}</button>
+  `).join('')
+}
+
+async function sendWorkstationCommand(workstationId, command) {
+  const workstation = findWorkstation(workstationId)
+  if (!workstation || !WORKSTATION_COMMAND_LABELS[command]) return
+  if (command === 'shutdown' && !confirm('Wyłączyć proces stacji zdalnie?')) return
+  const content = JSON.stringify({
+    command,
+    label: WORKSTATION_COMMAND_LABELS[command],
+    requestedBy: state.user?.email || 'operator',
+    requestedAt: new Date().toISOString(),
+  })
+  const ok = await sendWorkstationMessage({ workstationId, taskId: null, content, messageType: 'command' })
+  if (ok) showToast(`Wysłano komendę: ${WORKSTATION_COMMAND_LABELS[command]}.`, TOAST_TYPE.SUCCESS)
 }
 
 /**
@@ -939,16 +1116,19 @@ function renderWorkstationsTable(workstations) {
 function renderClassroomGrid(workstations) {
   const container = document.getElementById('workstation-classroom-grid')
   if (!container) return
-  if (!workstations.length) {
-    container.innerHTML = '<p class="text-sm text-slate-500">Brak stacji do ułożenia w siatce.</p>'
+  const schoolStations = classroomWorkstations(workstations)
+  const layouts = classroomLayoutsFor(workstations)
+  const unplaced = schoolStations.filter((workstation) => workstationRoom(workstation) === 'Bez sali' || !workstationGridRow(workstation) || !workstationGridCol(workstation))
+  if (!layouts.length && !unplaced.length) {
+    container.innerHTML = '<p class="text-sm text-slate-500">Brak szkolnych stacji do ułożenia. Operator lokalny nie trafia na plan sali.</p>'
     return
   }
 
-  container.innerHTML = groupWorkstationsByRoom(workstations).map(([room, roomStations]) => {
-    const maxRow = Math.max(1, ...roomStations.map((workstation) => workstationGridRow(workstation) || 1))
-    const maxCol = Math.max(1, ...roomStations.map((workstation) => workstationGridCol(workstation) || 1))
-    const rows = room === 'Bez sali' ? Math.min(2, Math.ceil(roomStations.length / 6) || 1) : maxRow
-    const cols = room === 'Bez sali' ? Math.min(6, Math.max(1, roomStations.length)) : maxCol
+  const layoutHtml = layouts.map((layout) => {
+    const room = layout.room
+    const roomStations = schoolStations.filter((workstation) => workstationRoom(workstation) === room)
+    const rows = layout.rows
+    const cols = layout.cols
     const cells = []
     for (let row = 1; row <= rows; row += 1) {
       for (let col = 1; col <= cols; col += 1) {
@@ -956,26 +1136,31 @@ function renderClassroomGrid(workstations) {
         cells.push(classroomGridCell(room, row, col, station))
       }
     }
-    const unplaced = roomStations.filter((workstation) => !workstationGridRow(workstation) || !workstationGridCol(workstation))
     return `
       <section class="rounded-lg border border-slate-200 bg-white p-4">
         <div class="flex items-center justify-between gap-3 mb-3">
           <div>
             <h4 class="font-semibold text-slate-900">${escapeHtml(room)}</h4>
-            <div class="text-xs text-slate-500">${roomStations.length} stacji · siatka ${rows} x ${cols}</div>
+            <div class="text-xs text-slate-500">${roomStations.length}/${rows * cols} stacji · siatka ${rows} x ${cols}</div>
           </div>
         </div>
         <div class="grid gap-2" style="grid-template-columns: repeat(${cols}, minmax(92px, 1fr));">
           ${cells.join('')}
         </div>
-        ${unplaced.length ? `
-          <div class="mt-3 flex flex-wrap gap-2">
-            ${unplaced.map((workstation) => classroomUnplacedChip(workstation)).join('')}
-          </div>
-        ` : ''}
       </section>
     `
   }).join('')
+
+  const unplacedHtml = unplaced.length ? `
+    <section class="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
+      <h4 class="font-semibold text-slate-900">Nieprzypisane stacje szkolne</h4>
+      <div class="mt-3 flex flex-wrap gap-2">
+        ${unplaced.map((workstation) => classroomUnplacedChip(workstation)).join('')}
+      </div>
+    </section>
+  ` : ''
+
+  container.innerHTML = `${layoutHtml}${unplacedHtml}`
 
   bindClassroomGridEvents(container)
 }
@@ -1035,6 +1220,7 @@ async function handleClassroomDrop(event, cell) {
   const updates = [
     updateWorkstation(dragged.id, workstationLocationPayload(dragged, {
       displayName: workstationDisplayName(dragged),
+      stationKind: WORKSTATION_KIND.CLASSROOM,
       classroomLabel: room,
       gridRow: row,
       gridCol: col,
@@ -1045,12 +1231,14 @@ async function handleClassroomDrop(event, cell) {
     const originalRoom = workstationRoom(dragged)
     const originalRow = workstationGridRow(dragged)
     const originalCol = workstationGridCol(dragged)
+    const originalRoomValue = originalRoom === 'Bez sali' ? '' : originalRoom
     updates.push(updateWorkstation(target.id, workstationLocationPayload(target, {
       displayName: workstationDisplayName(target),
-      classroomLabel: originalRoom,
+      stationKind: WORKSTATION_KIND.CLASSROOM,
+      classroomLabel: originalRoomValue,
       gridRow: originalRow,
       gridCol: originalCol,
-      gridLabel: originalRoom !== 'Bez sali' && originalRow && originalCol ? `${originalRoom}_${originalRow}_${originalCol}` : workstationGridLabel(target),
+      gridLabel: originalRoomValue && originalRow && originalCol ? `${originalRoomValue}_${originalRow}_${originalCol}` : '',
     })))
   }
   const results = await Promise.all(updates)
@@ -1243,13 +1431,14 @@ async function getRecentWorkstationMessages() {
  */
 function renderMonitorPanel() {
   const activeTasks = state.tasks.filter(isActiveTask)
-  const freeSlots = state.workstations.reduce((sum, workstation) => sum + workstationFreeSlots(workstation), 0)
-  const staleStations = state.workstations.filter(isStaleWorkstation)
+  const schoolStations = classroomWorkstations(state.workstations)
+  const freeSlots = schoolStations.reduce((sum, workstation) => sum + workstationFreeSlots(workstation), 0)
+  const staleStations = schoolStations.filter(isStaleWorkstation)
   setText('monitor-active-tasks', activeTasks.length)
   setText('monitor-free-slots', freeSlots)
   setText('monitor-stale-workstations', staleStations.length)
   renderMonitorActiveTasks(activeTasks)
-  renderMonitorWorkstations(state.workstations)
+  renderMonitorWorkstations(schoolStations)
   renderSelectedMonitorWorkstation()
 }
 
@@ -1324,7 +1513,9 @@ function renderMonitorWorkstations(workstations) {
 function renderSelectedMonitorWorkstation() {
   const container = document.getElementById('monitor-station-detail')
   if (!container) return
-  const workstation = findWorkstation(state.selectedMonitorWorkstationId) || state.workstations[0]
+  const schoolStations = classroomWorkstations(state.workstations)
+  const selected = findWorkstation(state.selectedMonitorWorkstationId)
+  const workstation = selected && isClassroomWorkstation(selected) ? selected : schoolStations[0]
   if (!workstation) {
     container.innerHTML = '<p class="text-sm text-slate-500">Wybierz stację, aby zobaczyć monitor.</p>'
     return
@@ -1477,13 +1668,15 @@ function populateTaskWorkstationSelects() {
   const workstationSelect = document.getElementById('task-workstation')
   const modelSelect = document.getElementById('task-model')
   if (!workstationSelect || !modelSelect) return
+  const schoolStations = selectableWorkstations(state.workstations)
 
   workstationSelect.innerHTML = [
     '<option value="">Automatycznie - AI wybierze stację</option>',
-    groupedWorkstationOptionsHtml(state.workstations, true),
+    groupedWorkstationOptionsHtml(schoolStations, true),
   ].join('')
 
   populateTaskModelSelect(workstationSelect.value)
+  renderTaskWorkstationCards(schoolStations, workstationSelect.value)
 }
 
 function groupedWorkstationOptionsHtml(workstations, includeStatus = false) {
@@ -1511,6 +1704,7 @@ function populateTaskModelSelect(workstationId) {
     modelSelect.innerHTML = '<option value="">Automatycznie</option>'
     modelSelect.disabled = true
     renderTaskWorkstationAdvancedInfo(null)
+    renderTaskWorkstationCards(selectableWorkstations(state.workstations), '')
     return
   }
 
@@ -1521,6 +1715,42 @@ function populateTaskModelSelect(workstationId) {
     ? models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join('')
     : '<option value="">Brak wykrytych modeli</option>'
   renderTaskWorkstationAdvancedInfo(workstation)
+  renderTaskWorkstationCards(selectableWorkstations(state.workstations), workstationId)
+}
+
+function renderTaskWorkstationCards(workstations, selectedId = '') {
+  const container = document.getElementById('task-workstation-cards')
+  if (!container) return
+  const autoActive = !selectedId
+  const cards = [
+    `<button type="button" class="task-workstation-card rounded-lg border ${autoActive ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'} p-3 text-left hover:border-blue-400" data-id="">
+      <div class="font-semibold text-slate-900">Automatycznie</div>
+      <div class="text-xs text-slate-500 mt-1">AI wybierze wolną stację z Twojego tokenu.</div>
+    </button>`,
+    ...workstations.map((workstation) => {
+      const active = workstation.id === selectedId
+      const stale = isStaleWorkstation(workstation)
+      return `<button type="button" class="task-workstation-card rounded-lg border ${active ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'} p-3 text-left hover:border-blue-400" data-id="${workstation.id}">
+        <div class="flex items-center justify-between gap-2">
+          <div class="font-semibold text-slate-900 truncate">${escapeHtml(workstationGridLabel(workstation))}</div>
+          <span class="h-2 w-2 rounded-full ${stale ? 'bg-red-500' : 'bg-emerald-500'}"></span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1 truncate">${escapeHtml(workstationDisplayName(workstation))}</div>
+        <div class="text-xs text-slate-500 mt-1">${escapeHtml(workstationRoom(workstation))} · ${workstationActiveJobs(workstation)}/${workstationParallelSlots(workstation)} slotów</div>
+      </button>`
+    }),
+  ]
+  container.innerHTML = cards.join('')
+  container.querySelectorAll('.task-workstation-card').forEach((button) => {
+    button.addEventListener('click', () => selectTaskWorkstation(button.dataset.id || ''))
+  })
+}
+
+function selectTaskWorkstation(workstationId) {
+  const select = document.getElementById('task-workstation')
+  if (!select) return
+  select.value = workstationId
+  populateTaskModelSelect(workstationId)
 }
 
 /**
@@ -1569,9 +1799,10 @@ async function getWorkstationMessagesForTask(taskId) {
  * @param {string} payload.workstationId
  * @param {string|null} payload.taskId
  * @param {string} payload.content
+ * @param {string} [payload.messageType]
  * @returns {Promise<boolean>}
  */
-async function sendWorkstationMessage({ workstationId, taskId, content }) {
+async function sendWorkstationMessage({ workstationId, taskId, content, messageType = 'note' }) {
   try {
     const { error } = await supabase
       .from('workstation_messages')
@@ -1580,7 +1811,7 @@ async function sendWorkstationMessage({ workstationId, taskId, content }) {
         task_id: taskId || null,
         sender_kind: 'user',
         sender_label: state.user?.email || 'user',
-        message_type: 'note',
+        message_type: messageType,
         content,
       })
     if (error) throw error
@@ -1718,7 +1949,7 @@ function renderStats(tasks) {
   setText('stat-pending', counts.pending)
   setText('stat-in-progress', counts.in_progress)
   setText('stat-done', counts.done)
-  setText('stat-workstations', state.workstations.filter((workstation) => !isStaleWorkstation(workstation) && ['online', 'busy'].includes(workstation.status)).length)
+  setText('stat-workstations', classroomWorkstations(state.workstations).filter((workstation) => !isStaleWorkstation(workstation) && ['online', 'busy'].includes(workstation.status)).length)
 }
 
 /**
@@ -1762,6 +1993,37 @@ function renderTasksTable(tbodyId, tasks) {
       event.stopPropagation()
       handleDeleteTask(button.dataset.id)
     })
+  })
+}
+
+function renderTaskCards(tasks) {
+  const container = document.getElementById('tasks-cards')
+  if (!container) return
+  if (!tasks.length) {
+    container.innerHTML = '<p class="px-6 py-8 text-center text-slate-500">Brak zadań</p>'
+    return
+  }
+  container.innerHTML = tasks.map((task) => `
+    <button type="button" class="task-card text-left rounded-lg border border-slate-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm" data-task-id="${task.id}">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="font-mono text-xs text-slate-400">${escapeHtml(String(task.id).slice(0, 8))}</div>
+          <h4 class="mt-1 font-semibold text-slate-900">${escapeHtml(task.title || 'Bez tytułu')}</h4>
+        </div>
+        ${statusBadge(task.status)}
+      </div>
+      <p class="mt-3 text-sm text-slate-600 line-clamp-3">${escapeHtml(task.description || 'Brak szczegółów.')}</p>
+      <div class="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <span>${escapeHtml(priorityLabel(task.priority))}</span>
+        <span>·</span>
+        <span>${escapeHtml(resolveWorkstationName(task.requested_workstation_id))}</span>
+        <span>·</span>
+        <span>${formatDate(task.created_at)}</span>
+      </div>
+    </button>
+  `).join('')
+  container.querySelectorAll('.task-card').forEach((card) => {
+    card.addEventListener('click', () => openTaskDetail(card.dataset.taskId))
   })
 }
 
@@ -2195,7 +2457,7 @@ function renderSettingsForm() {
   if (select) {
     select.innerHTML = [
       '<option value="">Automatycznie - AI wybierze stację</option>',
-      groupedWorkstationOptionsHtml(state.workstations),
+      groupedWorkstationOptionsHtml(selectableWorkstations(state.workstations)),
     ].join('')
     select.value = settings.defaultWorkstation
   }
@@ -2253,7 +2515,7 @@ function renderStationConfigInstruction() {
     `SD: ${sd ? 'włączone' : 'wyłączone'}`,
     scheduleLine,
     `Auto-update: ${autoUpdate ? 'włączony' : 'wyłączony'}`,
-    kv.startsWith('planar') || kv.startsWith('iso') || kv.startsWith('turbo')
+    kv.includes('planar') || kv.includes('iso') || kv.includes('turbo')
       ? 'Uwaga: Planar/Iso/Turbo wymagają builda llama.cpp zgodnego z RotorQuant; stock llama.cpp spadnie do q8_0.'
       : 'q8_0 jest domyślnym wyborem dla stock llama.cpp i długiego kontekstu.',
     '',
@@ -2787,11 +3049,24 @@ function formatDate(iso) {
   }
 }
 
+function bindHelpTooltips() {
+  document.querySelectorAll('.help-dot').forEach((dot) => {
+    const text = dot.getAttribute('data-help') || dot.getAttribute('title') || ''
+    if (!text) return
+    dot.setAttribute('data-help', text)
+    dot.removeAttribute('title')
+    dot.setAttribute('tabindex', '0')
+    dot.setAttribute('role', 'button')
+    dot.setAttribute('aria-label', text)
+  })
+}
+
 // ============================================================================
 // BOOTSTRAP — uruchomienie aplikacji po załadowaniu DOM
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+  bindHelpTooltips()
   bindNavigation()
   bindTaskModal()
   bindAgentModal()

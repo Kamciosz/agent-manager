@@ -260,6 +260,11 @@ function Get-NormalizedContextMode([object] $Value, [bool] $AllowNative = $false
 
 function Get-NormalizedKvCache([object] $Value) {
   $raw = ([string] $Value).Trim().ToLowerInvariant()
+  if ($raw.Contains('/')) {
+    $parts = $raw -split '/', 2
+    $allowed = @('auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4')
+    if ($parts.Count -eq 2 -and $parts[0].Trim() -in $allowed -and $parts[1].Trim() -in $allowed) { return "$($parts[0].Trim())/$($parts[1].Trim())" }
+  }
   if ($raw -in @('auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4')) { return $raw }
   return 'auto'
 }
@@ -348,7 +353,11 @@ function Sync-RuntimeConfig {
   Set-ConfigValue $cfg 'effectiveKvCacheQuantization' (Get-EffectiveKvCache $cfg)
   if ($null -eq $cfg.PSObject.Properties['autoUpdate']) { Set-ConfigValue $cfg 'autoUpdate' $false }
   Set-ConfigValue $cfg 'optimizationMode' ($(if (Get-ConfigBool $cfg 'sdEnabled') { 'sd-experimental' } elseif ((Get-ConfigInt $cfg 'parallelSlots' 1 1 4) -gt 1) { 'parallel' } else { 'standard' }))
-  if ($null -eq $cfg.PSObject.Properties['acceptsJobs']) { Set-ConfigValue $cfg 'acceptsJobs' $true }
+  $stationMode = (Get-ConfigString $cfg 'stationMode' '').ToLowerInvariant()
+  if ($stationMode -and $stationMode -notin @('operator', 'classroom')) { $stationMode = '' }
+  if ($stationMode) { Set-ConfigValue $cfg 'stationMode' $stationMode }
+  if ($stationMode -eq 'operator') { Set-ConfigValue $cfg 'acceptsJobs' $false }
+  elseif ($null -eq $cfg.PSObject.Properties['acceptsJobs']) { Set-ConfigValue $cfg 'acceptsJobs' $true }
   if ($null -eq $cfg.PSObject.Properties['scheduleEnabled']) { Set-ConfigValue $cfg 'scheduleEnabled' $false }
   if ($null -eq $cfg.PSObject.Properties['scheduleStart']) { Set-ConfigValue $cfg 'scheduleStart' $null }
   if ($null -eq $cfg.PSObject.Properties['scheduleEnd']) { Set-ConfigValue $cfg 'scheduleEnd' $null }
@@ -356,6 +365,35 @@ function Sync-RuntimeConfig {
   if ($null -eq $cfg.PSObject.Properties['scheduleEndAction']) { Set-ConfigValue $cfg 'scheduleEndAction' 'finish-current' }
   if ($null -eq $cfg.PSObject.Properties['scheduleDumpOnStop']) { Set-ConfigValue $cfg 'scheduleDumpOnStop' $false }
   Save-Config $cfg
+}
+
+function Set-StationModeConfig([string] $Mode) {
+  $cfg = Read-Config
+  $normalized = if ($Mode -eq 'operator') { 'operator' } else { 'classroom' }
+  Set-ConfigValue $cfg 'stationMode' $normalized
+  Set-ConfigValue $cfg 'acceptsJobs' ($normalized -eq 'classroom')
+  Save-Config $cfg
+}
+
+function Test-OperatorRuntime {
+  $cfg = Read-Config
+  return (Get-ConfigString $cfg 'stationMode' '') -eq 'operator'
+}
+
+function Ensure-StationModeConfig {
+  $cfg = Read-Config
+  $mode = (Get-ConfigString $cfg 'stationMode' '').ToLowerInvariant()
+  if ($mode -in @('operator', 'classroom')) { return }
+
+  Write-Host ''
+  Write-Host 'Computer mode:'
+  Write-Host '  operator  - teacher/operator machine, local AI proxy without station registration'
+  Write-Host '  classroom - student/lab workstation enrolled with dashboard token'
+  $answer = Prompt-WithDefault 'Mode' 'classroom'
+  if ($answer.ToLowerInvariant() -in @('operator', 'op', 'teacher', 'nauczyciel')) { $mode = 'operator' }
+  else { $mode = 'classroom' }
+  Set-StationModeConfig $mode
+  Write-StartLog "Saved computer mode: $mode."
 }
 
 function Prompt-WithDefault([string] $Label, [string] $Default = '') {
@@ -720,7 +758,8 @@ function Ensure-WorkstationConfig {
     if ($origin -and -not $origins.Contains($origin)) { $origins.Add($origin) }
   }
   Set-ConfigValue $cfg 'allowedOrigins' $origins.ToArray()
-  if ($null -eq $cfg.PSObject.Properties['acceptsJobs']) { Set-ConfigValue $cfg 'acceptsJobs' $true }
+  Set-ConfigValue $cfg 'stationMode' 'classroom'
+  Set-ConfigValue $cfg 'acceptsJobs' $true
   Save-Config $cfg
   Write-StartLog 'Saved workstation config. The enrollment token will be exchanged for a restricted station session at startup.'
 }
@@ -761,7 +800,7 @@ function Configure-Advanced {
     default { $contextMode = 'extended'; $contextSize = Convert-TokenCount $contextChoice $DefaultContextSizeTokens; break }
   }
   $contextSize = if ($contextMode -eq 'native') { 0 } else { [Math]::Max(65536, [Math]::Min(262144, $contextSize)) }
-  $kvCache = Get-NormalizedKvCache (Prompt-WithDefault 'KV cache compression: q8_0 (~50%), auto, f16, q4_0, or RotorQuant planar3/iso3/planar4/iso4/turbo3/turbo4' (Get-ConfigString $cfg 'kvCacheQuantization' $DefaultKvCache))
+  $kvCache = Get-NormalizedKvCache (Prompt-WithDefault 'KV cache compression: q8_0, iso3/iso3, planar3/f16, auto, f16, q4_0, or RotorQuant planar3/iso3/planar4/iso4/turbo3/turbo4' (Get-ConfigString $cfg 'kvCacheQuantization' $DefaultKvCache))
   $autoDefault = if (Get-ConfigBool $cfg 'autoUpdate' $false) { 'y' } else { 'N' }
   $autoAnswer = Prompt-WithDefault 'Automatically update launcher on startup? (y/N)' $autoDefault
   $autoUpdate = $autoAnswer.ToLowerInvariant() -in @('y', 'yes', 't', 'tak')
@@ -812,7 +851,12 @@ function Ensure-Config([string] $Backend) {
   }
 
   Sync-RuntimeConfig
-  Ensure-WorkstationConfig
+  Ensure-StationModeConfig
+  if (Test-OperatorRuntime) {
+    Write-StartLog 'Operator mode: skipping station token and workstation registration.'
+  } else {
+    Ensure-WorkstationConfig
+  }
   if ($AdvancedConfig -or $askedModel) { Configure-Advanced }
   if ($ScheduleConfig) { Configure-Schedule } else { Sync-RuntimeConfig }
 }
@@ -987,14 +1031,25 @@ function Start-Llama([string] $ModelPath, [string] $Backend) {
 
   $kvEffective = Get-EffectiveKvCache $cfg
   $kvRequested = Get-NormalizedKvCache (Get-ConfigString $cfg 'kvCacheQuantization' $DefaultKvCache)
+  if ($kvEffective.Contains('/')) {
+    $kvParts = $kvEffective -split '/', 2
+    $kvKey = $kvParts[0]
+    $kvValue = $kvParts[1]
+  } else {
+    $kvKey = $kvEffective
+    $kvValue = $kvEffective
+  }
+  if ($kvKey -notin @('f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4')) { $kvKey = 'f16' }
+  if ($kvValue -notin @('f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4')) { $kvValue = $kvKey }
   if ((Test-LlamaFlag '--cache-type-k') -and (Test-LlamaFlag '--cache-type-v')) {
-    if (-not (Test-LlamaCacheType $kvEffective)) {
-      Write-StartWarn "config.json requests KV=$kvEffective, but this llama-server does not advertise that cache type. Falling back to q8_0."
-      $kvEffective = 'q8_0'
+    if ((-not (Test-LlamaCacheType $kvKey)) -or (-not (Test-LlamaCacheType $kvValue))) {
+      Write-StartWarn "config.json requests KV=$kvEffective, but this llama-server does not advertise that cache type. Falling back to q8_0/q8_0."
+      $kvKey = 'q8_0'
+      $kvValue = 'q8_0'
     }
-    $args += @('--cache-type-k', $kvEffective, '--cache-type-v', $kvEffective)
-    Write-StartLog "KV cache compression: $kvEffective (requested=$kvRequested)."
-  } elseif ($kvEffective -ne 'f16') {
+    $args += @('--cache-type-k', $kvKey, '--cache-type-v', $kvValue)
+    Write-StartLog "KV cache compression: $kvKey/$kvValue (requested=$kvRequested)."
+  } elseif (($kvKey -ne 'f16') -or ($kvValue -ne 'f16')) {
     Write-StartWarn "config.json requests KV=$kvEffective, but llama-server does not advertise --cache-type-k/--cache-type-v. Starting without KV compression."
   }
 
@@ -1281,7 +1336,11 @@ try {
   Sync-RuntimeConfig
   [void] (Start-Proxy)
   Wait-Health "http://127.0.0.1:$ProxyPort/health" 'proxy' 15
-  [void] (Start-WorkstationAgent)
+  if (Test-OperatorRuntime) {
+    Write-StartLog 'Operator mode: local AI proxy started without workstation-agent.'
+  } else {
+    [void] (Start-WorkstationAgent)
+  }
   Wait-ManagedProcesses
   exit 0
 } catch {

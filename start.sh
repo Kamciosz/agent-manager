@@ -517,7 +517,9 @@ cfg.contextNativeUnsafeAccepted = cfg.contextMode === 'native'
 cfg.effectiveKvCacheQuantization = resolveKvCache(cfg.kvCacheQuantization, cfg.effectiveContextSizeTokens)
 cfg.autoUpdate = cfg.autoUpdate === true
 cfg.optimizationMode = cfg.sdEnabled ? 'sd-experimental' : (cfg.parallelSlots > 1 ? 'parallel' : 'standard')
-if (typeof cfg.acceptsJobs !== 'boolean') cfg.acceptsJobs = true
+if (cfg.stationMode && !['operator', 'classroom'].includes(String(cfg.stationMode))) delete cfg.stationMode
+if (cfg.stationMode === 'operator') cfg.acceptsJobs = false
+if (typeof cfg.acceptsJobs !== 'boolean') cfg.acceptsJobs = cfg.stationMode === 'operator' ? false : true
 if (typeof cfg.scheduleEnabled !== 'boolean') cfg.scheduleEnabled = false
 if (!('scheduleStart' in cfg)) cfg.scheduleStart = null
 if (!('scheduleEnd' in cfg)) cfg.scheduleEnd = null
@@ -549,6 +551,10 @@ function normalizeContextMode(value, allowNative = false) {
 
 function normalizeKvCache(value) {
   const raw = String(value || 'auto').trim().toLowerCase()
+  if (raw.includes('/')) {
+    const [keyType, valueType] = raw.split('/').map((part) => part.trim())
+    return SUPPORTED_KV_CACHE.includes(keyType) && SUPPORTED_KV_CACHE.includes(valueType) ? `${keyType}/${valueType}` : 'auto'
+  }
   return SUPPORTED_KV_CACHE.includes(raw) ? raw : 'auto'
 }
 
@@ -623,6 +629,10 @@ function normalizeContextMode(value, allowNative = false) {
 
 function normalizeKvCache(value) {
   const raw = String(value || 'auto').trim().toLowerCase()
+  if (raw.includes('/')) {
+    const [keyType, valueType] = raw.split('/').map((part) => part.trim())
+    return SUPPORTED_KV_CACHE.includes(keyType) && SUPPORTED_KV_CACHE.includes(valueType) ? `${keyType}/${valueType}` : 'auto'
+  }
   return SUPPORTED_KV_CACHE.includes(raw) ? raw : 'auto'
 }
 
@@ -673,7 +683,7 @@ configure_advanced_options() {
     256k|262144) context_mode="extended"; context_size="262144" ;;
     *) context_mode="extended"; context_size="$context_choice" ;;
   esac
-  kv_cache="$(prompt_with_default "Kompresja KV cache: q8_0 (~50%), auto, f16, q4_0 albo RotorQuant: planar3/iso3/planar4/iso4/turbo3/turbo4" "$(read_config_json_value kvCacheQuantization $DEFAULT_KV_CACHE)")"
+  kv_cache="$(prompt_with_default "Kompresja KV cache: q8_0, iso3/iso3, planar3/f16, auto, f16, q4_0 albo RotorQuant planar3/iso3/planar4/iso4/turbo3/turbo4" "$(read_config_json_value kvCacheQuantization $DEFAULT_KV_CACHE)")"
   auto_update_answer="$(prompt_with_default "Automatycznie aktualizować launcher przy starcie? (y/N)" "$(if [ "$(read_config_json_value autoUpdate false)" = "true" ]; then echo y; else echo N; fi)")"
   case "$(printf '%s' "$auto_update_answer" | tr '[:upper:]' '[:lower:]')" in
     y|yes|t|tak) auto_update="true" ;;
@@ -819,7 +829,8 @@ const appOrigin = (process.env.APP_ORIGIN_VALUE || '').trim().replace(/\/+$/, ''
 if (appOrigin) origins.add(appOrigin)
 cfg.appOrigin = appOrigin || cfg.appOrigin || ''
 cfg.allowedOrigins = Array.from(origins).filter(Boolean)
-if (typeof cfg.acceptsJobs !== 'boolean') cfg.acceptsJobs = true
+cfg.stationMode = 'classroom'
+cfg.acceptsJobs = true
 if (typeof cfg.scheduleEnabled !== 'boolean') cfg.scheduleEnabled = false
 if (!('scheduleStart' in cfg)) cfg.scheduleStart = null
 if (!('scheduleEnd' in cfg)) cfg.scheduleEnd = null
@@ -828,6 +839,46 @@ if (!['finish-current', 'stop-now'].includes(cfg.scheduleEndAction)) cfg.schedul
 cfg.scheduleDumpOnStop = cfg.scheduleDumpOnStop === true
 fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
 NODE
+}
+
+write_station_mode_config() {
+  local station_mode="$1"
+  CONFIG_FILE_ENV="$CONFIG_FILE" STATION_MODE_VALUE="$station_mode" node <<'NODE'
+const fs = require('node:fs')
+const file = process.env.CONFIG_FILE_ENV
+let cfg = {}
+try { cfg = JSON.parse(fs.readFileSync(file, 'utf8')) } catch { cfg = {} }
+const mode = process.env.STATION_MODE_VALUE === 'operator' ? 'operator' : 'classroom'
+cfg.stationMode = mode
+cfg.acceptsJobs = mode === 'classroom'
+fs.writeFileSync(file, JSON.stringify(cfg, null, 2) + '\n')
+NODE
+}
+
+is_operator_runtime() {
+  [ "$(read_config_json_value stationMode '')" = "operator" ]
+}
+
+ensure_station_mode_config() {
+  local mode default_mode answer
+  mode="$(read_config_json_value stationMode '')"
+  case "$mode" in operator|classroom) return ;; esac
+  if [ "$(detect_os)" = "darwin" ]; then
+    default_mode="operator"
+  else
+    default_mode="classroom"
+  fi
+  echo
+  echo "Tryb tego komputera:"
+  echo "  operator  - MacBook/panel nauczyciela, lokalne AI bez rejestracji jako szkolna stacja"
+  echo "  classroom - komputer ucznia/stacja robocza rejestrowana tokenem z dashboardu"
+  answer="$(prompt_with_default "Tryb" "$default_mode")"
+  case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" in
+    operator|op|nauczyciel) mode="operator" ;;
+    *) mode="classroom" ;;
+  esac
+  write_station_mode_config "$mode"
+  log "Zapisano tryb komputera: $mode."
 }
 
 write_model_config() {
@@ -925,7 +976,12 @@ ensure_config() {
   fi
 
   sync_runtime_config_json
-  ensure_workstation_config
+  ensure_station_mode_config
+  if is_operator_runtime; then
+    log "Tryb operatora: pomijam token stacji i rejestrację tego Maca jako komputer szkolny."
+  else
+    ensure_workstation_config
+  fi
   if [ "$ADVANCED_CONFIG" = "1" ] || [ "$asked_model_config" = "1" ]; then
     configure_advanced_options
   fi
@@ -1198,7 +1254,7 @@ start_llama() {
   local bin
   bin="$(llama_binary_path)"
   local extra_args=()
-  local parallel_slots sd_enabled draft_model_path speculative_tokens context_size kv_requested kv_effective
+  local parallel_slots sd_enabled draft_model_path speculative_tokens context_size kv_requested kv_effective kv_key kv_value
 
   context_size="$(read_config_json_value effectiveContextSizeTokens 0)"
   if ! [[ "$context_size" =~ ^[0-9]+$ ]]; then context_size=0; fi
@@ -1214,15 +1270,21 @@ start_llama() {
 
   kv_requested="$(read_config_json_value kvCacheQuantization $DEFAULT_KV_CACHE)"
   kv_effective="$(read_config_json_value effectiveKvCacheQuantization f16)"
-  case "$kv_effective" in f32|f16|bf16|q8_0|q4_0|q4_1|iq4_nl|q5_0|q5_1|planar3|iso3|planar4|iso4|turbo3|turbo4) ;; *) kv_effective="f16" ;; esac
+  case "$kv_effective" in
+    */*) kv_key="${kv_effective%%/*}"; kv_value="${kv_effective#*/}" ;;
+    *) kv_key="$kv_effective"; kv_value="$kv_effective" ;;
+  esac
+  case "$kv_key" in f32|f16|bf16|q8_0|q4_0|q4_1|iq4_nl|q5_0|q5_1|planar3|iso3|planar4|iso4|turbo3|turbo4) ;; *) kv_key="f16" ;; esac
+  case "$kv_value" in f32|f16|bf16|q8_0|q4_0|q4_1|iq4_nl|q5_0|q5_1|planar3|iso3|planar4|iso4|turbo3|turbo4) ;; *) kv_value="$kv_key" ;; esac
   if llama_supports_flag "$bin" "--cache-type-k" && llama_supports_flag "$bin" "--cache-type-v"; then
-    if ! llama_supports_cache_type "$bin" "$kv_effective"; then
-      warn "config.json chce KV=$kv_effective, ale ta binarka llama-server nie pokazuje tego typu cache. Używam q8_0 jako stabilnego fallbacku."
-      kv_effective="q8_0"
+    if ! llama_supports_cache_type "$bin" "$kv_key" || ! llama_supports_cache_type "$bin" "$kv_value"; then
+      warn "config.json chce KV=$kv_effective, ale ta binarka llama-server nie pokazuje tego typu cache. Używam q8_0/q8_0 jako stabilnego fallbacku."
+      kv_key="q8_0"
+      kv_value="q8_0"
     fi
-    extra_args+=( --cache-type-k "$kv_effective" --cache-type-v "$kv_effective" )
-    log "KV cache compression: $kv_effective (requested=$kv_requested)."
-  elif [ "$kv_effective" != "f16" ]; then
+    extra_args+=( --cache-type-k "$kv_key" --cache-type-v "$kv_value" )
+    log "KV cache compression: ${kv_key}/${kv_value} (requested=$kv_requested)."
+  elif [ "$kv_key" != "f16" ] || [ "$kv_value" != "f16" ]; then
     warn "config.json chce KV=$kv_effective, ale ten llama-server nie pokazuje --cache-type-k/--cache-type-v. Startuję bez kompresji KV."
   fi
 
@@ -1525,7 +1587,11 @@ fi
 
 start_proxy
 wait_for_health "http://127.0.0.1:$PROXY_PORT/health" "proxy" 15 || exit 1
-start_workstation_agent
+if is_operator_runtime; then
+  log "Tryb operatora: uruchomiono lokalny proxy AI bez agenta stacji roboczej."
+else
+  start_workstation_agent
+fi
 
 cat <<EOF
 
@@ -1534,9 +1600,10 @@ cat <<EOF
 
   llama-server   http://127.0.0.1:$LLAMA_PORT
   proxy          http://127.0.0.1:$PROXY_PORT
-  station agent  $LOGS_DIR/workstation-agent.log
+  station agent  $(is_operator_runtime && printf 'pominięty (tryb operatora)' || printf '%s' "$LOGS_DIR/workstation-agent.log")
   model          $(basename "$MODEL_PATH")
   backend        $GPU_DETECTED
+  stationMode    $(read_config_json_value stationMode operator)
   parallelSlots  $(read_config_json_value parallelSlots 1)
   context        $(read_config_json_value contextMode extended) / $(read_config_json_value effectiveContextSizeTokens $DEFAULT_CONTEXT_TOKENS) tokens
   KV cache       $(read_config_json_value effectiveKvCacheQuantization f16)

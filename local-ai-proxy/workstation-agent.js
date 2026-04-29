@@ -11,6 +11,7 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { execFile } = require('node:child_process')
 const { getScheduleState, normalizeSchedule } = require('./runtime-schedule')
 
 const CONFIG_PATH = path.join(__dirname, 'config.json')
@@ -56,6 +57,7 @@ function loadConfig() {
   const contextMode = normalizeContextMode(raw.contextMode)
   const contextSizeTokens = contextMode === 'native' ? 0 : clampInt(raw.contextSizeTokens, DEFAULTS.CONTEXT_TOKENS, 65536, 262144)
   const kvCacheQuantization = normalizeKvCache(raw.kvCacheQuantization || DEFAULTS.KV_CACHE)
+  const stationMode = String(raw.stationMode || raw.stationKind || 'classroom').trim().toLowerCase() === 'operator' ? 'operator' : 'classroom'
   if (raw.scheduleEnabled === true && !schedule.valid) {
     log('Niepoprawny harmonogram w config.json - wylaczam schedule dla tej sesji.', raw.scheduleStart, raw.scheduleEnd)
   }
@@ -78,7 +80,8 @@ function loadConfig() {
     backend: raw.backend || 'cpu',
     proxyPort: Number(raw.proxyPort) || 3001,
     llamaPort: Number(raw.llamaPort) || 8080,
-    acceptsJobs: raw.acceptsJobs !== false,
+    stationMode,
+    acceptsJobs: stationMode === 'classroom' && raw.acceptsJobs !== false,
     scheduleEnabled: schedule.enabled,
     scheduleStart: schedule.start,
     scheduleEnd: schedule.end,
@@ -111,6 +114,10 @@ function normalizeContextMode(value) {
 
 function normalizeKvCache(value) {
   const raw = String(value || 'auto').trim().toLowerCase()
+  if (raw.includes('/')) {
+    const [keyType, valueType] = raw.split('/').map((part) => part.trim())
+    return SUPPORTED_KV_CACHE.includes(keyType) && SUPPORTED_KV_CACHE.includes(valueType) ? `${keyType}/${valueType}` : 'auto'
+  }
   return SUPPORTED_KV_CACHE.includes(raw) ? raw : 'auto'
 }
 
@@ -441,6 +448,7 @@ function workstationPayload(cfg, userId, statusOverride) {
       parallelSlots: cfg.parallelSlots,
       activeJobs,
       availableSlots: availableSlots(cfg),
+      stationKind: cfg.stationMode,
       sdEnabled: cfg.sdEnabled,
       draftModelName: cfg.draftModelName || null,
       speculativeTokens: cfg.speculativeTokens,
@@ -494,7 +502,7 @@ async function fetchQueuedJobs(cfg, session) {
 }
 
 async function fetchUnreadMessages(cfg, session) {
-  if (!workstationId || !isWithinSchedule(cfg)) return []
+  if (!workstationId) return []
   return restSelect(
     cfg,
     session,
@@ -505,17 +513,23 @@ async function fetchUnreadMessages(cfg, session) {
 
 function buildJobPrompt(job) {
   const payload = job.payload || {}
+  const context = payload.context || {}
+  const metadata = [
+    payload.git_repo ? `Repo: ${payload.git_repo}` : '',
+    context.raw ? `Kontekst JSON: ${JSON.stringify(context.raw).slice(0, 1800)}` : '',
+  ].filter(Boolean).join('\n')
   return [
-    'Jestes agentem AI uruchomionym na szkolnej stacji roboczej.',
+    'Jestes agentem AI na szkolnej stacji roboczej. Masz wykonac zadanie i zwrocic sam wynik pracy.',
+    'Nie przepisuj w odpowiedzi naglowkow ani pol technicznych takich jak Tytul, Opis, Repo, Kontekst, routing lub payload.',
+    'Jesli zadanie jest prostym pytaniem albo obliczeniem, odpowiedz bezposrednio jednym zdaniem z wynikiem.',
     payload.instructions || 'Wykonaj zadanie mozliwie konkretnie.',
-    'Tytul: ' + (payload.title || ''),
-    'Opis: ' + (payload.description || ''),
-    'Repo: ' + (payload.git_repo || '-'),
-    'Kontekst: ' + JSON.stringify(payload.context || {}),
-    payload.context?.raw?.workflow?.id === 'hermes-labyrinth'
+    `Zadanie: ${payload.title || ''}`,
+    `Szczegoly: ${payload.description || ''}`,
+    metadata ? `Dane pomocnicze do wykorzystania wewnetrznie:\n${metadata}` : '',
+    context?.raw?.workflow?.id === 'hermes-labyrinth'
       ? 'Dla Hermes Labyrinth odpowiedz sekcjami: Mapa, Sciezka, Dowody, Weryfikacja, Raport koncowy.'
       : '',
-    'Odpowiedz po polsku. Jesli generujesz kod, dolacz go w jednej odpowiedzi.',
+    'Odpowiedz po polsku. Jesli generujesz kod, dolacz go w jednej odpowiedzi i napisz, jak go sprawdzic.',
   ].filter(Boolean).join('\n')
 }
 
@@ -610,10 +624,17 @@ async function appendProgressMessage(cfg, session, job, content) {
 }
 
 async function processIncomingMessages(cfg, session) {
-  if (!isWithinSchedule(cfg)) return
   const messages = await fetchUnreadMessages(cfg, session)
   for (const message of messages) {
     try {
+      if (message.message_type === 'command') {
+        const command = parseCommand(message)
+        const result = await handleSystemCommand(cfg, session, message, command)
+        await appendSystemCommandResult(cfg, session, message, result)
+        await markMessageRead(cfg, session, message.id)
+        if (command === 'shutdown') await shutdown(cfg, session)
+        continue
+      }
       const result = await callLocalProxy(cfg, [
         'Uzytkownik wyslal wiadomosc do stacji roboczej.',
         'Odpowiedz krotko po polsku i potwierdz, co zrobisz albo co juz zrobiles.',
@@ -627,9 +648,7 @@ async function processIncomingMessages(cfg, session) {
         message_type: 'reply',
         content: result.text || 'Potwierdzam odbior wiadomosci.',
       }])
-      await restPatch(cfg, session, 'workstation_messages', `id=eq.${encodeURIComponent(message.id)}`, {
-        read_at: new Date().toISOString(),
-      })
+      await markMessageRead(cfg, session, message.id)
     } catch (error) {
       log('Nie udalo sie obsluzyc wiadomosci:', error.message)
       await appendStationMessage(cfg, session, [{
@@ -640,11 +659,106 @@ async function processIncomingMessages(cfg, session) {
         message_type: 'error',
         content: `Nie udalo sie obsluzyc wiadomosci: ${error.message}`,
       }]).catch((appendError) => log('message error report failed:', appendError.message))
-      await restPatch(cfg, session, 'workstation_messages', `id=eq.${encodeURIComponent(message.id)}`, {
-        read_at: new Date().toISOString(),
-      }).catch((patchError) => log('mark failed message read failed:', patchError.message))
+      await markMessageRead(cfg, session, message.id).catch((patchError) => log('mark failed message read failed:', patchError.message))
     }
   }
+}
+
+async function markMessageRead(cfg, session, messageId) {
+  await restPatch(cfg, session, 'workstation_messages', `id=eq.${encodeURIComponent(messageId)}`, {
+    read_at: new Date().toISOString(),
+  })
+}
+
+function parseCommand(message) {
+  const content = String(message.content || '').trim()
+  try {
+    const parsed = JSON.parse(content)
+    return String(parsed.command || parsed.action || '').trim().toLowerCase()
+  } catch {
+    return content.replace(/^system:/i, '').trim().toLowerCase()
+  }
+}
+
+function updateRuntimeConfig(patch) {
+  const raw = parseJsonFile(CONFIG_PATH)
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify({ ...raw, ...patch }, null, 2) + '\n')
+}
+
+function commandOutput(stdout, stderr) {
+  return [stdout, stderr].filter(Boolean).join('\n').trim().slice(-4000)
+}
+
+function runCommand(command, args, options = {}) {
+  return new Promise((resolve) => {
+    execFile(command, args, {
+      cwd: path.join(__dirname, '..'),
+      timeout: options.timeout || 180000,
+      maxBuffer: 1024 * 1024,
+    }, (error, stdout, stderr) => {
+      resolve({
+        ok: !error,
+        code: error?.code ?? 0,
+        signal: error?.signal || null,
+        output: commandOutput(stdout, stderr),
+      })
+    })
+  })
+}
+
+async function runRepoUpdateCommand() {
+  const root = path.join(__dirname, '..')
+  if (process.platform === 'win32') {
+    return runCommand('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'update.ps1')], { timeout: 300000 })
+  }
+  return runCommand('/bin/sh', [path.join(root, 'update.sh')], { timeout: 300000 })
+}
+
+async function handleSystemCommand(cfg, session, message, parsedCommand) {
+  const command = parsedCommand || parseCommand(message)
+  if (command === 'pause') {
+    cfg.acceptsJobs = false
+    updateRuntimeConfig({ stationMode: cfg.stationMode, acceptsJobs: false })
+    await heartbeat(cfg, session, 'offline')
+    return 'System: stacja wstrzymana. Nowe joby nie beda pobierane do czasu wznowienia.'
+  }
+  if (command === 'resume') {
+    cfg.acceptsJobs = cfg.stationMode === 'classroom'
+    updateRuntimeConfig({ stationMode: cfg.stationMode, acceptsJobs: cfg.acceptsJobs })
+    await heartbeat(cfg, session)
+    return cfg.acceptsJobs ? 'System: stacja wznowiona i moze pobierac joby.' : 'System: tryb operatora nie pobiera jobow.'
+  }
+  if (command === 'refresh' || command === 'status') {
+    await heartbeat(cfg, session)
+    return [
+      `System: status ${currentStatus(cfg)}.`,
+      `Tryb: ${cfg.stationMode}.`,
+      `Sloty: ${activeJobs}/${cfg.parallelSlots}.`,
+      `Kontekst: ${cfg.contextMode === 'native' ? 'native' : cfg.contextSizeTokens}.`,
+      `KV: ${cfg.effectiveKvCacheQuantization}.`,
+      `Model: ${cfg.modelName || 'domyslny'}.`,
+    ].join(' ')
+  }
+  if (command === 'update') {
+    const result = await runRepoUpdateCommand()
+    const status = result.ok ? 'zakonczona' : `nieudana (kod ${result.code || result.signal || 'unknown'})`
+    return `System: aktualizacja repo ${status}.\n${result.output || 'Brak wyjscia procesu.'}`
+  }
+  if (command === 'shutdown') {
+    return 'System: odebrano polecenie wylaczenia procesu stacji.'
+  }
+  return `System: nieznana komenda "${command || 'pusta'}". Dostepne: update, pause, resume, refresh, status, shutdown.`
+}
+
+async function appendSystemCommandResult(cfg, session, message, content) {
+  await appendStationMessage(cfg, session, [{
+    workstation_id: workstationId,
+    task_id: message.task_id || null,
+    sender_kind: 'system',
+    sender_label: 'system',
+    message_type: 'command-result',
+    content,
+  }])
 }
 
 async function handleScheduleBoundary(cfg, session) {
@@ -756,7 +870,7 @@ async function main() {
   }, DEFAULTS.POLL_MS)
 
   setInterval(() => {
-    if (shuttingDown || !isWithinSchedule(cfg)) return
+    if (shuttingDown) return
     processIncomingMessages(cfg, authSession).catch((error) => log('pollMessages failed:', error.message))
   }, DEFAULTS.MESSAGE_POLL_MS)
 }

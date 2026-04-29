@@ -154,6 +154,7 @@ Najważniejsze pola bezpieczeństwa:
 | `supabaseAnonKey` | Publishable/anon key, nie service-role key |
 | `enrollmentToken` | Jednorazowy token z dashboardu; po redeem jest usuwany z configu |
 | `stationRefreshToken` | Ograniczona sesja techniczna stacji; nie jest hasłem operatora |
+| `stationMode` | `operator` dla MacBooka/panelu nauczyciela albo `classroom` dla szkolnej stacji wykonawczej |
 | `allowedOrigins` | Strony, które mogą wołać lokalny proxy, np. `https://twoj-login.github.io` |
 
 Jeśli przenosisz stację do innego forka, uruchom `--config` i popraw `allowedOrigins`. Inaczej proxy zwróci HTTP 403 dla nieznanej strony.
@@ -182,9 +183,16 @@ Opcje Advanced są lokalne dla konkretnej stacji roboczej i zapisują się w `lo
 - `auto` używa `f16` dla krótkiego/natywnego kontekstu i `q8_0` dla kontekstu powyżej 32k.
 - Ręczne opcje stock llama.cpp: `f32`, `f16`, `bf16`, `q8_0`, `q4_0`, `q4_1`, `iq4_nl`, `q5_0`, `q5_1`.
 - Opcje RotorQuant/Planar/Iso/Turbo, tylko z kompatybilnym forkiem/binarką: `planar3`, `iso3`, `planar4`, `iso4`, `turbo3`, `turbo4`.
+- Launcher przyjmuje też pary K/V: `iso3/iso3` dla mocnej kompresji symetrycznej oraz `planar3/f16` dla K-only, czyli wariantu z bardzo niskim ryzykiem jakościowym.
 - `q8_0` zwykle jest rozsądnym kompromisem dla długiego kontekstu; `q4_0` jest bardziej agresywne i może pogorszyć jakość.
 
-Dlaczego domyślnie `q8_0`, a nie RotorQuant: `q8_0` działa w stock llama.cpp, więc launcher może go bezpiecznie pakować dla Windows/macOS/Linux. RotorQuant jest lepszym kierunkiem dla mocnej kompresji długiego KV, ale wymaga zgodnej binarki; jeśli wybierzesz `planar3`/`iso3`/`planar4`/`iso4`/`turbo3`/`turbo4`, launcher sprawdzi `llama-server --help` i spadnie do `q8_0`, gdy typ nie jest obsługiwany.
+Dlaczego domyślnie `q8_0`, a nie RotorQuant: `q8_0` działa w stock llama.cpp, więc launcher może go bezpiecznie pakować dla Windows/macOS/Linux. RotorQuant jest lepszym kierunkiem dla mocnej kompresji długiego KV, ale wymaga zgodnej binarki; jeśli wybierzesz `iso3/iso3`, `planar3/f16`, `planar3`, `iso3`, `planar4`, `iso4`, `turbo3` albo `turbo4`, launcher sprawdzi `llama-server --help` i spadnie do `q8_0/q8_0`, gdy typ nie jest obsługiwany.
+
+### Operator i stacje szkolne
+
+MacBook nauczyciela powinien działać jako `stationMode=operator`. Wtedy launcher uruchamia lokalny `llama-server` i `proxy.js`, ale nie startuje `workstation-agent.js`, nie wymaga tokenu stacji i nie rejestruje MacBooka jako szkolnego komputera. Komputery uczniów/labu działają jako `stationMode=classroom`, używają tokenu z dashboardu i mogą przyjmować joby.
+
+Panel operatora może wysyłać do stacji komendy systemowe przez `workstation_messages`: `update`, `pause`, `resume`, `refresh`, `status`, `shutdown`. Wynik wraca jako wiadomość podpisana `system`, więc w konsoli zadania i logach widać, że to odpowiedź runtime, a nie zwykły tekst modelu.
 
 ### `parallelSlots`
 
