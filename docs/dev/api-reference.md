@@ -25,9 +25,11 @@ Przechowuje wszystkie zadania zgłoszone przez użytkowników.
 | `description` | tekst | Opis zadania |
 | `priority` | tekst | `low` / `medium` / `high` |
 | `status` | tekst | `pending` / `analyzing` / `in_progress` / `done` / `failed` |
-| `requester_id` | UUID | ID użytkownika który zgłosił zadanie |
-| `repo` | tekst | Opcjonalnie: powiązane repozytorium Git |
-| `context` | JSON | Dodatkowe informacje (branch, środowisko itp.) |
+| `user_id` | UUID | ID użytkownika który zgłosił zadanie |
+| `git_repo` | tekst | Opcjonalnie: powiązane repozytorium Git |
+| `context` | JSON | Dodatkowe informacje; UI zapisuje `{ template, raw }`, a Hermes Labyrinth używa `raw.workflow` |
+| `requested_workstation_id` | UUID | Opcjonalnie: jedna wskazana stacja robocza |
+| `requested_model_name` | tekst | Opcjonalnie: model wybrany dla wskazanej stacji |
 | `created_at` | timestamp | Data utworzenia — generowana automatycznie |
 
 ### Tabela `assignments` — przydziały

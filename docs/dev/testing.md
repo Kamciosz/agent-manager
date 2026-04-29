@@ -104,6 +104,7 @@ Przed pushem uruchom lokalnie:
 ```bash
 bash -n start.sh
 node --check ui/app.js ui/ai-client.js ui/manager.js ui/executor.js ui/settings.js
+node --check ui/labyrinth.js
 node --check local-ai-proxy/proxy.js local-ai-proxy/workstation-agent.js local-ai-proxy/runtime-schedule.js
 ./start.sh --doctor
 git diff --check
@@ -127,6 +128,7 @@ Manualny test UI po tej rundzie:
 4. Dodaj polecenie z repo i jedną stacją.
 5. Sprawdź, czy formularz nie wymaga JSON i czy tooltipy `?` wyjaśniają pola.
 6. W **Stacje robocze** użyj konfiguratora i sprawdź, czy generuje instrukcję `--config`.
+7. Wybierz szablon **Hermes Labyrinth** i sprawdź, czy krok 2 pokazuje mapę bram oraz zapisuje workflow w kontekście zadania.
 
 ---
 

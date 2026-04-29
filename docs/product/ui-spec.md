@@ -32,7 +32,7 @@ Maksymalnie prosty interfejs dla użytkowników nietechnicznych. Każdy kluczowy
 
 ### 2. Submit Task (wizard — 3 kroki)
 
-**Krok 1 — Wybierz szablon:** Bug / Refactor / Tests / Custom.
+**Krok 1 — Wybierz szablon:** Bug / Refactor / Tests / Custom / Hermes Labyrinth.
 
 **Krok 2 — Dane minimalne:**
 - `Title`* (wymagane)
@@ -41,11 +41,14 @@ Maksymalnie prosty interfejs dla użytkowników nietechnicznych. Każdy kluczowy
 - `Repo` (opcjonalne)
 - `Stacja robocza` (opcjonalne, lista online/offline)
 - `Model` (opcjonalne; aktywuje się po wyborze stacji)
-- `Context` (lista klucz:wartość, dynamiczna)
+- Linki/pliki pomocnicze, wymagania i zakazy jako proste pola tekstowe.
+- Hermes Labyrinth pokazuje mapę bram i zapisuje workflow w `tasks.context.raw.workflow`.
 
 **Krok 3 — Przegląd i wyślij.** Przyciski: `Wyślij` (primary), `Zapisz jako szkic`.
 
 Advanced (zwinięte): przypisanie, termin, środowisko, retry policy.
+
+Szablon Hermes Labyrinth nie pokazuje JSON użytkownikowi. Wypełnia domyślny opis, wymagania i zakazy, a AI kierownik używa ról Navigator/Scout/Builder/Verifier/Scribe jako kontekstu orkiestracji.
 
 Po wysłaniu: toast + przycisk `Przejdź do zadania`.
 

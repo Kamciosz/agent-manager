@@ -15,6 +15,11 @@
  */
 
 import { isAvailable, generate } from './ai-client.js'
+import {
+  buildHermesLabyrinthInstructions,
+  buildHermesLabyrinthPromptBlock,
+  isHermesLabyrinthTask,
+} from './labyrinth.js'
 
 // ============================================================================
 // STAŁE — żadnych magic strings
@@ -476,17 +481,19 @@ function managerDecisionText(target, workstation, modelName) {
  * @returns {Promise<string>}
  */
 async function generateInstructions(task) {
-  const fallback = `Wykonaj: ${task.title}`
+  const fallback = isHermesLabyrinthTask(task) ? buildHermesLabyrinthInstructions(task) : `Wykonaj: ${task.title}`
   if (!isAvailable()) return fallback
   try {
+    const labyrinthBlock = buildHermesLabyrinthPromptBlock(task)
     const prompt = [
-      'Jesteś AI kierownikiem. Sformułuj krótką (1-2 zdania) instrukcję',
-      'po polsku dla agenta wykonawczego, który ma zrealizować zadanie.',
+      'Jesteś AI kierownikiem. Sformułuj konkretną instrukcję po polsku',
+      'dla agenta wykonawczego, który ma zrealizować zadanie.',
+      labyrinthBlock,
       'Tytuł: ' + (task.title || ''),
       'Opis: ' + (task.description || ''),
-      'Odpowiedz wyłącznie tekstem instrukcji, bez wstępu.',
-    ].join('\n')
-    const text = await generate(prompt, { maxTokens: 120, temperature: 0.5 })
+      'Odpowiedz wyłącznie tekstem instrukcji, bez wstępu. Maksymalnie 5 punktów.',
+    ].filter(Boolean).join('\n')
+    const text = await generate(prompt, { maxTokens: isHermesLabyrinthTask(task) ? 220 : 120, temperature: 0.5 })
     return text || fallback
   } catch (error) {
     console.warn('[manager.js] AI fallback (instructions):', error.message)

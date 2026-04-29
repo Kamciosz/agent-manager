@@ -10,6 +10,8 @@ Agent Manager to system zarządzania agentami AI. Działa w przeglądarce — ż
 
 Projekt bazuje na idei systemów orkiestracji agentów AI (Hermes Agent, OpenMythos, agent-orchestrator i podobnych). Główne założenie: zbudować menedżera agentów, który przyjmuje zadania od ludzi, rozkłada je na kroki, deleguje wykonawcom i raportuje postępy w sposób przewidywalny i skalowalny.
 
+Wersja alpha ma własny preset **Hermes Labyrinth**: zadanie przechodzi przez bramy rozpoznania, mapy, podziału ról, wykonania, weryfikacji i raportu. Preset zapisuje strukturę workflow w `tasks.context`, ale nadal używa natywnego przepływu Agent Manager: Supabase, manager/executor i opcjonalne stacje robocze.
+
 MVP koncentruje się na wspieraniu pracy programistycznej z repozytorium Git jako głównym kontekstem zadania.
 
 ## Cel systemu

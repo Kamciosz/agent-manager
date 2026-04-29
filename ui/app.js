@@ -15,6 +15,15 @@ import { initManager, stopManager } from './manager.js'
 import { initExecutor, stopExecutor } from './executor.js'
 import { initAiClient } from './ai-client.js'
 import { applySettings, getRecentRepos, getSettings, rememberRepo, saveSettings } from './settings.js'
+import {
+  HERMES_LABYRINTH_GATES,
+  HERMES_LABYRINTH_LABEL,
+  HERMES_LABYRINTH_PRESET,
+  HERMES_LABYRINTH_TEMPLATE_ID,
+  buildHermesLabyrinthContext,
+  isHermesLabyrinthTemplate,
+  summarizeHermesLabyrinthContext,
+} from './labyrinth.js'
 
 // ============================================================================
 // KONFIGURACJA — placeholdery podmieniane przez GitHub Actions
@@ -79,6 +88,14 @@ const PRIORITY_LABELS = {
   low: 'Niski',
   medium: 'Średni',
   high: 'Wysoki',
+}
+
+const TEMPLATE_LABELS = {
+  'bug-fix': 'Bug Fix',
+  refactor: 'Refactor',
+  tests: 'Testy',
+  custom: 'Własne',
+  [HERMES_LABYRINTH_TEMPLATE_ID]: HERMES_LABYRINTH_LABEL,
 }
 
 applySettings()
@@ -1659,6 +1676,8 @@ function openTaskModal() {
   wizard.step = 1
   wizard.template = null
   document.getElementById('form-task').reset()
+  document.getElementById('task-labyrinth-guide')?.classList.add('hidden')
+  document.querySelectorAll('.template-card').forEach((card) => card.classList.remove('border-blue-500', 'bg-blue-50'))
   const settings = getSettings()
   document.getElementById('task-repo').value = settings.defaultRepo || ''
   populateRepoSuggestions()
@@ -1721,14 +1740,16 @@ function renderReviewSummary() {
       data.context.avoid ? `<div><span class="text-slate-500">Nie robić:</span> ${escapeHtml(data.context.avoid)}</div>` : '',
     ].filter(Boolean).join('')
     : ''
+  const workflowSummary = summarizeHermesLabyrinthContext(data.context)
   summary.innerHTML = `
-    <div><span class="text-slate-500">Szablon:</span> <strong>${escapeHtml(wizard.template || 'custom')}</strong></div>
+    <div><span class="text-slate-500">Szablon:</span> <strong>${escapeHtml(templateLabel(wizard.template))}</strong></div>
     <div><span class="text-slate-500">Polecenie:</span> <strong>${escapeHtml(data.title)}</strong></div>
     <div><span class="text-slate-500">Szczegóły:</span> ${escapeHtml(data.description)}</div>
     <div><span class="text-slate-500">Priorytet:</span> <strong>${escapeHtml(priorityLabel(data.priority))}</strong></div>
     <div><span class="text-slate-500">Repo:</span> ${escapeHtml(data.repo || '—')}</div>
     <div><span class="text-slate-500">Stacja:</span> ${escapeHtml(data.workstationId ? resolveWorkstationName(data.workstationId) : 'Automatycznie - AI wybierze stację')}</div>
     <div><span class="text-slate-500">Model:</span> ${escapeHtml(data.modelName || '—')}</div>
+    ${workflowSummary ? `<div><span class="text-slate-500">Workflow:</span> ${escapeHtml(workflowSummary)}</div>` : ''}
     ${contextRows}
   `
 }
@@ -1744,12 +1765,15 @@ function collectTaskFormData() {
     avoid: document.getElementById('task-avoid').value.trim(),
   }
   const hasContext = Object.values(context).some(Boolean)
+  const finalContext = isHermesLabyrinthTemplate(wizard.template)
+    ? buildHermesLabyrinthContext(context)
+    : (hasContext ? context : null)
   return {
     title: document.getElementById('task-title').value.trim(),
     description: document.getElementById('task-description').value.trim(),
     priority: document.getElementById('task-priority').value,
     repo: document.getElementById('task-repo').value.trim(),
-    context: hasContext ? context : null,
+    context: finalContext,
     workstationId: document.getElementById('task-workstation').value,
     modelName: document.getElementById('task-model').value,
     template: wizard.template,
@@ -1815,6 +1839,8 @@ function bindTaskModal() {
       wizard.template = card.dataset.template
       document.querySelectorAll('.template-card').forEach((c) => c.classList.remove('border-blue-500', 'bg-blue-50'))
       card.classList.add('border-blue-500', 'bg-blue-50')
+      applySelectedTemplatePreset()
+      renderHermesLabyrinthAssist()
     })
   })
 
@@ -1834,6 +1860,55 @@ function bindTaskModal() {
     showToast('Szkic zapisany lokalnie (placeholder).', TOAST_TYPE.INFO)
     closeAllModals()
   })
+}
+
+/**
+ * Zwraca czytelną nazwę szablonu.
+ * @param {string|null} template
+ * @returns {string}
+ */
+function templateLabel(template) {
+  return TEMPLATE_LABELS[template] || template || 'Własne'
+}
+
+/**
+ * Wypełnia pola formularza dla szablonów z presetem.
+ * @returns {void}
+ */
+function applySelectedTemplatePreset() {
+  if (!isHermesLabyrinthTemplate(wizard.template)) return
+  setValueIfEmpty('task-title', HERMES_LABYRINTH_PRESET.title)
+  setValueIfEmpty('task-description', HERMES_LABYRINTH_PRESET.description)
+  setValueIfEmpty('task-requirements', HERMES_LABYRINTH_PRESET.requirements)
+  setValueIfEmpty('task-avoid', HERMES_LABYRINTH_PRESET.avoid)
+}
+
+/**
+ * Ustawia wartość pola tylko wtedy, gdy użytkownik nie wpisał własnej treści.
+ * @param {string} id
+ * @param {string} value
+ * @returns {void}
+ */
+function setValueIfEmpty(id, value) {
+  const element = document.getElementById(id)
+  if (element && !element.value.trim()) element.value = value
+}
+
+/**
+ * Pokazuje krótką mapę bram dla szablonu Hermes Labyrinth.
+ * @returns {void}
+ */
+function renderHermesLabyrinthAssist() {
+  const element = document.getElementById('task-labyrinth-guide')
+  if (!element) return
+  element.classList.toggle('hidden', !isHermesLabyrinthTemplate(wizard.template))
+  if (!isHermesLabyrinthTemplate(wizard.template)) return
+  element.innerHTML = HERMES_LABYRINTH_GATES.map((gate) => `
+    <div class="rounded-lg border border-indigo-100 bg-white px-3 py-2">
+      <div class="font-semibold text-indigo-900">${escapeHtml(gate.name)}</div>
+      <div class="text-xs text-indigo-700 mt-1">${escapeHtml(gate.check)}</div>
+    </div>
+  `).join('')
 }
 
 /**

@@ -14,6 +14,7 @@
  */
 
 import { isAvailable, generate } from './ai-client.js'
+import { buildHermesLabyrinthPromptBlock } from './labyrinth.js'
 
 // ============================================================================
 // STAŁE
@@ -325,14 +326,14 @@ async function loadTaskInfo(taskId) {
   try {
     const { data, error } = await supabaseClient
       .from('tasks')
-      .select('title,description')
+      .select('title,description,context')
       .eq('id', taskId)
       .single()
     if (error) throw error
     taskCache.set(taskId, data || { title: '', description: '' })
   } catch (error) {
     console.warn('[executor.js] loadTaskInfo failed:', error.message)
-    taskCache.set(taskId, { title: '', description: '' })
+    taskCache.set(taskId, { title: '', description: '', context: null })
   }
 }
 
@@ -346,13 +347,15 @@ async function generateQuestion(taskId) {
   if (!isAvailable()) return fallback
   const info = taskCache.get(taskId) || { title: '', description: '' }
   try {
+    const labyrinthBlock = buildHermesLabyrinthPromptBlock(info)
     const prompt = [
       'Jesteś agentem wykonawczym. Sformułuj po polsku JEDNO krótkie pytanie',
       'do AI kierownika (max 15 słów) o doprecyzowanie zadania.',
+      labyrinthBlock,
       'Tytuł zadania: ' + info.title,
       'Opis: ' + info.description,
       'Odpowiedz wyłącznie tekstem pytania, bez wstępu.',
-    ].join('\n')
+    ].filter(Boolean).join('\n')
     const text = await generate(prompt, { maxTokens: 60, temperature: 0.6 })
     return text || fallback
   } catch (error) {
@@ -371,12 +374,15 @@ async function generateReport(taskId) {
   if (!isAvailable()) return fallback
   const info = taskCache.get(taskId) || { title: '', description: '' }
   try {
+    const labyrinthBlock = buildHermesLabyrinthPromptBlock(info)
     const prompt = [
       'Jesteś agentem wykonawczym. Napisz po polsku krótki (1-2 zdania) raport',
       'końcowy z wykonania zadania. Zacznij od czasownika dokonanego.',
+      labyrinthBlock,
       'Tytuł zadania: ' + info.title,
+      'Jeśli aktywny jest workflow Labyrinth, uwzględnij wynik weryfikacji.',
       'Odpowiedz wyłącznie tekstem raportu, bez wstępu.',
-    ].join('\n')
+    ].filter(Boolean).join('\n')
     const text = await generate(prompt, { maxTokens: 100, temperature: 0.5 })
     return text || fallback
   } catch (error) {

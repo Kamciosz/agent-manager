@@ -9,10 +9,16 @@ Najprościej: otwierasz aplikację, wpisujesz polecenie dla AI, a AI kierownik d
 1. Otwórz aplikację: https://kamciosz.github.io/agent-manager/
 2. Zarejestruj konto emailem i hasłem.
 3. Kliknij **Dodaj polecenie**.
-4. Wpisz, co AI ma zrobić, opcjonalnie dodaj repozytorium i wybierz stację.
+4. Wpisz, co AI ma zrobić, albo wybierz szablon **Hermes Labyrinth** dla pracy przez mapę ról, bram i testów.
 5. Obserwuj status w czasie rzeczywistym w widoku **Monitor** albo w szczegółach polecenia.
 
 Nie musisz instalować niczego, jeśli wystarcza tryb przeglądarkowy alpha.
+
+## Hermes Labyrinth
+
+Szablon **Hermes Labyrinth** prowadzi polecenie przez etapy: rozpoznanie, mapa, podział ról, wykonanie, weryfikacja i raport. AI kierownik zapisuje ten workflow w kontekście zadania i przekazuje go executorowi albo stacji roboczej.
+
+Szczegóły: [docs/product/hermes-labyrinth.md](docs/product/hermes-labyrinth.md).
 
 ## Dodaj lokalną stację roboczą
 
@@ -91,6 +97,7 @@ Deploy GitHub Pages publikuje UI. Migracje bazy są jawne i nie są wykonywane p
 | Architektura | [docs/architecture/overview.md](docs/architecture/overview.md) |
 | Lokalny runtime | [local-ai-proxy/README.md](local-ai-proxy/README.md) |
 | Specyfikacja UI | [docs/product/ui-spec.md](docs/product/ui-spec.md) |
+| Hermes Labyrinth | [docs/product/hermes-labyrinth.md](docs/product/hermes-labyrinth.md) |
 | Testy | [docs/dev/testing.md](docs/dev/testing.md) |
 | Krytyczny QA alpha | [docs/product/bad-mood-qa.md](docs/product/bad-mood-qa.md) |
 | Jak forknąć | [FORK_GUIDE.md](FORK_GUIDE.md) |
