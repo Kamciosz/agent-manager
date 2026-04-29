@@ -917,13 +917,22 @@ function Join-NativeArguments([string[]] $Items) {
 }
 
 $StartedProcesses = @()
+function Write-ProcessLogTail([string] $Label, [string] $LogPath, [int] $Lines = 25) {
+  if (-not $LogPath -or -not (Test-Path -LiteralPath $LogPath)) { return }
+  $items = Get-Content -LiteralPath $LogPath -Tail $Lines -ErrorAction SilentlyContinue
+  if (-not $items) { return }
+  Write-Host ''
+  Write-StartWarn "$Label ($LogPath)"
+  foreach ($item in $items) { Write-Host "  $item" }
+}
+
 function Start-LoggedProcess([string] $Name, [string] $FilePath, [string[]] $Arguments, [string] $WorkingDirectory, [string] $StdoutLog, [string] $StderrLog) {
   "[$Name] starting at $(Get-Date -Format o)" | Set-Content -LiteralPath $StdoutLog -Encoding UTF8
   "[$Name] errors at $(Get-Date -Format o)" | Set-Content -LiteralPath $StderrLog -Encoding UTF8
   $argumentLine = Join-NativeArguments $Arguments
   Write-StartLog "Starting $Name"
   $process = Start-Process -FilePath $FilePath -ArgumentList $argumentLine -WorkingDirectory $WorkingDirectory -RedirectStandardOutput $StdoutLog -RedirectStandardError $StderrLog -PassThru -NoNewWindow
-  $script:StartedProcesses += [pscustomobject]@{ Name = $Name; Process = $process }
+  $script:StartedProcesses += [pscustomobject]@{ Name = $Name; Process = $process; StdoutLog = $StdoutLog; StderrLog = $StderrLog }
   return $process
 }
 
@@ -1027,7 +1036,11 @@ function Wait-ManagedProcesses {
     foreach ($entry in $script:StartedProcesses) {
       $proc = $entry.Process
       if ($proc.HasExited) {
-        Write-StartWarn "$($entry.Name) exited with code $($proc.ExitCode). Stopping remaining runtime processes."
+        try { $proc.WaitForExit(1000) | Out-Null; $proc.Refresh() } catch {}
+        $exitCode = if ($null -ne $proc.ExitCode) { [string] $proc.ExitCode } else { 'unknown' }
+        Write-StartWarn "$($entry.Name) exited with code $exitCode. Stopping remaining runtime processes."
+        Write-ProcessLogTail "$($entry.Name) stdout tail" $entry.StdoutLog
+        Write-ProcessLogTail "$($entry.Name) stderr tail" $entry.StderrLog
         return
       }
     }
