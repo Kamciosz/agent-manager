@@ -1250,6 +1250,15 @@ start_workstation_agent() {
   STARTED_WORKSTATION_AGENT=1
 }
 
+print_log_tail() {
+  local label="$1" file="$2" lines="${3:-25}"
+  [ -f "$file" ] || return 0
+  [ -s "$file" ] || return 0
+  echo
+  warn "$label ($file)"
+  tail -n "$lines" "$file" | sed 's/^/  /'
+}
+
 wait_for_health() {
   local url="$1" name="$2" max="${3:-60}"
   log "Czekam aż $name odpowie na $url (max ${max}s)…"
@@ -1282,6 +1291,7 @@ wait_for_runtime_processes() {
       label="${labels[$index]}"
       if ! kill -0 "$pid" 2>/dev/null; then
         warn "$label zakończył proces (pid $pid). Sprzątam pozostałe procesy runtime."
+        print_log_tail "$label log tail" "$LOGS_DIR/$label.log"
         return
       fi
       index=$((index + 1))

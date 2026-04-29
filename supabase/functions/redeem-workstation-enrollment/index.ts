@@ -114,6 +114,21 @@ Deno.serve(async (req) => {
     })
     if (createUserError || !createdUser.user) throw createUserError || new Error('Could not create workstation user')
 
+    if (claimMetadata.hostname) {
+      const { error: workstationClaimError } = await admin
+        .from('workstations')
+        .update({
+          display_name: workstationName,
+          operator_user_id: enrollment.created_by_user_id,
+          owner_user_id: enrollment.created_by_user_id,
+          station_user_id: createdUser.user.id,
+          enrollment_token_id: enrollment.id,
+        })
+        .eq('hostname', claimMetadata.hostname)
+        .eq('owner_user_id', enrollment.created_by_user_id)
+      if (workstationClaimError) console.error('[redeem-workstation-enrollment] workstation claim failed', workstationClaimError)
+    }
+
     const publicClient = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } })
     const { data: sessionData, error: signInError } = await publicClient.auth.signInWithPassword({
       email: stationEmail,
