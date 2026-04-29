@@ -64,11 +64,13 @@ Przykład przez Supabase CLI:
 ```bash
 supabase link --project-ref TWOJ_PROJECT_REF
 supabase secrets set SUPABASE_SERVICE_ROLE_KEY=WKLEJ_SERVICE_ROLE_KEY_Z_PANELU_SUPABASE
+supabase secrets set ALLOWED_APP_ORIGINS=https://TWOJ_LOGIN.github.io
 supabase functions deploy create-workstation-enrollment
 supabase functions deploy redeem-workstation-enrollment --no-verify-jwt
 ```
 
 `SUPABASE_URL` i `SUPABASE_ANON_KEY` są dostępne dla Edge Functions z runtime Supabase; service-role key ustawiasz osobno, tylko jako sekret funkcji.
+`ALLOWED_APP_ORIGINS` to lista originów oddzielonych przecinkami, które mogą wywoływać tokenowe Edge Functions z przeglądarki. Domyślnie funkcje dopuszczają `https://kamciosz.github.io`, `http://localhost` i `http://127.0.0.1`, ale fork powinien dopisać własny adres GitHub Pages.
 `redeem-workstation-enrollment` ma wyłączone JWT verification, bo stacja nie ma jeszcze sesji użytkownika; sekretem wejściowym jest jednorazowy token instalacyjny.
 
 ## Krok 6 — dodaj GitHub Secrets

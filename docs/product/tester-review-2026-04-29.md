@@ -65,3 +65,7 @@ Produkt jest alpha-plus: działa jako panel szkolno-operatorski z lokalnymi stac
 ## Usprawnienie wdrożone z review
 
 Dodano filtry poleceń po tekście, statusie i priorytecie. To bezpośrednio odpowiada na lukę operacyjną z konkurencyjnych widoków runs/traces: przy większej liczbie poleceń operator ma szybko zawęzić listę, bez przechodzenia do Supabase.
+
+## Usprawnienie wdrożone z sugestii modeli
+
+Po przeglądzie folderu `sugestie/` utwardzono tokenowe Edge Functions: payloady są walidowane, token redeem musi mieć format `amst_...`, czas życia tokenu nie może przekroczyć 7 dni, a CORS nie używa już globalnego `*`. Fork powinien ustawić sekret `ALLOWED_APP_ORIGINS` z adresem swojej strony GitHub Pages.

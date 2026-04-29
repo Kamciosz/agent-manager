@@ -70,3 +70,11 @@ Stosuj je przez Supabase tools albo panel SQL przed wdrożeniem funkcji zależny
 Szczegółowy setup: [FORK_GUIDE.md](../../FORK_GUIDE.md)
 | Infrastruktura (nginx, TLS) | `infra/` |
 | Testy | `tests/` |
+
+## Świadome decyzje architektoniczne
+
+- UI runtime działa bez bundlera i bez `npm install`; większe refaktory zaczynaj od modułów ES, nie od obowiązkowej migracji na framework.
+- Workflow GitHub Pages nie stosuje migracji Supabase. Migracje są jawne i wykonywane przez właściciela projektu/forka.
+- Alpha działa jako wspólny team-space dla aplikacyjnych użytkowników jednej klasy/szkoły. To nie jest jeszcze model SaaS multi-tenant.
+- Stacje robocze używają tokenu instalacyjnego i ograniczonej technicznej sesji stacji. Hasło operatora nie powinno trafiać do lokalnego `config.json`.
+- AI kierownik nie dostaje narzędzi do arbitralnego wykonywania komend bez osobnego sandboxa i audit logu.
