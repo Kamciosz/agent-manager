@@ -26,7 +26,7 @@ const DEFAULTS = {
   LLAMA_URL: 'http://127.0.0.1:8080',
   MAX_TOKENS: 256,
   TEMPERATURE: 0.7,
-  TIMEOUT_MS: 15000,
+  TIMEOUT_MS: 600000,
   ALLOWED_ORIGINS: ['https://kamciosz.github.io', 'http://localhost', 'http://127.0.0.1'],
 }
 
@@ -51,7 +51,7 @@ function parseJsonFile(filePath) {
 
 /**
  * Wczytuje config.json. Brak pliku = pusty obiekt z domyślnymi wartościami.
- * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, allowedOrigins:string[], parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, contextMode:string, contextSizeTokens:number, kvCacheQuantization:string, effectiveKvCacheQuantization:string, autoUpdate:boolean, optimizationMode:string }}
+ * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, allowedOrigins:string[], parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, contextMode:string, contextSizeTokens:number, kvCacheQuantization:string, effectiveKvCacheQuantization:string, generationTimeoutMs:number, autoUpdate:boolean, optimizationMode:string }}
  */
 function loadConfig() {
   let cfg = {}
@@ -79,6 +79,7 @@ function loadConfig() {
     contextSizeTokens,
     kvCacheQuantization,
     effectiveKvCacheQuantization: normalizeKvCache(cfg.effectiveKvCacheQuantization || resolveKvCache(kvCacheQuantization, contextSizeTokens)),
+    generationTimeoutMs: clampInt(cfg.generationTimeoutMs, DEFAULTS.TIMEOUT_MS, 15000, 1800000),
     autoUpdate: cfg.autoUpdate === true,
     optimizationMode: cfg.optimizationMode || 'standard',
   }
@@ -228,9 +229,10 @@ function readBody(req) {
  * @param {string} prompt
  * @param {{ maxTokens?:number, temperature?:number }} opts
  * @param {string} llamaUrl - bazowy URL llama-server (np. http://127.0.0.1:8080)
+ * @param {number} timeoutMs
  * @returns {Promise<string>}
  */
-async function forwardToLlama(prompt, opts, llamaUrl) {
+async function forwardToLlama(prompt, opts, llamaUrl, timeoutMs = DEFAULTS.TIMEOUT_MS) {
   const payload = JSON.stringify({
     prompt,
     n_predict: opts.maxTokens ?? DEFAULTS.MAX_TOKENS,
@@ -239,7 +241,11 @@ async function forwardToLlama(prompt, opts, llamaUrl) {
   })
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), DEFAULTS.TIMEOUT_MS)
+  let timedOut = false
+  const timeout = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
 
   try {
     const response = await fetch(`${llamaUrl}/completion`, {
@@ -254,6 +260,11 @@ async function forwardToLlama(prompt, opts, llamaUrl) {
     }
     const data = await response.json()
     return (data.content ?? '').trim()
+  } catch (error) {
+    if (timedOut || error?.name === 'AbortError') {
+      throw new Error(`llama-server timeout after ${timeoutMs}ms`)
+    }
+    throw error
   } finally {
     clearTimeout(timeout)
   }
@@ -304,6 +315,7 @@ async function handleHealth(cfg, req, res) {
       contextSizeTokens: cfg.contextSizeTokens,
       kvCacheQuantization: cfg.kvCacheQuantization,
       effectiveKvCacheQuantization: cfg.effectiveKvCacheQuantization,
+      generationTimeoutMs: cfg.generationTimeoutMs,
       autoUpdate: cfg.autoUpdate,
       optimizationMode: cfg.optimizationMode,
     },
@@ -336,6 +348,7 @@ async function handleGenerate(cfg, req, res) {
       body.prompt,
       { maxTokens: body.maxTokens, temperature: body.temperature },
       cfg.llamaUrl,
+      cfg.generationTimeoutMs,
     )
     sendJson(req, res, cfg, 200, { text, durationMs: Date.now() - startedAt })
   } catch (error) {

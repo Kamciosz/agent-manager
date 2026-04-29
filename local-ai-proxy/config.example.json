@@ -20,6 +20,7 @@
   "parallelSlots": 1,
   "contextMode": "native",
   "kvCacheQuantization": "auto",
+  "generationTimeoutMs": 600000,
   "sdEnabled": false,
   "autoUpdate": false
 }

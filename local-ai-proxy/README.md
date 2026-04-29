@@ -144,6 +144,8 @@ start.bat --config
 
 `--config` zapisuje lokalne ustawienia do `local-ai-proxy/config.json`: URL Supabase, publishable key, token instalacyjny stacji, dozwolone originy aplikacji, `parallelSlots`, kontekst modelu, kompresję KV cache, auto-update, SD oraz harmonogram. Przy pierwszym starcie agent wymienia token instalacyjny na ograniczoną sesję stacji i usuwa token z configu. Wszystkie pola mają bezpieczne zakresy i są normalizowane przy starcie, więc literówka w liczbie tokenów albo zbyt duża wartość nie powinna wysadzić launchera bez czytelnego ostrzeżenia.
 
+`generationTimeoutMs` kontroluje, jak długo lokalny proxy czeka na odpowiedź `llama-server` dla pojedynczego jobu. Domyślnie to `600000` ms, czyli 10 minut; duże modele na CPU, szczególnie 27B+, często potrzebują więcej niż kilkanaście sekund na pierwszy wynik.
+
 Najważniejsze pola bezpieczeństwa:
 
 | Pole | Znaczenie |

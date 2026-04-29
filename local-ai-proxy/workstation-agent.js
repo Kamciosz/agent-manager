@@ -21,6 +21,7 @@ const DEFAULTS = {
   HEARTBEAT_MS: 15000,
   MESSAGE_POLL_MS: 6000,
   AUTH_RETRY_MS: [3000, 7000, 15000, 30000],
+  GENERATION_TIMEOUT_MS: 600000,
 }
 
 let activeJobs = 0
@@ -88,6 +89,7 @@ function loadConfig() {
     contextSizeTokens,
     kvCacheQuantization,
     effectiveKvCacheQuantization: normalizeKvCache(raw.effectiveKvCacheQuantization || resolveKvCache(kvCacheQuantization, contextSizeTokens)),
+    generationTimeoutMs: clampInt(raw.generationTimeoutMs, DEFAULTS.GENERATION_TIMEOUT_MS, 15000, 1800000),
     autoUpdate: raw.autoUpdate === true,
     optimizationMode: raw.optimizationMode || 'standard',
   }
@@ -442,6 +444,7 @@ function workstationPayload(cfg, userId, statusOverride) {
       contextSizeTokens: cfg.contextSizeTokens,
       kvCacheQuantization: cfg.kvCacheQuantization,
       effectiveKvCacheQuantization: cfg.effectiveKvCacheQuantization,
+      generationTimeoutMs: cfg.generationTimeoutMs,
       autoUpdate: cfg.autoUpdate,
       optimizationMode: cfg.optimizationMode,
       authMode: cfg.stationUserId ? 'station-token' : 'legacy-operator-password',
@@ -516,7 +519,7 @@ async function callLocalProxy(cfg, prompt) {
     body: JSON.stringify({ prompt, maxTokens: 600, temperature: 0.4 }),
   })
   if (!response.ok) {
-    throw new Error(`Local proxy HTTP ${response.status}`)
+    throw new Error(`Local proxy HTTP ${response.status} ${await responseDetail(response)}`)
   }
   const data = await response.json()
   return {
