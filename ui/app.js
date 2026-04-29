@@ -42,6 +42,7 @@ const STATUS = {
   IN_PROGRESS: 'in_progress',
   DONE: 'done',
   FAILED: 'failed',
+  CANCELLED: 'cancelled',
 }
 
 const AGENT = {
@@ -80,6 +81,7 @@ const STATUS_LABELS = {
   [STATUS.IN_PROGRESS]: 'W toku',
   [STATUS.DONE]: 'Gotowe',
   [STATUS.FAILED]: 'Błąd',
+  [STATUS.CANCELLED]: 'Anulowane',
 }
 
 const WORKSTATION_STALE_MS = 2 * 60 * 1000
@@ -484,7 +486,12 @@ async function createTask({ title, description, priority, repo, context, templat
     return data
   } catch (error) {
     console.error('[app.js] createTask failed:', error)
-    showToast('Błąd zapisu zadania. Spróbuj ponownie.', TOAST_TYPE.ERROR)
+    const message = String(error?.message || '')
+    if (message.includes('active task limit exceeded')) {
+      showToast('Masz już 3 aktywne polecenia. Poczekaj na zakończenie albo poproś operatora o priorytet.', TOAST_TYPE.ERROR)
+    } else {
+      showToast('Błąd zapisu zadania. Spróbuj ponownie.', TOAST_TYPE.ERROR)
+    }
     return null
   }
 }
@@ -2172,6 +2179,7 @@ function statusBadge(status) {
     in_progress: 'bg-blue-100 text-blue-700',
     done:        'bg-emerald-100 text-emerald-700',
     failed:      'bg-red-100 text-red-700',
+    cancelled:   'bg-slate-100 text-slate-500',
   }
   const cls = styles[status] || styles.pending
   const label = STATUS_LABELS[status] || status || ''
@@ -2305,6 +2313,7 @@ function computeTimelineIndex(status) {
     case STATUS.IN_PROGRESS: return 3
     case STATUS.DONE:        return 5 // wszystkie ukończone
     case STATUS.FAILED:      return 4
+    case STATUS.CANCELLED:   return 4
     default:                 return 0
   }
 }

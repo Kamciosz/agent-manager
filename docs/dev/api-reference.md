@@ -24,13 +24,20 @@ Przechowuje wszystkie zadania zgłoszone przez użytkowników.
 | `title` | tekst | Tytuł zadania |
 | `description` | tekst | Opis zadania |
 | `priority` | tekst | `low` / `medium` / `high` |
-| `status` | tekst | `pending` / `analyzing` / `in_progress` / `done` / `failed` |
+| `status` | tekst | `pending` / `analyzing` / `in_progress` / `done` / `failed` / `cancelled` |
 | `user_id` | UUID | ID użytkownika który zgłosił zadanie |
 | `git_repo` | tekst | Opcjonalnie: powiązane repozytorium Git |
 | `context` | JSON | Dodatkowe informacje; UI zapisuje `{ template, raw }`, a Hermes Labyrinth używa `raw.workflow` |
 | `requested_workstation_id` | UUID | Opcjonalnie: jedna wskazana stacja robocza |
 | `requested_model_name` | tekst | Opcjonalnie: model wybrany dla wskazanej stacji |
+| `retry_count` | liczba | Ile razy zadanie było ponawiane |
+| `max_attempts` | liczba | Limit prób; domyślnie `3` |
+| `last_error` | tekst | Ostatni błąd wysokiego poziomu dla zadania |
+| `cancel_requested_at` | timestamp | Kiedy poproszono o anulowanie |
+| `cancelled_by_user_id` | UUID | Kto poprosił o anulowanie |
 | `created_at` | timestamp | Data utworzenia — generowana automatycznie |
+
+Nowa migracja P0 ogranicza zwykłego użytkownika do 3 aktywnych zadań (`pending`, `analyzing`, `in_progress`). Role `admin`, `manager`, `operator` i `teacher` są traktowane jako operatorzy i nie mają tego limitu.
 
 ### Tabela `assignments` — przydziały
 
@@ -166,7 +173,7 @@ await supabase
   .eq('id', taskId)
 ```
 
-Dopuszczalne wartości `status`: `pending`, `analyzing`, `in_progress`, `done`, `failed`.
+Dopuszczalne wartości `status`: `pending`, `analyzing`, `in_progress`, `done`, `failed`, `cancelled`.
 
 ### Usuń zadanie
 

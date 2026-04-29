@@ -34,8 +34,8 @@ Nie rekomenduję teraz migracji na Python/LangChain, ciężkiego React/Vite, aut
 | Security scan na sekrety/config | Już jest | Done | `.github/workflows/security-scan.yml` |
 | Walidacja Edge Functions | Wdrożone w tej rundzie | P1 | `supabase/functions/*` |
 | CORS Edge Functions bez `*` | Wdrożone w tej rundzie | P1 | `supabase/functions/*`, `FORK_GUIDE.md` |
-| Rate limiting/fair-share użytkowników | Brak | P0 | `supabase/migrations`, `ui/manager.js` |
-| Cancel/retry/reassign zadań | Brak | P0 | `supabase/migrations`, `ui/app.js`, `ui/manager.js`, `workstation-agent.js` |
+| Rate limiting/fair-share użytkowników | Fundament wdrożony: limit 3 aktywnych zadań | P0 | `supabase/migrations`, `ui/app.js` |
+| Cancel/retry/reassign zadań | Fundament schematu wdrożony | P0 | `supabase/migrations`, `ui/app.js`, `ui/manager.js`, `workstation-agent.js` |
 | Offline queue stacji | Brak | P0 | `workstation-agent.js` |
 | Batching logów i pollingu | Brak | P0 | `workstation-agent.js`, config |
 | Run trace zadania | Brak | P1 | `ui/app.js`, `messages`, `workstation_messages`, `workstation_jobs` |
@@ -50,7 +50,7 @@ Nie rekomenduję teraz migracji na Python/LangChain, ciężkiego React/Vite, aut
 
 ## Kolejność implementacji
 
-1. P0: rate limiting, statusy `cancelled`, retry metadata, akcje `Anuluj` i `Ponów`, obsługa anulowania w stacji.
+1. P0: dokończyć akcje `Anuluj` i `Ponów`, obsługę anulowania w stacji oraz przerzucanie retry na inną stację.
 2. P0: batching i offline queue, żeby 20 stacji nie zabiło free tier Supabase i nie gubiło wyników przy słabym WiFi.
 3. P1: run trace, health smoke i metryki stacji w monitorze.
 4. P1: presety runtime oraz bezpieczna komenda `reconfigure`.
