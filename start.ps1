@@ -23,6 +23,7 @@ $ProxyPort = 3001
 $DefaultSupabaseUrl = ''
 $DefaultSupabaseKey = ''
 $DefaultAppOrigin = 'https://kamciosz.github.io'
+$SafeContextSizeTokens = 8192
 $PortableNodeVersion = '22.11.0'
 $NodeExecutable = ''
 
@@ -239,7 +240,7 @@ function Get-ConfigInt([object] $Config, [string] $Name, [int] $Fallback, [int] 
   return [Math]::Max($Min, [Math]::Min($Max, $parsed))
 }
 
-function Convert-TokenCount([object] $Value, [int] $Fallback = 262144) {
+function Convert-TokenCount([object] $Value, [int] $Fallback = $SafeContextSizeTokens) {
   if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string] $Value)) { return $Fallback }
   $raw = ([string] $Value).Trim().ToLowerInvariant()
   if ($raw -eq 'native' -or $raw -eq 'natywny') { return 0 }
@@ -250,9 +251,9 @@ function Convert-TokenCount([object] $Value, [int] $Fallback = 262144) {
   return $Fallback
 }
 
-function Get-NormalizedContextMode([object] $Value) {
+function Get-NormalizedContextMode([object] $Value, [bool] $AllowNative = $false) {
   $raw = ([string] $Value).Trim().ToLowerInvariant()
-  if ($raw -eq 'native' -or $raw -eq 'natywny' -or [string]::IsNullOrWhiteSpace($raw)) { return 'native' }
+  if (($raw -eq 'native' -or $raw -eq 'natywny') -and $AllowNative) { return 'native' }
   return 'extended'
 }
 
@@ -263,9 +264,9 @@ function Get-NormalizedKvCache([object] $Value) {
 }
 
 function Get-EffectiveContextSize([object] $Config) {
-  $mode = Get-NormalizedContextMode (Get-ConfigString $Config 'contextMode' 'native')
+  $mode = Get-NormalizedContextMode (Get-ConfigString $Config 'contextMode' 'extended') (Get-ConfigBool $Config 'contextNativeUnsafeAccepted' $false)
   if ($mode -eq 'native') { return 0 }
-  $tokens = Convert-TokenCount (Get-ConfigString $Config 'contextSizeTokens' '262144') 262144
+  $tokens = Convert-TokenCount (Get-ConfigString $Config 'contextSizeTokens' ([string] $SafeContextSizeTokens)) $SafeContextSizeTokens
   return [Math]::Max(1024, [Math]::Min(262144, $tokens))
 }
 
@@ -336,10 +337,11 @@ function Sync-RuntimeConfig {
     Set-ConfigValue $cfg 'draftModelName' ([IO.Path]::GetFileName((Get-ConfigString $cfg 'draftModelPath')))
   }
   Set-ConfigValue $cfg 'speculativeTokens' (Get-ConfigInt $cfg 'speculativeTokens' 4 1 16)
-  $contextMode = Get-NormalizedContextMode (Get-ConfigString $cfg 'contextMode' 'native')
+  $contextMode = Get-NormalizedContextMode (Get-ConfigString $cfg 'contextMode' 'extended') (Get-ConfigBool $cfg 'contextNativeUnsafeAccepted' $false)
   Set-ConfigValue $cfg 'contextMode' $contextMode
   $contextSize = if ($contextMode -eq 'native') { 0 } else { Get-EffectiveContextSize $cfg }
   Set-ConfigValue $cfg 'contextSizeTokens' $contextSize
+  Set-ConfigValue $cfg 'contextNativeUnsafeAccepted' ($contextMode -eq 'native')
   Set-ConfigValue $cfg 'kvCacheQuantization' (Get-NormalizedKvCache (Get-ConfigString $cfg 'kvCacheQuantization' 'auto'))
   Set-ConfigValue $cfg 'effectiveContextSizeTokens' $contextSize
   Set-ConfigValue $cfg 'effectiveKvCacheQuantization' (Get-EffectiveKvCache $cfg)
@@ -728,8 +730,8 @@ function Configure-Advanced {
   Write-Host '=========================================================='
   Write-Host '  Advanced runtime options'
   Write-Host '=========================================================='
-  Write-Host '  Default: parallelSlots=1, context=native, KV=auto, SD disabled.'
-  Write-Host '  Preset 256k is available, but may need a lot of RAM/VRAM.'
+  Write-Host '  Default: parallelSlots=1, context=8k, KV=auto, SD disabled.'
+  Write-Host '  Native/128k/256k are available, but may need a lot of RAM/VRAM.'
   Write-Host ''
 
   $answer = Prompt-WithDefault 'Configure Advanced now? (y/N)' 'N'
@@ -740,11 +742,13 @@ function Configure-Advanced {
   }
 
   $parallel = Prompt-WithDefault 'parallelSlots (1-4)' ([string] (Get-ConfigInt $cfg 'parallelSlots' 1 1 4))
-  $contextDefault = if ((Get-NormalizedContextMode (Get-ConfigString $cfg 'contextMode' 'native')) -eq 'native') { 'native' } else { [string] (Get-EffectiveContextSize $cfg) }
-  $contextChoice = Prompt-WithDefault 'Context: native, 32k, 64k, 128k, 256k or token count' $contextDefault
+  $contextDefault = if ((Get-NormalizedContextMode (Get-ConfigString $cfg 'contextMode' 'extended') (Get-ConfigBool $cfg 'contextNativeUnsafeAccepted' $false)) -eq 'native') { 'native' } else { [string] (Get-EffectiveContextSize $cfg) }
+  $contextChoice = Prompt-WithDefault 'Context: 8k, 32k, 64k, 128k, 256k, native or token count' $contextDefault
   switch (($contextChoice.Trim()).ToLowerInvariant()) {
     'native' { $contextMode = 'native'; $contextSize = 0; break }
     'natywny' { $contextMode = 'native'; $contextSize = 0; break }
+    '8k' { $contextMode = 'extended'; $contextSize = 8192; break }
+    '8192' { $contextMode = 'extended'; $contextSize = 8192; break }
     '32k' { $contextMode = 'extended'; $contextSize = 32768; break }
     '32768' { $contextMode = 'extended'; $contextSize = 32768; break }
     '64k' { $contextMode = 'extended'; $contextSize = 65536; break }
@@ -753,7 +757,7 @@ function Configure-Advanced {
     '131072' { $contextMode = 'extended'; $contextSize = 131072; break }
     '256k' { $contextMode = 'extended'; $contextSize = 262144; break }
     '262144' { $contextMode = 'extended'; $contextSize = 262144; break }
-    default { $contextMode = 'extended'; $contextSize = Convert-TokenCount $contextChoice 262144; break }
+    default { $contextMode = 'extended'; $contextSize = Convert-TokenCount $contextChoice $SafeContextSizeTokens; break }
   }
   $contextSize = if ($contextMode -eq 'native') { 0 } else { [Math]::Max(1024, [Math]::Min(262144, $contextSize)) }
   $kvCache = Get-NormalizedKvCache (Prompt-WithDefault 'KV cache compression (auto/f16/q8_0/q4_0)' (Get-ConfigString $cfg 'kvCacheQuantization' 'auto'))
@@ -782,6 +786,7 @@ function Configure-Advanced {
   Set-ConfigValue $cfg 'speculativeTokens' (Get-ConfigInt ([pscustomobject]@{ speculativeTokens = $speculativeTokens }) 'speculativeTokens' 4 1 16)
   Set-ConfigValue $cfg 'contextMode' $contextMode
   Set-ConfigValue $cfg 'contextSizeTokens' $contextSize
+  Set-ConfigValue $cfg 'contextNativeUnsafeAccepted' ($contextMode -eq 'native')
   Set-ConfigValue $cfg 'kvCacheQuantization' $kvCache
   Set-ConfigValue $cfg 'autoUpdate' $autoUpdate
   Save-Config $cfg
@@ -943,9 +948,9 @@ function Start-Llama([string] $ModelPath, [string] $Backend) {
   $contextSize = Get-EffectiveContextSize $cfg
   $args = @('--model', $ModelPath, '--host', '127.0.0.1', '--port', [string] $script:LlamaPort, '--ctx-size', [string] $contextSize)
   if ($contextSize -eq 0) {
-    Write-StartLog 'Context: native (llama.cpp --ctx-size 0).'
+    Write-StartWarn 'Context: native (llama.cpp --ctx-size 0). Models with native 128k/256k context may need huge memory.'
   } elseif ($contextSize -ge 131072) {
-    Write-StartWarn "Context $contextSize tokens may need a lot of RAM/VRAM. If startup fails, run start.bat --config and choose native."
+    Write-StartWarn "Context $contextSize tokens may need a lot of RAM/VRAM. If Compute error/OOM appears, run start.bat --config and choose 8k."
   } else {
     Write-StartLog "Context: $contextSize tokens."
   }

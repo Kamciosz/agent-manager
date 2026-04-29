@@ -111,7 +111,7 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 - Widok `Stacje robocze` zawiera prosty konfigurator pól: równoległe zadania, kontekst modelu, KV cache, SD, harmonogram i auto-update. UI generuje instrukcję dla launchera, ale nie zapisuje lokalnego `config.json` przez przeglądarkę.
 - Stacja w poleceniu ma tryb `Automatycznie - AI wybierze stację` albo dokładnie jedną wskazaną stację.
 - `parallelSlots` jest ustawieniem lokalnego runtime; domyślnie `1`, zakres `1-4`.
-- Kontekst jest ustawieniem lokalnego runtime; domyślnie `native`, opcjonalnie presety do `256k`.
+- Kontekst jest ustawieniem lokalnego runtime; domyślnie bezpieczne `8k`, opcjonalnie `native` i presety do `256k`.
 - KV cache ma tryby `auto`, `f16`, `q8_0`, `q4_0`; `auto` wybiera kompresję dopiero przy długim kontekście.
 - SD jest domyślnie wyłączone i opisane jako eksperymentalne; wymaga draft modelu oraz kompatybilnego `llama-server`.
 - Frontend tylko pokazuje te ustawienia. Zapis odbywa się lokalnie przez `start.sh --config`, `start.bat --config`, `--advanced` albo domyślne wartości w launcherze.

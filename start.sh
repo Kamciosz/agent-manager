@@ -486,6 +486,7 @@ sync_runtime_config_json() {
 const fs = require('node:fs')
 const path = require('node:path')
 const file = process.env.CONFIG_FILE_ENV
+const SAFE_CONTEXT_TOKENS = 8192
 let cfg = {}
 try {
   cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -502,12 +503,13 @@ cfg.draftModelPath = typeof cfg.draftModelPath === 'string' ? cfg.draftModelPath
 cfg.draftModelName = typeof cfg.draftModelName === 'string' ? cfg.draftModelName : ''
 if (cfg.draftModelPath && !cfg.draftModelName) cfg.draftModelName = path.basename(cfg.draftModelPath)
 cfg.speculativeTokens = clampInt(cfg.speculativeTokens, 4, 1, 16)
-cfg.contextMode = normalizeContextMode(cfg.contextMode)
+cfg.contextMode = normalizeContextMode(cfg.contextMode, cfg.contextNativeUnsafeAccepted === true)
 cfg.contextSizeTokens = cfg.contextMode === 'native'
   ? 0
-  : clampInt(parseTokenCount(cfg.contextSizeTokens, 262144), 262144, 1024, 262144)
+  : clampInt(parseTokenCount(cfg.contextSizeTokens, SAFE_CONTEXT_TOKENS), SAFE_CONTEXT_TOKENS, 1024, 262144)
 cfg.kvCacheQuantization = normalizeKvCache(cfg.kvCacheQuantization)
 cfg.effectiveContextSizeTokens = cfg.contextMode === 'native' ? 0 : cfg.contextSizeTokens
+cfg.contextNativeUnsafeAccepted = cfg.contextMode === 'native'
 cfg.effectiveKvCacheQuantization = resolveKvCache(cfg.kvCacheQuantization, cfg.effectiveContextSizeTokens)
 cfg.autoUpdate = cfg.autoUpdate === true
 cfg.optimizationMode = cfg.sdEnabled ? 'sd-experimental' : (cfg.parallelSlots > 1 ? 'parallel' : 'standard')
@@ -536,8 +538,9 @@ function parseTokenCount(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-function normalizeContextMode(value) {
-  return String(value || 'native').trim().toLowerCase() === 'native' ? 'native' : 'extended'
+function normalizeContextMode(value, allowNative = false) {
+  const raw = String(value || 'extended').trim().toLowerCase()
+  return raw === 'native' && allowNative ? 'native' : 'extended'
 }
 
 function normalizeKvCache(value) {
@@ -568,6 +571,7 @@ write_advanced_config() {
 const fs = require('node:fs')
 const path = require('node:path')
 const file = process.env.CONFIG_FILE_ENV
+const SAFE_CONTEXT_TOKENS = 8192
 let cfg = {}
 try {
   cfg = JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -579,10 +583,11 @@ cfg.sdEnabled = process.env.SD_ENABLED_VALUE === 'true'
 cfg.draftModelPath = cfg.sdEnabled ? (process.env.DRAFT_MODEL_PATH_VALUE || '') : ''
 cfg.draftModelName = cfg.draftModelPath ? path.basename(cfg.draftModelPath) : ''
 cfg.speculativeTokens = clampInt(process.env.SPECULATIVE_TOKENS_VALUE, 4, 1, 16)
-cfg.contextMode = normalizeContextMode(process.env.CONTEXT_MODE_VALUE)
+cfg.contextMode = normalizeContextMode(process.env.CONTEXT_MODE_VALUE, true)
+cfg.contextNativeUnsafeAccepted = cfg.contextMode === 'native'
 cfg.contextSizeTokens = cfg.contextMode === 'native'
   ? 0
-  : clampInt(parseTokenCount(process.env.CONTEXT_SIZE_VALUE, 262144), 262144, 1024, 262144)
+  : clampInt(parseTokenCount(process.env.CONTEXT_SIZE_VALUE, SAFE_CONTEXT_TOKENS), SAFE_CONTEXT_TOKENS, 1024, 262144)
 cfg.kvCacheQuantization = normalizeKvCache(process.env.KV_CACHE_VALUE)
 cfg.effectiveContextSizeTokens = cfg.contextMode === 'native' ? 0 : cfg.contextSizeTokens
 cfg.effectiveKvCacheQuantization = resolveKvCache(cfg.kvCacheQuantization, cfg.effectiveContextSizeTokens)
@@ -606,9 +611,9 @@ function parseTokenCount(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-function normalizeContextMode(value) {
-  const raw = String(value || 'native').trim().toLowerCase()
-  return raw === 'native' ? 'native' : 'extended'
+function normalizeContextMode(value, allowNative = false) {
+  const raw = String(value || 'extended').trim().toLowerCase()
+  return raw === 'native' && allowNative ? 'native' : 'extended'
 }
 
 function normalizeKvCache(value) {
@@ -631,8 +636,8 @@ configure_advanced_options() {
   echo "=========================================================="
   echo "  Advanced — opcje wydajności lokalnej stacji"
   echo "=========================================================="
-  echo "  Domyślnie: parallelSlots=1, kontekst=native, KV=auto, SD=off."
-  echo "  Preset 256k jest dostępny, ale może wymagać dużo RAM/VRAM."
+  echo "  Domyślnie: parallelSlots=1, kontekst=8k, KV=auto, SD=off."
+  echo "  Native/128k/256k są dostępne, ale mogą wymagać bardzo dużo RAM/VRAM."
   echo "  Zwiększaj sloty tylko gdy masz zapas RAM/VRAM."
   echo "  SD jest eksperymentalne i wymaga osobnego mniejszego modelu GGUF."
   echo
@@ -642,20 +647,21 @@ configure_advanced_options() {
     y|yes|t|tak) ;;
     *)
       sync_runtime_config_json
-      log "Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), context=$(read_config_json_value contextMode native), KV=$(read_config_json_value kvCacheQuantization auto), SD=$(read_config_json_value sdEnabled false)."
+      log "Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), context=$(read_config_json_value contextMode extended), KV=$(read_config_json_value kvCacheQuantization auto), SD=$(read_config_json_value sdEnabled false)."
       return
       ;;
   esac
 
   parallel_slots="$(prompt_with_default "parallelSlots — ile jobów stacja może robić naraz (1-4)" "$(read_config_json_value parallelSlots 1)")"
-  if [ "$(read_config_json_value contextMode native)" = "native" ]; then
+  if [ "$(read_config_json_value contextMode extended)" = "native" ]; then
     context_default="native"
   else
-    context_default="$(read_config_json_value contextSizeTokens 262144)"
+    context_default="$(read_config_json_value contextSizeTokens 8192)"
   fi
-  context_choice="$(prompt_with_default "Kontekst modelu: native, 32k, 64k, 128k, 256k albo liczba tokenów" "$context_default")"
+  context_choice="$(prompt_with_default "Kontekst modelu: 8k, 32k, 64k, 128k, 256k, native albo liczba tokenów" "$context_default")"
   case "$(printf '%s' "$context_choice" | tr '[:upper:]' '[:lower:]')" in
     native|natywny) context_mode="native"; context_size="0" ;;
+    8k|8192) context_mode="extended"; context_size="8192" ;;
     32k|32768) context_mode="extended"; context_size="32768" ;;
     64k|65536) context_mode="extended"; context_size="65536" ;;
     128k|131072) context_mode="extended"; context_size="131072" ;;
@@ -691,7 +697,7 @@ configure_advanced_options() {
 
   write_advanced_config "$parallel_slots" "$sd_enabled" "$draft_model_path" "$speculative_tokens" "$context_mode" "$context_size" "$kv_cache" "$auto_update"
   sync_runtime_config_json
-  log "Zapisano Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), context=$(read_config_json_value contextMode native)/$(read_config_json_value effectiveContextSizeTokens 0), KV=$(read_config_json_value effectiveKvCacheQuantization f16), SD=$(read_config_json_value sdEnabled false), autoUpdate=$(read_config_json_value autoUpdate false)."
+  log "Zapisano Advanced: parallelSlots=$(read_config_json_value parallelSlots 1), context=$(read_config_json_value contextMode extended)/$(read_config_json_value effectiveContextSizeTokens 8192), KV=$(read_config_json_value effectiveKvCacheQuantization f16), SD=$(read_config_json_value sdEnabled false), autoUpdate=$(read_config_json_value autoUpdate false)."
 }
 
 write_schedule_config() {
@@ -1164,9 +1170,9 @@ start_llama() {
   if [ "$context_size" -gt 262144 ]; then context_size=262144; fi
   extra_args+=( --ctx-size "$context_size" )
   if [ "$context_size" = "0" ]; then
-    log "Kontekst modelu: native (llama.cpp --ctx-size 0)."
+    warn "Kontekst modelu: native (llama.cpp --ctx-size 0). Modele z natywnym 128k/256k moga wymagać ogromnej pamięci."
   elif [ "$context_size" -ge 131072 ]; then
-    warn "Kontekst ${context_size} tokenów może wymagać bardzo dużo RAM/VRAM. Jeśli start będzie wolny albo padnie, wróć do native przez ./start.sh --config."
+    warn "Kontekst ${context_size} tokenów może wymagać bardzo dużo RAM/VRAM. Jeśli pojawi się Compute error/OOM, wybierz 8k przez ./start.sh --config."
   else
     log "Kontekst modelu: ${context_size} tokenów."
   fi
@@ -1462,7 +1468,7 @@ cat <<EOF
   model          $(basename "$MODEL_PATH")
   backend        $GPU_DETECTED
   parallelSlots  $(read_config_json_value parallelSlots 1)
-  context        $(read_config_json_value contextMode native) / $(read_config_json_value effectiveContextSizeTokens 0) tokens
+  context        $(read_config_json_value contextMode extended) / $(read_config_json_value effectiveContextSizeTokens 8192) tokens
   KV cache       $(read_config_json_value effectiveKvCacheQuantization f16)
   SD             $(read_config_json_value sdEnabled false)
   autoUpdate     $(read_config_json_value autoUpdate false)

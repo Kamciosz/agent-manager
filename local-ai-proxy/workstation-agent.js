@@ -625,6 +625,17 @@ async function processIncomingMessages(cfg, session) {
       })
     } catch (error) {
       log('Nie udalo sie obsluzyc wiadomosci:', error.message)
+      await appendStationMessage(cfg, session, [{
+        workstation_id: workstationId,
+        task_id: message.task_id || null,
+        sender_kind: 'workstation',
+        sender_label: cfg.workstationName,
+        message_type: 'error',
+        content: `Nie udalo sie obsluzyc wiadomosci: ${error.message}`,
+      }]).catch((appendError) => log('message error report failed:', appendError.message))
+      await restPatch(cfg, session, 'workstation_messages', `id=eq.${encodeURIComponent(message.id)}`, {
+        read_at: new Date().toISOString(),
+      }).catch((patchError) => log('mark failed message read failed:', patchError.message))
     }
   }
 }

@@ -145,6 +145,13 @@ function resolveKvCache(value, contextSizeTokens) {
   return Number(contextSizeTokens) > 32768 ? 'q8_0' : 'f16'
 }
 
+function cleanGeneratedText(value) {
+  return String(value || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/^\s*\?\s*/, '')
+    .trim()
+}
+
 // ============================================================================
 // HELPERY HTTP
 // ============================================================================
@@ -259,7 +266,7 @@ async function forwardToLlama(prompt, opts, llamaUrl, timeoutMs = DEFAULTS.TIMEO
       throw new Error(`llama-server HTTP ${response.status} ${detail.slice(0, 300)}`)
     }
     const data = await response.json()
-    return (data.content ?? '').trim()
+    return cleanGeneratedText(data.content)
   } catch (error) {
     if (timedOut || error?.name === 'AbortError') {
       throw new Error(`llama-server timeout after ${timeoutMs}ms`)

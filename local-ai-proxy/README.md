@@ -166,7 +166,8 @@ Opcje Advanced są lokalne dla konkretnej stacji roboczej i zapisują się w `lo
 
 `contextMode` określa, jak launcher przekazuje kontekst do `llama-server`:
 
-- Domyślnie: `native`, czyli `--ctx-size 0`. To każe llama.cpp użyć natywnego kontekstu zapisanego w modelu/GGUF, zamiast hardkodować małe `4096`.
+- Domyślnie: `extended` z `contextSizeTokens=8192`, czyli bezpieczne 8k dla dużych modeli i słabszych GPU.
+- Opcjonalnie: `native`, czyli `--ctx-size 0`. To każe llama.cpp użyć natywnego kontekstu zapisanego w modelu/GGUF; przy modelach 128k/256k może to wymagać ogromnej ilości RAM/VRAM i powodować `Compute error`.
 - Presety opt-in: `32k`, `64k`, `128k`, `256k` albo własna liczba tokenów.
 - Zakres launchera: `1024-262144`; wartości spoza zakresu są przycinane.
 - `256k` jest dostępne, ale może wymagać bardzo dużo RAM/VRAM i modelu, który realnie znosi tak długi kontekst.
@@ -262,7 +263,7 @@ Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci. Dod
 
 **Aplikacja działa wolniej po podłączeniu lokalnego modelu.** AI generuje tekst dłużej niż tryb przeglądarkowy. To normalne — większy kontekst i większy model = wolniej. Pomiar w `logs/proxy.log` (Xms na request).
 
-**Po ustawieniu 128k/256k model nie startuje albo komputer mieli dyskiem.** To prawie zawsze brak RAM/VRAM albo model bez realnego wsparcia długiego kontekstu. Uruchom `./start.sh --config` albo `start.bat --config`, wybierz `native` i zostaw KV cache na `auto`.
+**Po ustawieniu native/128k/256k model nie startuje, zwraca `Compute error` albo komputer mieli dyskiem.** To prawie zawsze brak RAM/VRAM albo model bez realnego wsparcia długiego kontekstu. Uruchom `./start.sh --config` albo `start.bat --config`, wybierz `8k` i zostaw KV cache na `auto`.
 
 **Czy można zrobić lokalny kontener Windows?** Kontener Windows wymaga Windows hosta z obsługą Windows Containers/Hyper-V. Na macOS/Linux nie uruchomimy prawdziwego kontenera Windows z tym launcherem. Zamiast tego repo ma smoke test GitHub Actions na `windows-latest`, który uruchamia PowerShell/BAT w izolowanym runnerze Windows.
 
