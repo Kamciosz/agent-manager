@@ -24,6 +24,7 @@ const STATUS = {
   IN_PROGRESS: 'in_progress',
   DONE: 'done',
   FAILED: 'failed',
+  CANCELLED: 'cancelled',
 }
 
 const ASSIGNMENT_STATUS = {
@@ -166,10 +167,12 @@ async function handleNewAssignment(assignment) {
 
     // Krok 1: oznacz przydział jako rozpoczęty
     await sleep(DELAY.START)
+    if (await isTaskCancelled(assignment.task_id)) return
     await updateAssignmentStatus(assignment.id, ASSIGNMENT_STATUS.IN_PROGRESS)
 
     // Krok 2: po pierwszej fazie pracy — zapytaj managera o wyjaśnienie
     await sleep(DELAY.WORK)
+    if (await isTaskCancelled(assignment.task_id)) return
     await askManager(assignment.task_id)
 
     // Krok 3: czekaj asynchronicznie na odpowiedź managera, potem dokończ
@@ -216,6 +219,7 @@ async function finishAssignment(assignment) {
   try {
     // Krok 1: jeszcze chwila „pracy"
     await sleep(DELAY.FINISH)
+    if (await isTaskCancelled(assignment.task_id)) return
 
     // Krok 2: oznacz przydział jako ukończony
     await updateAssignmentStatus(assignment.id, ASSIGNMENT_STATUS.DONE)
@@ -260,13 +264,30 @@ async function updateAssignmentStatus(assignmentId, newStatus) {
  */
 async function updateTaskStatus(taskId, newStatus) {
   try {
-    const { error } = await supabaseClient
+    let query = supabaseClient
       .from('tasks')
       .update({ status: newStatus })
       .eq('id', taskId)
+    if (newStatus !== STATUS.CANCELLED) query = query.neq('status', STATUS.CANCELLED)
+    const { error } = await query
     if (error) throw error
   } catch (error) {
     console.error('[executor.js] updateTaskStatus failed:', error)
+  }
+}
+
+async function isTaskCancelled(taskId) {
+  try {
+    const { data, error } = await supabaseClient
+      .from('tasks')
+      .select('status')
+      .eq('id', taskId)
+      .maybeSingle()
+    if (error) throw error
+    return data?.status === STATUS.CANCELLED
+  } catch (error) {
+    console.error('[executor.js] isTaskCancelled failed:', error)
+    return false
   }
 }
 

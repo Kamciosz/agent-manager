@@ -407,10 +407,20 @@
                   class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">
                   pending
                 </span>
-                <button id="btn-delete-task-detail"
-                  class="text-red-600 hover:text-red-700 hover:underline text-sm font-medium">
-                  Usuń polecenie
-                </button>
+                <div class="flex flex-wrap justify-end gap-3 text-sm font-medium">
+                  <button id="btn-cancel-task-detail"
+                    class="text-amber-700 hover:text-amber-800 hover:underline disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed">
+                    Anuluj
+                  </button>
+                  <button id="btn-retry-task-detail"
+                    class="text-blue-700 hover:text-blue-800 hover:underline disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed">
+                    Ponów
+                  </button>
+                  <button id="btn-delete-task-detail"
+                    class="text-red-600 hover:text-red-700 hover:underline">
+                    Usuń
+                  </button>
+                </div>
               </div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-6 text-sm">
@@ -418,6 +428,7 @@
               <div><div class="text-slate-500">Repo</div><div id="detail-repo" class="font-medium">—</div></div>
               <div><div class="text-slate-500">Stacja</div><div id="detail-workstation" class="font-medium">—</div></div>
               <div><div class="text-slate-500">Model</div><div id="detail-model" class="font-medium">—</div></div>
+              <div><div class="text-slate-500">Ponowienia</div><div id="detail-retry" class="font-medium">—</div></div>
               <div><div class="text-slate-500">Utworzono</div><div id="detail-created" class="font-medium">—</div></div>
               <div><div class="text-slate-500">ID</div><div id="detail-id" class="font-mono text-xs">—</div></div>
             </div>

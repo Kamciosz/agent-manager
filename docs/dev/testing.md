@@ -137,9 +137,11 @@ Manualny test UI po tej rundzie:
 13. W **Polecenia** przełącz widok z listy na kafelki i utwórz polecenie, wybierając stację kafelkiem.
 14. Użyj filtrów poleceń po statusie, priorytecie i tekście; ten sam wynik ma być widoczny w liście i kafelkach.
 15. Jako zwykły użytkownik utwórz 3 aktywne polecenia; czwarte powinno zostać odrzucone czytelnym komunikatem o limicie.
-16. Wyślij do stacji komendy `Odśwież`, `Wstrzymaj`, `Wznów` i `Aktualizuj` z tabeli stacji oraz z monitora; w logu stacji wynik powinien być podpisany jako `system`.
-17. W konfiguratorze KV wybierz `iso3/iso3` albo `planar3/f16`; stock llama.cpp ma spaść do `q8_0/q8_0`, a kompatybilny build RotorQuant ma przyjąć osobne typy K/V.
-18. Utwórz proste polecenie `2 + 2`; odpowiedź stacji ma zawierać bezpośredni wynik, bez przepisywania pól `Tytuł`, `Opis`, `Repo` ani `Kontekst`.
+16. Dla aktywnego polecenia kliknij `Anuluj`; status ma przejść na `Anulowane`, a aktywny `workstation_job` nie może później przepisać zadania na `Gotowe`.
+17. Dla polecenia `Błąd` albo `Anulowane` kliknij `Ponów`; licznik ponowień ma wzrosnąć, status wrócić na `Oczekuje`, a manager ma ponownie przydzielić wykonanie.
+18. Wyślij do stacji komendy `Odśwież`, `Wstrzymaj`, `Wznów` i `Aktualizuj` z tabeli stacji oraz z monitora; w logu stacji wynik powinien być podpisany jako `system`.
+19. W konfiguratorze KV wybierz `iso3/iso3` albo `planar3/f16`; stock llama.cpp ma spaść do `q8_0/q8_0`, a kompatybilny build RotorQuant ma przyjąć osobne typy K/V.
+20. Utwórz proste polecenie `2 + 2`; odpowiedź stacji ma zawierać bezpośredni wynik, bez przepisywania pól `Tytuł`, `Opis`, `Repo` ani `Kontekst`.
 
 ---
 

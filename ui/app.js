@@ -84,6 +84,9 @@ const STATUS_LABELS = {
   [STATUS.CANCELLED]: 'Anulowane',
 }
 
+const ACTIVE_TASK_STATUSES = [STATUS.PENDING, STATUS.ANALYZING, STATUS.IN_PROGRESS]
+const RETRYABLE_TASK_STATUSES = [STATUS.FAILED, STATUS.CANCELLED]
+
 const WORKSTATION_STALE_MS = 2 * 60 * 1000
 
 const UI_STORAGE_KEYS = {
@@ -451,6 +454,14 @@ function bindNavigation() {
     if (!state.currentTaskId) return
     handleDeleteTask(state.currentTaskId)
   })
+  document.getElementById('btn-cancel-task-detail')?.addEventListener('click', () => {
+    if (!state.currentTaskId) return
+    handleCancelTask(state.currentTaskId)
+  })
+  document.getElementById('btn-retry-task-detail')?.addEventListener('click', () => {
+    if (!state.currentTaskId) return
+    handleRetryTask(state.currentTaskId)
+  })
 }
 
 // ============================================================================
@@ -547,6 +558,112 @@ async function deleteTask(id) {
     showToast('Błąd usuwania zadania.', TOAST_TYPE.ERROR)
     return false
   }
+}
+
+async function cancelTask(taskId) {
+  const now = new Date().toISOString()
+  const payload = {
+    status: STATUS.CANCELLED,
+    cancel_requested_at: now,
+    cancelled_by_user_id: state.user?.id || null,
+    last_error: 'Anulowane przez operatora.',
+  }
+  try {
+    const { error: jobsError } = await supabase
+      .from('workstation_jobs')
+      .update({
+        status: STATUS.CANCELLED,
+        cancel_requested_at: now,
+        cancelled_by_user_id: state.user?.id || null,
+        finished_at: now,
+        error_text: 'Anulowane przez operatora.',
+      })
+      .eq('task_id', taskId)
+      .in('status', ['queued', 'running'])
+    if (jobsError) throw jobsError
+
+    const { error } = await supabase
+      .from('tasks')
+      .update(payload)
+      .eq('id', taskId)
+      .in('status', ACTIVE_TASK_STATUSES)
+    if (error) throw error
+    return true
+  } catch (error) {
+    console.error('[app.js] cancelTask failed:', error)
+    showToast('Nie udało się anulować polecenia.', TOAST_TYPE.ERROR)
+    return false
+  }
+}
+
+async function retryTask(task) {
+  const retryCount = taskRetryCount(task)
+  const maxAttempts = taskMaxAttempts(task)
+  if (retryCount >= maxAttempts - 1) {
+    showToast('Limit prób dla tego polecenia został wyczerpany.', TOAST_TYPE.ERROR)
+    return false
+  }
+  const now = new Date().toISOString()
+  try {
+    const { error: jobsError } = await supabase
+      .from('workstation_jobs')
+      .update({
+        status: STATUS.CANCELLED,
+        cancel_requested_at: now,
+        cancelled_by_user_id: state.user?.id || null,
+        finished_at: now,
+      })
+      .eq('task_id', task.id)
+      .in('status', ['queued', 'running'])
+    if (jobsError) throw jobsError
+
+    const { error } = await supabase
+      .from('tasks')
+      .update({
+        status: STATUS.PENDING,
+        retry_count: retryCount + 1,
+        last_error: null,
+        cancel_requested_at: null,
+        cancelled_by_user_id: null,
+      })
+      .eq('id', task.id)
+      .in('status', RETRYABLE_TASK_STATUSES)
+    if (error) throw error
+    return true
+  } catch (error) {
+    console.error('[app.js] retryTask failed:', error)
+    const message = String(error?.message || '')
+    if (message.includes('active task limit exceeded')) {
+      showToast('Masz już 3 aktywne polecenia. Poczekaj na zakończenie albo anuluj inne polecenie przed ponowieniem.', TOAST_TYPE.ERROR)
+    } else {
+      showToast('Nie udało się ponowić polecenia.', TOAST_TYPE.ERROR)
+    }
+    return false
+  }
+}
+
+async function handleCancelTask(taskId) {
+  if (!confirm('Anulować polecenie? Stacja dostanie sygnał anulowania, a wynik spóźnionego jobu nie powinien nadpisać statusu.')) return
+  const ok = await cancelTask(taskId)
+  if (!ok) return
+  await refreshTasks()
+  showToast('Polecenie anulowane.', TOAST_TYPE.SUCCESS)
+}
+
+async function handleRetryTask(taskId) {
+  const task = state.tasks.find((item) => item.id === taskId) || await getTaskById(taskId)
+  if (!task) {
+    showToast('Nie znaleziono polecenia do ponowienia.', TOAST_TYPE.ERROR)
+    return
+  }
+  if (!canRetryTask(task)) {
+    showToast('To polecenie nie jest gotowe do ponowienia.', TOAST_TYPE.INFO)
+    return
+  }
+  const ok = await retryTask(task)
+  if (!ok) return
+  await refreshTasks()
+  showToast('Polecenie wróciło do kolejki.', TOAST_TYPE.SUCCESS)
 }
 
 /**
@@ -2116,7 +2233,7 @@ function renderTasksTable(tbodyId, tasks) {
       <td class="px-6 py-3">${escapeHtml(priorityLabel(t.priority))}</td>
       <td class="px-6 py-3 text-slate-500">${formatDate(t.created_at)}</td>
       <td class="px-6 py-3 text-right">
-        <button class="task-delete text-red-600 hover:underline text-sm" data-id="${t.id}" aria-label="Usuń zadanie ${escapeHtml(t.title || '')}">Usuń</button>
+        ${taskActionsHtml(t)}
       </td>
     </tr>
   `).join('')
@@ -2124,7 +2241,7 @@ function renderTasksTable(tbodyId, tasks) {
   // Klik na wiersz → otwórz Task Detail
   tbody.querySelectorAll('.task-row').forEach((row) => {
     row.addEventListener('click', (event) => {
-      if (event.target.closest('.task-delete')) return
+      if (event.target.closest('.task-delete, .task-cancel, .task-retry')) return
       openTaskDetail(row.dataset.taskId)
     })
   })
@@ -2134,6 +2251,50 @@ function renderTasksTable(tbodyId, tasks) {
       handleDeleteTask(button.dataset.id)
     })
   })
+  tbody.querySelectorAll('.task-cancel').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      handleCancelTask(button.dataset.id)
+    })
+  })
+  tbody.querySelectorAll('.task-retry').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      handleRetryTask(button.dataset.id)
+    })
+  })
+}
+
+function taskActionsHtml(task) {
+  const label = escapeHtml(task.title || '')
+  return [
+    canCancelTask(task)
+      ? `<button class="task-cancel text-amber-700 hover:underline text-sm mr-3" data-id="${task.id}" aria-label="Anuluj polecenie ${label}">Anuluj</button>`
+      : '',
+    canRetryTask(task)
+      ? `<button class="task-retry text-blue-700 hover:underline text-sm mr-3" data-id="${task.id}" aria-label="Ponów polecenie ${label}">Ponów</button>`
+      : '',
+    `<button class="task-delete text-red-600 hover:underline text-sm" data-id="${task.id}" aria-label="Usuń zadanie ${label}">Usuń</button>`,
+  ].filter(Boolean).join('')
+}
+
+function canCancelTask(task) {
+  return ACTIVE_TASK_STATUSES.includes(task?.status)
+}
+
+function canRetryTask(task) {
+  if (!RETRYABLE_TASK_STATUSES.includes(task?.status)) return false
+  return taskRetryCount(task) < taskMaxAttempts(task) - 1
+}
+
+function taskRetryCount(task) {
+  const value = Number(task?.retry_count || 0)
+  return Number.isFinite(value) && value >= 0 ? value : 0
+}
+
+function taskMaxAttempts(task) {
+  const value = Number(task?.max_attempts || 3)
+  return Number.isFinite(value) && value >= 1 ? value : 3
 }
 
 function renderTaskCards(tasks) {
@@ -2261,8 +2422,19 @@ function renderTaskDetail(task) {
   document.getElementById('detail-model').textContent = task.requested_model_name || '—'
   document.getElementById('detail-created').textContent = formatDate(task.created_at)
   document.getElementById('detail-id').textContent = task.id
+  setText('detail-retry', `${taskRetryCount(task)} / ${Math.max(0, taskMaxAttempts(task) - 1)}`)
   setText('detail-log-path', `Zadania / ${task.title || 'bez tytułu'} / konsola / ${String(task.id).slice(0, 8)}`)
   document.getElementById('btn-delete-task-detail').dataset.taskId = task.id
+  const cancelButton = document.getElementById('btn-cancel-task-detail')
+  if (cancelButton) {
+    cancelButton.dataset.taskId = task.id
+    cancelButton.disabled = !canCancelTask(task)
+  }
+  const retryButton = document.getElementById('btn-retry-task-detail')
+  if (retryButton) {
+    retryButton.dataset.taskId = task.id
+    retryButton.disabled = !canRetryTask(task)
+  }
   document.getElementById('btn-task-send-workstation-message').disabled = !task.requested_workstation_id
   document.getElementById('btn-task-send-workstation-message').dataset.workstationId = task.requested_workstation_id || ''
   const badge = document.getElementById('detail-status-badge')

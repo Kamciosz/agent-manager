@@ -31,6 +31,7 @@ const STATUS = {
   IN_PROGRESS: 'in_progress',
   DONE: 'done',
   FAILED: 'failed',
+  CANCELLED: 'cancelled',
 }
 
 const AGENT = {
@@ -119,10 +120,12 @@ function subscribeToNewTasks() {
   return supabaseClient
     .channel('manager-tasks')
     .on('postgres_changes', {
-      event: 'INSERT',
+      event: '*',
       schema: 'public',
       table: 'tasks',
     }, (payload) => {
+      if (payload.eventType === 'DELETE') return
+      if (!payload.new) return
       handleNewTask(payload.new)
     })
     .subscribe()
@@ -173,8 +176,11 @@ async function handleNewTask(task) {
 
   // Krok 2: po kolejnych 1200 ms — utwórz przydział lub job dla stacji
   await sleep(DELAY.ASSIGN)
+  if (await isTaskCancelled(task.id)) return
   const instructions = await generateInstructions(task)
+  if (await isTaskCancelled(task.id)) return
   const target = await resolveExecutionTarget(task)
+  if (await isTaskCancelled(task.id)) return
   let assigned = false
   if (target.kind === 'workstation') {
     assigned = await createWorkstationJob(task, instructions, target)
@@ -242,13 +248,30 @@ async function handleManagerMessage(message) {
  */
 async function updateTaskStatus(taskId, newStatus) {
   try {
-    const { error } = await supabaseClient
+    let query = supabaseClient
       .from('tasks')
       .update({ status: newStatus })
       .eq('id', taskId)
+    if (newStatus !== STATUS.CANCELLED) query = query.neq('status', STATUS.CANCELLED)
+    const { error } = await query
     if (error) throw error
   } catch (error) {
     console.error('[manager.js] updateTaskStatus failed:', error)
+  }
+}
+
+async function isTaskCancelled(taskId) {
+  try {
+    const { data, error } = await supabaseClient
+      .from('tasks')
+      .select('status')
+      .eq('id', taskId)
+      .maybeSingle()
+    if (error) throw error
+    return data?.status === STATUS.CANCELLED
+  } catch (error) {
+    console.error('[manager.js] isTaskCancelled failed:', error)
+    return false
   }
 }
 
@@ -316,6 +339,13 @@ async function createWorkstationJob(task, instructions, target) {
         requested_by_user_id: task.user_id || null,
         model_name: modelName || null,
         status: 'queued',
+        retry_count: Number(task.retry_count || 0),
+        max_attempts: Number(task.max_attempts || 3),
+        started_at: null,
+        finished_at: null,
+        error_text: null,
+        cancel_requested_at: null,
+        cancelled_by_user_id: null,
         payload: {
           title: task.title || '',
           description: task.description || '',

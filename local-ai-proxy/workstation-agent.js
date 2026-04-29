@@ -354,21 +354,22 @@ async function restInsert(cfg, session, table, rows, retry = true) {
   return []
 }
 
-async function restPatch(cfg, session, table, filter, payload, retry = true) {
+async function restPatch(cfg, session, table, filter, payload, retry = true, returnRepresentation = false) {
   const response = await fetch(`${cfg.supabaseUrl}/rest/v1/${table}?${filter}`, {
     method: 'PATCH',
     headers: buildHeaders(session.access_token, cfg.supabaseAnonKey, {
       'Content-Type': 'application/json',
-      Prefer: 'return=minimal',
+      Prefer: returnRepresentation ? 'return=representation' : 'return=minimal',
     }),
     body: JSON.stringify(payload),
   })
   if (response.status === 401 && retry) {
-    return restPatch(cfg, await refreshSession(cfg), table, filter, payload, false)
+    return restPatch(cfg, await refreshSession(cfg), table, filter, payload, false, returnRepresentation)
   }
   if (!response.ok) {
     throw new Error(`${table} patch failed: HTTP ${response.status} ${await responseDetail(response)}`)
   }
+  if (returnRepresentation) return response.json()
   return []
 }
 
@@ -555,22 +556,78 @@ async function appendStationMessage(cfg, session, message) {
 
 async function updateTaskStatus(cfg, session, taskId, status) {
   if (!taskId) return
-  await restPatch(cfg, session, 'tasks', `id=eq.${encodeURIComponent(taskId)}`, { status })
+  const filter = status === 'cancelled'
+    ? `id=eq.${encodeURIComponent(taskId)}`
+    : `id=eq.${encodeURIComponent(taskId)}&status=neq.cancelled`
+  await restPatch(cfg, session, 'tasks', filter, { status })
+}
+
+async function updateTaskLifecycle(cfg, session, taskId, payload) {
+  if (!taskId) return
+  const status = payload.status || ''
+  const filter = status === 'cancelled'
+    ? `id=eq.${encodeURIComponent(taskId)}`
+    : `id=eq.${encodeURIComponent(taskId)}&status=neq.cancelled`
+  await restPatch(cfg, session, 'tasks', filter, payload)
+}
+
+async function claimQueuedJob(cfg, session, job) {
+  const rows = await restPatch(
+    cfg,
+    session,
+    'workstation_jobs',
+    `id=eq.${encodeURIComponent(job.id)}&status=eq.queued&cancel_requested_at=is.null`,
+    {
+      status: 'running',
+      started_at: new Date().toISOString(),
+      finished_at: null,
+      error_text: null,
+    },
+    true,
+    true,
+  )
+  return rows?.[0] || null
+}
+
+async function fetchJobStatus(cfg, session, jobId) {
+  const rows = await restSelect(
+    cfg,
+    session,
+    'workstation_jobs',
+    `select=id,status,cancel_requested_at&id=eq.${encodeURIComponent(jobId)}`,
+  )
+  return rows?.[0] || null
+}
+
+function isCancelledJob(job) {
+  return job?.status === 'cancelled' || Boolean(job?.cancel_requested_at)
 }
 
 async function processJob(cfg, session, job) {
   activeJobs += 1
   try {
     await heartbeat(cfg, session)
-    await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
-      status: 'running',
-      started_at: new Date().toISOString(),
-    })
+    const claimedJob = await claimQueuedJob(cfg, session, job)
+    if (!claimedJob) {
+      log('Pominieto job, bo nie jest juz w kolejce:', job.id)
+      return
+    }
+    job = { ...job, ...claimedJob }
     await appendProgressMessage(cfg, session, job, `Start jobu. Sloty aktywne: ${activeJobs}/${cfg.parallelSlots}.`)
       .catch((error) => log('progress message failed:', error.message))
 
     const result = await callLocalProxy(cfg, buildJobPrompt(job))
     const output = result.text
+    const latestJob = await fetchJobStatus(cfg, session, job.id).catch((statusError) => {
+      log('fetchJobStatus failed:', statusError.message)
+      return null
+    })
+    if (isCancelledJob(latestJob)) {
+      await appendProgressMessage(cfg, session, job, 'Job anulowany przed zapisem wyniku.')
+        .catch((error) => log('progress message failed:', error.message))
+      log('Job anulowany po pracy modelu:', job.id)
+      return
+    }
     await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
       status: 'done',
       result_summary: output.slice(0, 500),
@@ -588,9 +645,16 @@ async function processJob(cfg, session, job) {
     }])
     await appendProgressMessage(cfg, session, job, `Job ukonczony${result.durationMs ? ` w ${result.durationMs}ms` : ''}.`)
       .catch((error) => log('progress message failed:', error.message))
-    await updateTaskStatus(cfg, session, job.task_id, 'done')
+    await updateTaskLifecycle(cfg, session, job.task_id, { status: 'done', last_error: null })
     log('Job ukonczony:', job.id)
   } catch (error) {
+    const latestJob = await fetchJobStatus(cfg, session, job.id).catch(() => null)
+    if (isCancelledJob(latestJob)) {
+      await appendProgressMessage(cfg, session, job, 'Job anulowany; pomijam zapis błędu po przerwaniu pracy.')
+        .catch((progressError) => log('progress message failed:', progressError.message))
+      log('Job anulowany podczas obslugi bledu:', job.id)
+      return
+    }
     await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
       status: 'failed',
       error_text: error.message,
@@ -604,7 +668,7 @@ async function processJob(cfg, session, job) {
       message_type: 'error',
       content: `Job nie powiodl sie: ${error.message}`,
     }])
-    await updateTaskStatus(cfg, session, job.task_id, 'failed')
+    await updateTaskLifecycle(cfg, session, job.task_id, { status: 'failed', last_error: error.message })
     log('Job nieudany:', job.id, error.message)
   } finally {
     activeJobs = Math.max(0, activeJobs - 1)
