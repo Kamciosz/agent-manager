@@ -6,6 +6,7 @@
  *
  *              Endpointy:
  *                GET  /health    → status proxy + llama-server + nazwa modelu
+ *                GET  /health/smoke → krótka generacja kontrolna modelu
  *                POST /generate  → { prompt, maxTokens?, temperature? } → { text }
  *                OPTIONS *       → CORS preflight dla dozwolonych originów
  *
@@ -55,7 +56,7 @@ function parseJsonFile(filePath) {
 
 /**
  * Wczytuje config.json. Brak pliku = pusty obiekt z domyślnymi wartościami.
- * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, allowedOrigins:string[], parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, contextMode:string, contextSizeTokens:number, kvCacheQuantization:string, effectiveKvCacheQuantization:string, generationTimeoutMs:number, autoUpdate:boolean, optimizationMode:string }}
+ * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, allowedOrigins:string[], parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, contextMode:string, contextSizeTokens:number, kvCacheQuantization:string, effectiveKvCacheQuantization:string, generationTimeoutMs:number, autoUpdate:boolean, optimizationMode:string, messageBatchSize:number, offlineQueueMax:number }}
  */
 function loadConfig() {
   let cfg = {}
@@ -77,7 +78,8 @@ function loadConfig() {
     allowedOrigins: normalizeAllowedOrigins(cfg.allowedOrigins),
     parallelSlots: clampInt(cfg.parallelSlots, 1, 1, 4),
     sdEnabled: cfg.sdEnabled === true,
-    draftModelName: cfg.draftModelName || '',
+    draftModelPath: cfg.draftModelPath || '',
+    draftModelName: cfg.draftModelName || (cfg.draftModelPath ? path.basename(cfg.draftModelPath) : ''),
     speculativeTokens: clampInt(cfg.speculativeTokens, 4, 1, 16),
     contextMode,
     contextSizeTokens,
@@ -86,6 +88,8 @@ function loadConfig() {
     generationTimeoutMs: clampInt(cfg.generationTimeoutMs, DEFAULTS.TIMEOUT_MS, 15000, 1800000),
     autoUpdate: cfg.autoUpdate === true,
     optimizationMode: cfg.optimizationMode || 'standard',
+    messageBatchSize: clampInt(cfg.messageBatchSize, 10, 1, 50),
+    offlineQueueMax: clampInt(cfg.offlineQueueMax, 500, 50, 5000),
   }
 }
 
@@ -333,8 +337,39 @@ async function handleHealth(cfg, req, res) {
       generationTimeoutMs: cfg.generationTimeoutMs,
       autoUpdate: cfg.autoUpdate,
       optimizationMode: cfg.optimizationMode,
+      messageBatchSize: cfg.messageBatchSize,
+      offlineQueueMax: cfg.offlineQueueMax,
     },
   })
+}
+
+async function handleHealthSmoke(cfg, req, res) {
+  const startedAt = Date.now()
+  try {
+    const text = await forwardToLlama(
+      'Odpowiedz dokładnie jednym słowem: OK',
+      { maxTokens: 8, temperature: 0 },
+      cfg.llamaUrl,
+      Math.min(cfg.generationTimeoutMs, 30000),
+    )
+    sendJson(req, res, cfg, 200, {
+      ok: true,
+      proxy: 'up',
+      llama: 'generated',
+      model: cfg.modelName,
+      text,
+      durationMs: Date.now() - startedAt,
+    })
+  } catch (error) {
+    sendJson(req, res, cfg, 502, {
+      ok: false,
+      proxy: 'up',
+      llama: 'smoke-failed',
+      model: cfg.modelName,
+      detail: error.message,
+      durationMs: Date.now() - startedAt,
+    })
+  }
 }
 
 /**
@@ -420,6 +455,11 @@ async function route(cfg, req, res) {
   const url = req.url || '/'
   if (req.method === 'GET' && url === '/health') {
     await handleHealth(cfg, req, res)
+    logLine(req.method, url, res.statusCode, startedAt)
+    return
+  }
+  if (req.method === 'GET' && url === '/health/smoke') {
+    await handleHealthSmoke(cfg, req, res)
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }

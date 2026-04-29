@@ -1,0 +1,12 @@
+{
+  "name": "agent-manager-fork",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20 <23"
+  },
+  "scripts": {
+    "check": "node --check ui/app.js && node --check ui/ai-client.js && node --check ui/manager.js && node --check ui/executor.js && node --check ui/settings.js && node --check ui/labyrinth.js && node --check local-ai-proxy/proxy.js && node --check local-ai-proxy/workstation-agent.js && node --check local-ai-proxy/runtime-schedule.js",
+    "test": "node --test tests/*.test.js"
+  }
+}

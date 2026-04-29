@@ -31,6 +31,7 @@ import {
 
 const SUPABASE_URL = '__SUPABASE_URL__'
 const SUPABASE_ANON_KEY = '__SUPABASE_ANON_KEY__'
+const SUPABASE_CONFIGURED = /^https?:\/\//.test(SUPABASE_URL) && !SUPABASE_ANON_KEY.startsWith('__')
 
 // ============================================================================
 // STAŁE — żadnych magic strings w kodzie
@@ -109,7 +110,40 @@ const WORKSTATION_COMMAND_LABELS = {
   pause: 'Wstrzymaj',
   resume: 'Wznów',
   refresh: 'Odśwież',
+  health: 'Smoke',
+  reconfigure: 'Rekonfiguruj',
   shutdown: 'Wyłącz',
+}
+
+const WORKSTATION_JOB_LABELS = {
+  queued: 'W kolejce',
+  running: 'W toku',
+  done: 'Gotowe',
+  failed: 'Błąd',
+  cancelled: 'Anulowane',
+}
+
+const RUNTIME_PRESETS = {
+  classroomCpu: {
+    label: 'Sala CPU',
+    patch: { stationMode: 'classroom', acceptsJobs: true, parallelSlots: 1, contextMode: 'extended', contextSizeTokens: 65536, kvCacheQuantization: 'q8_0', sdEnabled: false, speculativeTokens: 8, generationTimeoutMs: 600000, messageBatchSize: 10, offlineQueueMax: 500 },
+  },
+  classroomGpu: {
+    label: 'Sala GPU',
+    patch: { stationMode: 'classroom', acceptsJobs: true, parallelSlots: 2, contextMode: 'extended', contextSizeTokens: 65536, kvCacheQuantization: 'q8_0', sdEnabled: false, speculativeTokens: 8, generationTimeoutMs: 600000, messageBatchSize: 20, offlineQueueMax: 1000 },
+  },
+  longContext: {
+    label: 'Długi kontekst 256k',
+    patch: { stationMode: 'classroom', acceptsJobs: true, parallelSlots: 1, contextMode: 'extended', contextSizeTokens: 262144, kvCacheQuantization: 'q8_0', sdEnabled: false, speculativeTokens: 8, generationTimeoutMs: 1200000, messageBatchSize: 10, offlineQueueMax: 1000 },
+  },
+  rotorQuant: {
+    label: 'RotorQuant KV',
+    patch: { stationMode: 'classroom', acceptsJobs: true, parallelSlots: 1, contextMode: 'extended', contextSizeTokens: 131072, kvCacheQuantization: 'iso3/iso3', sdEnabled: false, speculativeTokens: 8, generationTimeoutMs: 900000, messageBatchSize: 10, offlineQueueMax: 1000 },
+  },
+  operatorMac: {
+    label: 'Operator Mac',
+    patch: { stationMode: 'operator', acceptsJobs: false, parallelSlots: 1, contextMode: 'extended', contextSizeTokens: 65536, kvCacheQuantization: 'q8_0', sdEnabled: false, speculativeTokens: 8, generationTimeoutMs: 600000, messageBatchSize: 10, offlineQueueMax: 500 },
+  },
 }
 
 const PRIORITY_LABELS = {
@@ -132,10 +166,14 @@ applySettings()
 // KLIENT SUPABASE — inicjalizacja jednej instancji dla całej aplikacji
 // ============================================================================
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+const supabase = SUPABASE_CONFIGURED ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null
 
 // Eksponowane na window dla testów manualnych w DevTools (np. test RBAC).
 window.supabase = supabase
+
+function supabaseConfigurationError() {
+  return new Error('Brak konfiguracji Supabase. Uruchom aplikację przez GitHub Pages albo wstrzyknij SUPABASE_URL i SUPABASE_ANON_KEY przed lokalnym podglądem.')
+}
 
 // ============================================================================
 // STAN APLIKACJI — minimalny mutowalny stan trzymany w jednym miejscu
@@ -147,6 +185,7 @@ const state = {
   currentTaskId: null,
   currentTaskAiMessages: [],
   currentTaskWorkstationMessages: [],
+  currentTaskJobs: [],
   editingWorkstationId: null,
   selectedMonitorWorkstationId: null,
   taskViewMode: loadTaskViewMode(),
@@ -161,6 +200,7 @@ const state = {
   detailSubscription: null,
   messagesSubscription: null,
   taskWorkstationMessagesSubscription: null,
+  taskWorkstationJobsSubscription: null,
   workstationsSubscription: null,
   enrollmentTokensSubscription: null,
   monitorLogSubscription: null,
@@ -204,6 +244,12 @@ function showToast(message, type = TOAST_TYPE.INFO) {
  * @returns {Promise<void>}
  */
 async function initAuth() {
+  if (!supabase) {
+    showAuthScreen()
+    bindAuthForms()
+    showToast('Brak konfiguracji Supabase dla lokalnego podglądu.', TOAST_TYPE.INFO)
+    return
+  }
   // Krok 1: sprawdź czy użytkownik ma aktywną sesję (przywróconą z localStorage)
   try {
     const { data: { session } } = await supabase.auth.getSession()
@@ -333,6 +379,7 @@ async function handleLogin(email, password) {
   const errorEl = document.getElementById('login-error')
   errorEl.classList.add('hidden')
   try {
+    if (!supabase) throw supabaseConfigurationError()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error
     showToast('Zalogowano pomyślnie', TOAST_TYPE.SUCCESS)
@@ -353,6 +400,7 @@ async function handleRegister(email, password) {
   const errorEl = document.getElementById('register-error')
   errorEl.classList.add('hidden')
   try {
+    if (!supabase) throw supabaseConfigurationError()
     const { error } = await supabase.auth.signUp({ email, password })
     if (error) throw error
     showToast('Sprawdź email, aby potwierdzić konto', TOAST_TYPE.SUCCESS)
@@ -370,7 +418,7 @@ async function handleRegister(email, password) {
 async function handleLogout() {
   try {
     cleanupAppSession()
-    await supabase.auth.signOut()
+    if (supabase) await supabase.auth.signOut()
     showToast('Wylogowano', TOAST_TYPE.INFO)
   } catch (error) {
     console.error('[app.js] handleLogout failed:', error)
@@ -439,6 +487,7 @@ function bindNavigation() {
   document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
   document.getElementById('btn-generate-station-config').addEventListener('click', renderStationConfigInstruction)
+  document.getElementById('station-config-preset')?.addEventListener('change', applyStationConfigPreset)
   document.getElementById('station-config-mode')?.addEventListener('change', syncStationConfigMode)
   document.getElementById('form-classroom-grid')?.addEventListener('submit', handleApplyClassroomGrid)
   document.getElementById('btn-delete-classroom-grid')?.addEventListener('click', handleDeleteClassroomGrid)
@@ -461,6 +510,10 @@ function bindNavigation() {
   document.getElementById('btn-retry-task-detail')?.addEventListener('click', () => {
     if (!state.currentTaskId) return
     handleRetryTask(state.currentTaskId)
+  })
+  document.getElementById('btn-retry-task-any-station')?.addEventListener('click', () => {
+    if (!state.currentTaskId) return
+    handleRetryTask(state.currentTaskId, { clearWorkstation: true })
   })
 }
 
@@ -596,7 +649,7 @@ async function cancelTask(taskId) {
   }
 }
 
-async function retryTask(task) {
+async function retryTask(task, options = {}) {
   const retryCount = taskRetryCount(task)
   const maxAttempts = taskMaxAttempts(task)
   if (retryCount >= maxAttempts - 1) {
@@ -617,15 +670,20 @@ async function retryTask(task) {
       .in('status', ['queued', 'running'])
     if (jobsError) throw jobsError
 
+    const updatePayload = {
+      status: STATUS.PENDING,
+      retry_count: retryCount + 1,
+      last_error: null,
+      cancel_requested_at: null,
+      cancelled_by_user_id: null,
+    }
+    if (options.clearWorkstation) {
+      updatePayload.requested_workstation_id = null
+      updatePayload.requested_model_name = null
+    }
     const { error } = await supabase
       .from('tasks')
-      .update({
-        status: STATUS.PENDING,
-        retry_count: retryCount + 1,
-        last_error: null,
-        cancel_requested_at: null,
-        cancelled_by_user_id: null,
-      })
+      .update(updatePayload)
       .eq('id', task.id)
       .in('status', RETRYABLE_TASK_STATUSES)
     if (error) throw error
@@ -650,7 +708,7 @@ async function handleCancelTask(taskId) {
   showToast('Polecenie anulowane.', TOAST_TYPE.SUCCESS)
 }
 
-async function handleRetryTask(taskId) {
+async function handleRetryTask(taskId, options = {}) {
   const task = state.tasks.find((item) => item.id === taskId) || await getTaskById(taskId)
   if (!task) {
     showToast('Nie znaleziono polecenia do ponowienia.', TOAST_TYPE.ERROR)
@@ -660,10 +718,10 @@ async function handleRetryTask(taskId) {
     showToast('To polecenie nie jest gotowe do ponowienia.', TOAST_TYPE.INFO)
     return
   }
-  const ok = await retryTask(task)
+  const ok = await retryTask(task, options)
   if (!ok) return
   await refreshTasks()
-  showToast('Polecenie wróciło do kolejki.', TOAST_TYPE.SUCCESS)
+  showToast(options.clearWorkstation ? 'Polecenie wróciło do kolejki z automatycznym doborem stacji.' : 'Polecenie wróciło do kolejki.', TOAST_TYPE.SUCCESS)
 }
 
 /**
@@ -711,7 +769,7 @@ async function getMessagesForTask(taskId) {
  */
 async function refreshTasks() {
   const tasks = await getTasks()
-  state.tasks = tasks
+  state.tasks = tasks || []
   renderFilteredTasks()
   applyTaskViewMode()
   renderStats(tasks)
@@ -802,7 +860,7 @@ async function getWorkstations() {
  */
 async function refreshWorkstations() {
   const workstations = await getWorkstations()
-  state.workstations = workstations
+  state.workstations = workstations || []
   if (state.selectedMonitorWorkstationId && !findWorkstation(state.selectedMonitorWorkstationId)) {
     state.selectedMonitorWorkstationId = null
   }
@@ -1315,7 +1373,7 @@ function renderWorkstationsTable(workstations) {
 }
 
 function workstationCommandButtons(workstation) {
-  const commands = ['update', 'pause', 'resume', 'refresh']
+  const commands = ['update', 'pause', 'resume', 'refresh', 'health', 'reconfigure']
   return commands.map((command) => `
     <button class="workstation-command text-slate-600 hover:text-slate-900 hover:underline text-sm" data-id="${workstation.id}" data-command="${command}">${WORKSTATION_COMMAND_LABELS[command]}</button>
   `).join('')
@@ -1325,11 +1383,14 @@ async function sendWorkstationCommand(workstationId, command) {
   const workstation = findWorkstation(workstationId)
   if (!workstation || !WORKSTATION_COMMAND_LABELS[command]) return
   if (command === 'shutdown' && !confirm('Wyłączyć proces stacji zdalnie?')) return
+  if (command === 'reconfigure' && !confirm('Wysłać do stacji bezpieczny patch runtime z aktualnego konfiguratora? Porty, model i origin nadal wymagają lokalnego restartu/configu.')) return
+  const configPreview = command === 'reconfigure' ? collectStationConfigPreview() : null
   const content = JSON.stringify({
     command,
     label: WORKSTATION_COMMAND_LABELS[command],
     requestedBy: state.user?.email || 'operator',
     requestedAt: new Date().toISOString(),
+    patch: configPreview ? stationConfigPatch(configPreview) : undefined,
   })
   const ok = await sendWorkstationMessage({ workstationId, taskId: null, content, messageType: 'command' })
   if (ok) showToast(`Wysłano komendę: ${WORKSTATION_COMMAND_LABELS[command]}.`, TOAST_TYPE.SUCCESS)
@@ -1519,7 +1580,7 @@ function renderAdvancedRuntimePanel(workstations) {
   setText('advanced-context-state', longContextCount ? `${longContextCount} long` : 'native')
 
   if (!workstations.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="12" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>'
     return
   }
 
@@ -1537,9 +1598,21 @@ function renderAdvancedRuntimePanel(workstations) {
         <td class="px-6 py-3 text-slate-600">${escapeHtml(String(metadata.generationTimeoutMs || '—'))}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(metadata.optimizationMode || 'standard')}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(metadata.draftModelName || '—')}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(`${metadata.offlineQueueDepth || 0} / batch ${metadata.messageBatchSize || 10}`)}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(workstationResourceSummary(workstation))}</td>
       </tr>
     `
   }).join('')
+}
+
+function workstationResourceSummary(workstation) {
+  const resources = workstation.metadata?.resources || {}
+  const free = Number(resources.freeMemMb || 0)
+  const total = Number(resources.totalMemMb || 0)
+  const rss = Number(resources.processRssMb || 0)
+  const load = Array.isArray(resources.loadavg) ? resources.loadavg[0] : null
+  const memory = total > 0 ? `${free}/${total} MB wolne` : 'RAM —'
+  return `${memory}, RSS ${rss || '—'} MB, load ${load ?? '—'}`
 }
 
 /**
@@ -1786,6 +1859,8 @@ function renderSelectedMonitorWorkstation() {
       <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">SD</dt><dd class="font-mono text-slate-900">${workstationSdEnabled(workstation) ? 'on' : 'off'}</dd></div>
       <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Platforma</dt><dd class="text-slate-900">${escapeHtml(formatWorkstationPlatform(workstation))}</dd></div>
       <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Heartbeat</dt><dd class="text-slate-900">${escapeHtml(formatDate(workstation.last_seen_at))}</dd></div>
+      <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Queue</dt><dd class="font-mono text-slate-900">${escapeHtml(String(metadata.offlineQueueDepth || 0))}</dd></div>
+      <div class="rounded-lg bg-slate-50 p-3"><dt class="text-slate-500">Zasoby</dt><dd class="text-slate-900">${escapeHtml(workstationResourceSummary(workstation))}</dd></div>
     </dl>
     <div class="mt-4 rounded-lg border border-slate-200 bg-white p-3">
       <div class="text-xs font-semibold uppercase text-slate-500 mb-2">Modele</div>
@@ -1801,9 +1876,11 @@ function renderSelectedMonitorWorkstation() {
     </div>
     <div class="mt-4 flex flex-wrap gap-2">
       <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="refresh">Odśwież</button>
+      <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="health">Smoke</button>
       <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="pause">Wstrzymaj</button>
       <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="resume">Wznów</button>
       <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="update">Aktualizuj</button>
+      <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="reconfigure">Rekonfiguruj</button>
     </div>
   `
   container.querySelectorAll('.monitor-station-command').forEach((button) => {
@@ -2050,6 +2127,95 @@ async function getWorkstationMessagesForTask(taskId) {
   }
 }
 
+async function getWorkstationJobsForTask(taskId) {
+  try {
+    const { data, error } = await supabase
+      .from('workstation_jobs')
+      .select('*')
+      .eq('task_id', taskId)
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    return data || []
+  } catch (error) {
+    console.error('[app.js] getWorkstationJobsForTask failed:', error)
+    return []
+  }
+}
+
+function upsertCurrentTaskJob(job) {
+  const existingIndex = state.currentTaskJobs.findIndex((item) => item.id === job.id)
+  if (existingIndex >= 0) {
+    state.currentTaskJobs = state.currentTaskJobs.map((item) => item.id === job.id ? job : item)
+  } else {
+    state.currentTaskJobs = [...state.currentTaskJobs, job]
+  }
+  state.currentTaskJobs.sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime())
+  renderRunTrace()
+}
+
+function renderRunTrace() {
+  const container = document.getElementById('run-trace-list')
+  if (!container) return
+  const events = [
+    ...state.currentTaskJobs.map((job) => ({ kind: 'job', at: job.created_at, job })),
+    ...state.currentTaskAiMessages.map((message) => ({ kind: 'ai', at: message.created_at, message })),
+    ...state.currentTaskWorkstationMessages.map((message) => ({ kind: 'station', at: message.created_at, message })),
+  ].sort((left, right) => new Date(left.at).getTime() - new Date(right.at).getTime())
+  if (!events.length) {
+    container.innerHTML = '<p class="text-sm text-slate-500">Brak zdarzeń trace dla tego zadania.</p>'
+    return
+  }
+  container.innerHTML = events.map((event, index) => runTraceEventHtml(event, index)).join('')
+}
+
+function runTraceEventHtml(event, index) {
+  if (event.kind === 'job') return runTraceJobHtml(event.job, index)
+  const message = event.message
+  const isStation = event.kind === 'station'
+  const title = isStation
+    ? `${message.sender_label || 'stacja'} · ${message.message_type || 'event'}`
+    : `${message.from_agent || 'agent'} → ${message.to_agent || 'agent'} · ${message.type || 'event'}`
+  return `
+    <div class="grid grid-cols-[72px_1fr] gap-3">
+      <div class="pt-3 text-right font-mono text-xs text-slate-400">${String(index + 1).padStart(2, '0')}</div>
+      <div class="rounded-lg border ${isStation ? 'border-emerald-200 bg-emerald-50' : 'border-blue-200 bg-blue-50'} p-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="font-semibold text-slate-900">${escapeHtml(title)}</div>
+          <div class="text-xs text-slate-500">${formatDate(message.created_at)}</div>
+        </div>
+        <pre class="mt-2 whitespace-pre-wrap break-words text-sm text-slate-700 font-sans">${escapeHtml(truncateText(message.content || '', 800))}</pre>
+      </div>
+    </div>
+  `
+}
+
+function runTraceJobHtml(job, index) {
+  const duration = job.started_at && job.finished_at
+    ? `${Math.max(0, new Date(job.finished_at).getTime() - new Date(job.started_at).getTime())}ms`
+    : '—'
+  const payload = job.payload || {}
+  return `
+    <div class="grid grid-cols-[72px_1fr] gap-3">
+      <div class="pt-3 text-right font-mono text-xs text-slate-400">${String(index + 1).padStart(2, '0')}</div>
+      <div class="rounded-lg border border-slate-200 bg-white p-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="font-semibold text-slate-900">Job stacji · ${escapeHtml(WORKSTATION_JOB_LABELS[job.status] || job.status || 'unknown')}</div>
+          <div class="text-xs text-slate-500">${formatDate(job.created_at)}</div>
+        </div>
+        <dl class="mt-3 grid md:grid-cols-4 gap-2 text-xs">
+          <div class="rounded bg-slate-50 p-2"><dt class="text-slate-500">Stacja</dt><dd class="font-medium text-slate-900">${escapeHtml(resolveWorkstationName(job.workstation_id))}</dd></div>
+          <div class="rounded bg-slate-50 p-2"><dt class="text-slate-500">Model</dt><dd class="font-medium text-slate-900">${escapeHtml(job.model_name || '—')}</dd></div>
+          <div class="rounded bg-slate-50 p-2"><dt class="text-slate-500">Próba</dt><dd class="font-medium text-slate-900">${Number(job.retry_count || 0) + 1}/${Number(job.max_attempts || 3)}</dd></div>
+          <div class="rounded bg-slate-50 p-2"><dt class="text-slate-500">Czas</dt><dd class="font-medium text-slate-900">${escapeHtml(duration)}</dd></div>
+        </dl>
+        <div class="mt-3 text-xs text-slate-500">Routing: ${escapeHtml(payload.routing || '—')}</div>
+        ${job.error_text ? `<pre class="mt-2 whitespace-pre-wrap break-words rounded bg-red-50 p-2 text-xs text-red-700">${escapeHtml(job.error_text)}</pre>` : ''}
+        ${job.result_summary ? `<pre class="mt-2 whitespace-pre-wrap break-words rounded bg-emerald-50 p-2 text-xs text-emerald-800">${escapeHtml(job.result_summary)}</pre>` : ''}
+      </div>
+    </div>
+  `
+}
+
 /**
  * Wysyła wiadomość do stacji roboczej.
  * @param {Object} payload
@@ -2091,10 +2257,12 @@ function renderTaskWorkstationMessages(messages) {
   state.currentTaskWorkstationMessages = messages
   if (!messages.length) {
     list.innerHTML = '<p class="text-slate-500 text-sm">Brak wiadomości do stacji roboczej</p>'
+    renderRunTrace()
     renderTaskConsole()
     return
   }
   list.innerHTML = messages.map((message) => workstationMessageHtml(message)).join('')
+  renderRunTrace()
   renderTaskConsole()
 }
 
@@ -2109,6 +2277,7 @@ function appendTaskWorkstationMessage(message) {
   state.currentTaskWorkstationMessages = [...state.currentTaskWorkstationMessages, message]
   if (list.querySelector('p.text-slate-500')) list.innerHTML = ''
   list.insertAdjacentHTML('beforeend', workstationMessageHtml(message))
+  renderRunTrace()
   renderTaskConsole()
 }
 
@@ -2369,6 +2538,7 @@ async function openTaskDetail(taskId) {
   state.currentTaskId = taskId
   state.currentTaskAiMessages = []
   state.currentTaskWorkstationMessages = []
+  state.currentTaskJobs = []
   navigateTo(VIEW.TASK_DETAIL)
   cleanupTaskSubscriptions()
 
@@ -2387,6 +2557,10 @@ async function openTaskDetail(taskId) {
   const workstationMessages = await getWorkstationMessagesForTask(taskId)
   state.currentTaskWorkstationMessages = workstationMessages
   renderTaskWorkstationMessages(workstationMessages)
+
+  const workstationJobs = await getWorkstationJobsForTask(taskId)
+  state.currentTaskJobs = workstationJobs
+  renderRunTrace()
   renderTaskConsole()
 
   // Subskrybuj zmiany zadania (UPDATE) i nowe wiadomości (INSERT)
@@ -2405,6 +2579,9 @@ async function openTaskDetail(taskId) {
   })
   state.taskWorkstationMessagesSubscription = subscribeToTaskWorkstationMessages(taskId, (message) => {
     appendTaskWorkstationMessage(message)
+  })
+  state.taskWorkstationJobsSubscription = subscribeToTaskWorkstationJobs(taskId, (job) => {
+    upsertCurrentTaskJob(job)
   })
 }
 
@@ -2434,6 +2611,11 @@ function renderTaskDetail(task) {
   if (retryButton) {
     retryButton.dataset.taskId = task.id
     retryButton.disabled = !canRetryTask(task)
+  }
+  const retryAnyButton = document.getElementById('btn-retry-task-any-station')
+  if (retryAnyButton) {
+    retryAnyButton.dataset.taskId = task.id
+    retryAnyButton.disabled = !canRetryTask(task)
   }
   document.getElementById('btn-task-send-workstation-message').disabled = !task.requested_workstation_id
   document.getElementById('btn-task-send-workstation-message').dataset.workstationId = task.requested_workstation_id || ''
@@ -2500,10 +2682,12 @@ function renderMessages(messages) {
   state.currentTaskAiMessages = messages
   if (!messages.length) {
     list.innerHTML = '<p class="text-slate-500 text-sm">Brak wiadomości</p>'
+    renderRunTrace()
     renderTaskConsole()
     return
   }
   list.innerHTML = messages.map((m) => messageHtml(m)).join('')
+  renderRunTrace()
   renderTaskConsole()
 }
 
@@ -2517,6 +2701,7 @@ function appendMessage(msg) {
   state.currentTaskAiMessages = [...state.currentTaskAiMessages, msg]
   if (list.querySelector('p.text-slate-500')) list.innerHTML = ''
   list.insertAdjacentHTML('beforeend', messageHtml(msg))
+  renderRunTrace()
   renderTaskConsole()
 }
 
@@ -2606,6 +2791,21 @@ function subscribeToTaskWorkstationMessages(taskId, callback) {
       table: 'workstation_messages',
       filter: `task_id=eq.${taskId}`,
     }, (payload) => callback(payload.new))
+    .subscribe()
+}
+
+function subscribeToTaskWorkstationJobs(taskId, callback) {
+  return supabase
+    .channel(`task-${taskId}-workstation-jobs`)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'workstation_jobs',
+      filter: `task_id=eq.${taskId}`,
+    }, (payload) => {
+      if (payload.eventType === 'DELETE' || !payload.new) return
+      callback(payload.new)
+    })
     .subscribe()
 }
 
@@ -2701,6 +2901,10 @@ function cleanupTaskSubscriptions() {
   if (state.taskWorkstationMessagesSubscription) {
     supabase.removeChannel(state.taskWorkstationMessagesSubscription)
     state.taskWorkstationMessagesSubscription = null
+  }
+  if (state.taskWorkstationJobsSubscription) {
+    supabase.removeChannel(state.taskWorkstationJobsSubscription)
+    state.taskWorkstationJobsSubscription = null
   }
 }
 
@@ -2808,7 +3012,7 @@ function populateRepoSuggestions() {
  * Renderuje prostą instrukcję dla konfiguracji stacji.
  * @returns {void}
  */
-function renderStationConfigInstruction() {
+function collectStationConfigPreview() {
   const stationMode = document.getElementById('station-config-mode').value || WORKSTATION_KIND.CLASSROOM
   const acceptsJobs = stationMode === WORKSTATION_KIND.CLASSROOM && document.getElementById('station-config-accepts-jobs').value !== 'false'
   const slots = document.getElementById('station-config-slots').value || '1'
@@ -2828,11 +3032,11 @@ function renderStationConfigInstruction() {
   const proxyPort = document.getElementById('station-config-proxy-port').value || '3001'
   const llamaPort = document.getElementById('station-config-llama-port').value || '8080'
   const modelPath = document.getElementById('station-config-model-path').value.trim()
+  const messageBatchSize = document.getElementById('station-config-message-batch')?.value || '10'
+  const offlineQueueMax = document.getElementById('station-config-offline-queue')?.value || '500'
   const currentOrigin = /^https?:/.test(window.location.origin) ? window.location.origin : ''
   const origin = document.getElementById('station-config-origin').value.trim() || currentOrigin
-  const output = document.getElementById('station-config-output')
-  const scheduleLine = scheduleEnabled ? `Harmonogram: ${scheduleStart}-${scheduleEnd}` : 'Harmonogram: wyłączony'
-  const configPreview = {
+  return {
     proxyPort: Number(proxyPort),
     llamaPort: Number(llamaPort),
     llamaUrl: `http://127.0.0.1:${llamaPort}`,
@@ -2855,43 +3059,85 @@ function renderStationConfigInstruction() {
     speculativeTokens: Number(speculativeTokens),
     generationTimeoutMs: Number(timeoutMs),
     autoUpdate,
+    messageBatchSize: Number(messageBatchSize),
+    offlineQueueMax: Number(offlineQueueMax),
   }
+}
+
+function stationConfigPatch(configPreview) {
+  const patch = { ...configPreview }
+  delete patch.proxyPort
+  delete patch.llamaPort
+  delete patch.llamaUrl
+  delete patch.modelPath
+  delete patch.allowedOrigins
+  return patch
+}
+
+function renderStationConfigInstruction() {
+  const output = document.getElementById('station-config-output')
+  const configPreview = collectStationConfigPreview()
+  const context = configPreview.contextMode === 'native' ? 'native' : String(configPreview.contextSizeTokens)
+  const scheduleLine = configPreview.scheduleEnabled ? `Harmonogram: ${configPreview.scheduleStart}-${configPreview.scheduleEnd}` : 'Harmonogram: wyłączony'
   output.textContent = [
-    stationMode === WORKSTATION_KIND.OPERATOR ? 'Na komputerze operatora uruchom:' : 'Na komputerze stacji uruchom:',
+    configPreview.stationMode === WORKSTATION_KIND.OPERATOR ? 'Na komputerze operatora uruchom:' : 'Na komputerze stacji uruchom:',
     'Windows: start.bat --config',
     'macOS/Linux: ./start.sh --config',
     '',
     'Wybierz w konfiguratorze:',
-    `Tryb komputera: ${stationMode}`,
-    `Przyjmowanie jobów: ${acceptsJobs ? 'włączone' : 'wstrzymane'}`,
-    `Równoległe zadania: ${slots}`,
+    `Tryb komputera: ${configPreview.stationMode}`,
+    `Przyjmowanie jobów: ${configPreview.acceptsJobs ? 'włączone' : 'wstrzymane'}`,
+    `Równoległe zadania: ${configPreview.parallelSlots}`,
     `Kontekst modelu: ${context}`,
-    `KV cache: ${kv}`,
-    `SD: ${sd ? 'włączone' : 'wyłączone'}`,
-    `Draft model: ${draftModel || 'brak'}`,
-    `Tokeny SD: ${speculativeTokens}`,
+    `KV cache: ${configPreview.kvCacheQuantization}`,
+    `SD: ${configPreview.sdEnabled ? 'włączone' : 'wyłączone'}`,
+    `Draft model: ${configPreview.draftModelPath || 'brak'}`,
+    `Tokeny SD: ${configPreview.speculativeTokens}`,
     scheduleLine,
-    `Przed oknem pracy: ${scheduleOutside}`,
-    `Po końcu okna: ${scheduleEndAction}`,
-    `Dump po stopie: ${scheduleDump ? 'włączony' : 'wyłączony'}`,
-    `Auto-update: ${autoUpdate ? 'włączony' : 'wyłączony'}`,
-    `Timeout generowania: ${timeoutMs} ms`,
-    `Port proxy: ${proxyPort}`,
-    `Port llama: ${llamaPort}`,
-    `Origin aplikacji: ${origin || 'ustaw w launcherze'}`,
-    kv.includes('planar') || kv.includes('iso') || kv.includes('turbo')
+    `Przed oknem pracy: ${configPreview.scheduleOutsideAction}`,
+    `Po końcu okna: ${configPreview.scheduleEndAction}`,
+    `Dump po stopie: ${configPreview.scheduleDumpOnStop ? 'włączony' : 'wyłączony'}`,
+    `Auto-update: ${configPreview.autoUpdate ? 'włączony' : 'wyłączony'}`,
+    `Timeout generowania: ${configPreview.generationTimeoutMs} ms`,
+    `Port proxy: ${configPreview.proxyPort}`,
+    `Port llama: ${configPreview.llamaPort}`,
+    `Batch wiadomości: ${configPreview.messageBatchSize}`,
+    `Offline queue: ${configPreview.offlineQueueMax}`,
+    `Origin aplikacji: ${configPreview.allowedOrigins[0] || 'ustaw w launcherze'}`,
+    configPreview.kvCacheQuantization.includes('planar') || configPreview.kvCacheQuantization.includes('iso') || configPreview.kvCacheQuantization.includes('turbo')
       ? 'Uwaga: Planar/Iso/Turbo wymagają builda llama.cpp zgodnego z RotorQuant; stock llama.cpp spadnie do q8_0.'
       : 'q8_0 jest domyślnym wyborem dla stock llama.cpp i długiego kontekstu.',
     '',
     'Praca w tle: harmonogram wait czeka lekko przed oknem pracy i nie ładuje modelu. Proces pozostaje normalnie widoczny dla systemu operacyjnego.',
-    stationMode === WORKSTATION_KIND.OPERATOR
+    configPreview.stationMode === WORKSTATION_KIND.OPERATOR
       ? 'Operator uruchamia lokalne AI/proxy bez tokenu stacji i bez workstation-agent.'
       : 'Po zapisie zostaw launcher działający. Stacja pojawi się w tabeli po pierwszym heartbeat.',
+    '',
+    'Remote reconfigure: przycisk Rekonfiguruj wyśle tylko bezpieczną część tego payloadu. Porty/model/origins nadal wymagają lokalnego configu lub restartu launchera.',
     '',
     'Podgląd config.json:',
     JSON.stringify(configPreview, null, 2),
   ].join('\n')
   output.classList.remove('hidden')
+}
+
+function applyStationConfigPreset() {
+  const presetKey = document.getElementById('station-config-preset')?.value || ''
+  const preset = RUNTIME_PRESETS[presetKey]
+  if (!preset) return
+  const patch = preset.patch
+  document.getElementById('station-config-mode').value = patch.stationMode || WORKSTATION_KIND.CLASSROOM
+  syncStationConfigMode()
+  document.getElementById('station-config-accepts-jobs').value = patch.acceptsJobs === false ? 'false' : 'true'
+  document.getElementById('station-config-slots').value = String(patch.parallelSlots || 1)
+  document.getElementById('station-config-context').value = patch.contextMode === 'native' ? 'native' : String(patch.contextSizeTokens || 65536)
+  document.getElementById('station-config-kv').value = patch.kvCacheQuantization || 'q8_0'
+  document.getElementById('station-config-sd').value = patch.sdEnabled ? 'true' : 'false'
+  document.getElementById('station-config-speculative-tokens').value = String(patch.speculativeTokens || 8)
+  document.getElementById('station-config-timeout').value = String(patch.generationTimeoutMs || 600000)
+  document.getElementById('station-config-message-batch').value = String(patch.messageBatchSize || 10)
+  document.getElementById('station-config-offline-queue').value = String(patch.offlineQueueMax || 500)
+  renderStationConfigInstruction()
 }
 
 function syncStationConfigMode() {

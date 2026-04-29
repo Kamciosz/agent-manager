@@ -8,6 +8,9 @@ on:
       - 'start.command'
       - 'Aktualizuj.command'
       - 'local-ai-proxy/**'
+      - 'tests/**'
+      - 'package.json'
+      - '.nvmrc'
       - '.github/workflows/unix-launcher-smoke.yml'
   pull_request:
     paths:
@@ -15,6 +18,9 @@ on:
       - 'start.command'
       - 'Aktualizuj.command'
       - 'local-ai-proxy/**'
+      - 'tests/**'
+      - 'package.json'
+      - '.nvmrc'
       - '.github/workflows/unix-launcher-smoke.yml'
   workflow_dispatch:
 
@@ -32,6 +38,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
       - name: Prepare artifacts
         run: mkdir -p artifacts/unix-launcher
 
@@ -41,6 +52,9 @@ jobs:
           node --check local-ai-proxy/proxy.js
           node --check local-ai-proxy/workstation-agent.js
           node --check local-ai-proxy/runtime-schedule.js
+
+      - name: Node tests
+        run: npm test
 
       - name: Help path
         run: |

@@ -35,26 +35,24 @@ Nie rekomenduję teraz migracji na Python/LangChain, ciężkiego React/Vite, aut
 | Walidacja Edge Functions | Wdrożone w tej rundzie | P1 | `supabase/functions/*` |
 | CORS Edge Functions bez `*` | Wdrożone w tej rundzie | P1 | `supabase/functions/*`, `FORK_GUIDE.md` |
 | Rate limiting/fair-share użytkowników | Fundament wdrożony: limit 3 aktywnych zadań | P0 | `supabase/migrations`, `ui/app.js` |
-| Cancel/retry/reassign zadań | Anuluj/Ponów wdrożone; przerzucanie na inną stację jeszcze do dopięcia | P0 | `supabase/migrations`, `ui/app.js`, `ui/manager.js`, `workstation-agent.js` |
-| Offline queue stacji | Brak | P0 | `workstation-agent.js` |
-| Batching logów i pollingu | Brak | P0 | `workstation-agent.js`, config |
-| Run trace zadania | Brak | P1 | `ui/app.js`, `messages`, `workstation_messages`, `workstation_jobs` |
-| Health smoke modelu | Brak | P1 | `proxy.js`, `workstation-agent.js`, monitor UI |
-| Metryki zasobów stacji | Częściowe | P1 | `workstation-agent.js`, `ui/app.js` |
-| Presety runtime i `reconfigure` | Brak | P1 | `ui/app.js`, `workstation-agent.js` |
-| Node 20/22 LTS | Brak | P1 | README, launchery, workflow |
-| `node:test` bez npm | Brak | P2 | `tests/`, workflows |
-| Changelog/security docs | Brak | P2 | `CHANGELOG.md`, `SECURITY.md` |
+| Cancel/retry/reassign zadań | Wdrożone: `Anuluj`, `Ponów` i `Ponów auto` z czyszczeniem wskazanej stacji/modelu | P0 | `supabase/migrations`, `ui/app.js`, `ui/manager.js`, `workstation-agent.js` |
+| Offline queue stacji | Wdrożone | P0 | `workstation-agent.js`, `local-ai-proxy/README.md` |
+| Batching logów i pollingu | Wdrożone dla wiadomości stacji i flushu kolejki offline | P0 | `workstation-agent.js`, config |
+| Run trace zadania | Wdrożone | P1 | `ui/app.js`, `ui/index.html`, `messages`, `workstation_messages`, `workstation_jobs` |
+| Health smoke modelu | Wdrożone | P1 | `proxy.js`, `workstation-agent.js`, monitor UI |
+| Metryki zasobów stacji | Wdrożone w heartbeat i monitorze | P1 | `workstation-agent.js`, `ui/app.js` |
+| Presety runtime i `reconfigure` | Wdrożone | P1 | `ui/app.js`, `workstation-agent.js` |
+| Node 20/22 LTS | Wdrożone w dokumentacji, `.nvmrc`, `package.json` i workflow | P1 | README, workflow |
+| `node:test` bez npm | Wdrożone | P2 | `tests/`, workflows |
+| Changelog/security docs | Wdrożone | P2 | `CHANGELOG.md`, `SECURITY.md` |
 | React/Vite albo Python rewrite | Odrzucone teraz | Later | Cały frontend/backend |
 | Tooling AI z `execute_command` | Odrzucone bez sandboxa | Later | przyszły sandbox |
 
 ## Kolejność implementacji
 
-1. P0: dokończyć przerzucanie retry na inną stację oraz zabezpieczenia offline queue/batchingu.
-2. P0: batching i offline queue, żeby 20 stacji nie zabiło free tier Supabase i nie gubiło wyników przy słabym WiFi.
-3. P1: run trace, health smoke i metryki stacji w monitorze.
-4. P1: presety runtime oraz bezpieczna komenda `reconfigure`.
-5. P2: testy `node:test`, changelog, security docs i release checklist.
+1. P0/P1 z tej rundy są wdrożone: retry auto, offline queue, batching, run trace, smoke, metryki, presety i `reconfigure`.
+2. Następny etap po stabilizacji beta: rozbić `ui/app.js` na moduły i dodać automatyczne testy browserowe dla panelu.
+3. Dopiero po tym wracać do większych tematów: pełny multi-tenant, sandbox narzędzi AI albo migracja stacku.
 
 ## Decyzje
 

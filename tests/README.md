@@ -2,12 +2,11 @@
 
 Testy jednostkowe i integracyjne projektu.
 
-## Struktura (planowana)
+## Struktura
 
 ```
 tests/
-  unit/                  — testy jednostkowe (config, log, auth)
-  integration/           — testy integracyjne (WS roundtrip, Redis queue)
+  runtime-schedule.test.js — node:test dla harmonogramu runtime
   acceptance/
     run.sh               — skrypt testów akceptacyjnych dla CI
     data/
@@ -20,6 +19,8 @@ tests/
 ```bash
 npm test
 ```
+
+Testy używają wbudowanego `node:test`, więc nie wymagają instalowania zależności npm.
 
 ## Scenariusze akceptacyjne
 

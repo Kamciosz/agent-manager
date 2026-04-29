@@ -137,7 +137,7 @@ function Get-LocalNodeExecutable {
 
 function Install-PortableNode {
   if ($NoPull) {
-    throw 'Node.js was not found and --no-pull prevents downloading portable Node. Install Node.js 18+ or run start.bat without --no-pull once.'
+    throw 'Node.js was not found and --no-pull prevents downloading portable Node. Install Node.js 20+ or run start.bat without --no-pull once.'
   }
   $arch = Get-PortableNodeArch
   $version = $PortableNodeVersion
@@ -150,7 +150,7 @@ function Install-PortableNode {
   $url = "https://nodejs.org/dist/v$version/$folderName.zip"
   if ($env:AGENT_MANAGER_NODE_ZIP_URI) { $url = $env:AGENT_MANAGER_NODE_ZIP_URI }
 
-  Write-StartWarn 'Node.js 18+ was not found in PATH. Downloading portable Node.js locally; administrator rights are not needed.'
+  Write-StartWarn 'Node.js 20+ was not found in PATH. Downloading portable Node.js locally; administrator rights are not needed.'
   Write-StartLog "Downloading Node.js: $url"
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
   Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
@@ -167,21 +167,21 @@ function Ensure-NodeRuntime {
   $systemNode = Get-Command node -ErrorAction SilentlyContinue
   if ($systemNode) {
     $systemPath = $systemNode.Source
-    if ((Get-NodeMajorVersion $systemPath) -ge 18) {
+    if ((Get-NodeMajorVersion $systemPath) -ge 20) {
       Use-NodeExecutable $systemPath 'system PATH'
       return
     }
-    Write-StartWarn "System Node.js is older than 18: $systemPath. A portable Node.js will be used instead."
+    Write-StartWarn "System Node.js is older than 20: $systemPath. A portable Node.js will be used instead."
   }
 
   $localNode = Get-LocalNodeExecutable
-  if ($localNode -and (Get-NodeMajorVersion $localNode) -ge 18) {
+  if ($localNode -and (Get-NodeMajorVersion $localNode) -ge 20) {
     Use-NodeExecutable $localNode 'portable local-ai-proxy\bin'
     return
   }
 
   $installedNode = Install-PortableNode
-  if ((Get-NodeMajorVersion $installedNode) -lt 18) {
+  if ((Get-NodeMajorVersion $installedNode) -lt 20) {
     throw "Downloaded Node.js is too old or cannot run: $installedNode"
   }
   Use-NodeExecutable $installedNode 'portable local-ai-proxy\bin'

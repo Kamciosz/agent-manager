@@ -148,7 +148,7 @@ Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) działają w trybie przegl
                ▼  (127.0.0.1 = secure context, brak mixed-content)
 ┌──────────────────────────────┐
 │  http://127.0.0.1:3001       │
-│  Node proxy (proxy.js)       │  ← bez zależności, czysty Node 18+
+│  Node proxy (proxy.js)       │  ← bez zależności, czysty Node 20+
 └──────────────┬───────────────┘
                │  HTTP /completion
                ▼
@@ -174,7 +174,7 @@ Domyślnie agenci (`ui/manager.js`, `ui/executor.js`) działają w trybie przegl
 ### Decyzje projektowe
 
 - **Brak mixed-content workaround** — `127.0.0.1` to secure context wg W3C, więc HTTPS Pages może wołać `http://127.0.0.1:3001` bezpośrednio.
-- **Zero zależności w proxy** — tylko `node:http`, `node:fs`, `node:path`. Nie wymaga `npm install`, działa na każdej instalacji Node 18+.
+- **Zero zależności w proxy** — tylko `node:http`, `node:fs`, `node:path`. Nie wymaga `npm install`, działa na każdej instalacji Node 20+.
 - **Tryb przeglądarkowy to nie błąd** — gdy proxy padnie, UI dalej działa jako panel online. Przejście między lokalnym AI a trybem przeglądarkowym jest płynne i widoczne w badge.
 - **Model wybiera użytkownik raz** — pierwsze uruchomienie pyta o URL HF lub ścieżkę. Kolejne starty są ciche; `--change-model` resetuje.
 - **Advanced jest opt-in** — `parallelSlots` domyślnie wynosi `1`, kontekst startuje jako 64k, KV cache jako `q8_0`, a SD jest domyślnie wyłączone (`sdEnabled=false`). `native` i 256k są świadomymi presetami lokalnego launchera.

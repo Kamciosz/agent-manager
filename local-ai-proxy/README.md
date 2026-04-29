@@ -19,7 +19,7 @@ plik .gguf w models/         ← model wybrany przy pierwszym starcie
 
 ## Wymagania
 
-- **macOS / Linux**: Node.js 18+, `bash`, `curl`, `unzip`. Apple Silicon → backend Metal, NVIDIA → CUDA, AMD → ROCm, w pozostałych przypadkach Vulkan/CPU.
+- **macOS / Linux**: Node.js 20+ (zalecane 22 LTS), `bash`, `curl`, `unzip`. Apple Silicon → backend Metal, NVIDIA → CUDA, AMD → ROCm, w pozostałych przypadkach Vulkan/CPU.
 - **Windows 10/11**: `cmd.exe` + PowerShell (są domyślnie). Jeśli `node` nie istnieje w PATH, `start.ps1` pobierze portable Node.js do `local-ai-proxy\bin` bez instalatora i bez uprawnień administratora. NVIDIA → CUDA, w pozostałych Vulkan/CPU.
 - **Model GGUF**: dowolny plik `.gguf` z HuggingFace (np. `Qwen2.5-3B-Instruct-Q4_K_M.gguf`). Mniejsze modele (3B–7B) działają na laptopach bez GPU.
 
@@ -142,7 +142,7 @@ Windows:
 start.bat --config
 ```
 
-`--config` zapisuje lokalne ustawienia do `local-ai-proxy/config.json`: URL Supabase, publishable key, token instalacyjny stacji, dozwolone originy aplikacji, `parallelSlots`, kontekst modelu, kompresję KV cache, auto-update, SD oraz harmonogram. Przy pierwszym starcie agent wymienia token instalacyjny na ograniczoną sesję stacji i usuwa token z configu. Wszystkie pola mają bezpieczne zakresy i są normalizowane przy starcie, więc literówka w liczbie tokenów albo zbyt duża wartość nie powinna wysadzić launchera bez czytelnego ostrzeżenia.
+`--config` zapisuje lokalne ustawienia do `local-ai-proxy/config.json`: URL Supabase, publishable key, token instalacyjny stacji, dozwolone originy aplikacji, `parallelSlots`, kontekst modelu, kompresję KV cache, auto-update, SD, batching wiadomości, limit kolejki offline oraz harmonogram. Przy pierwszym starcie agent wymienia token instalacyjny na ograniczoną sesję stacji i usuwa token z configu. Wszystkie pola mają bezpieczne zakresy i są normalizowane przy starcie, więc literówka w liczbie tokenów albo zbyt duża wartość nie powinna wysadzić launchera bez czytelnego ostrzeżenia.
 
 `generationTimeoutMs` kontroluje, jak długo lokalny proxy czeka na odpowiedź `llama-server` dla pojedynczego jobu. Domyślnie to `600000` ms, czyli 10 minut; duże modele na CPU, szczególnie 27B+, często potrzebują więcej niż kilkanaście sekund na pierwszy wynik.
 
@@ -192,7 +192,25 @@ Dlaczego domyślnie `q8_0`, a nie RotorQuant: `q8_0` działa w stock llama.cpp, 
 
 MacBook nauczyciela powinien działać jako `stationMode=operator`. Wtedy launcher uruchamia lokalny `llama-server` i `proxy.js`, ale nie startuje `workstation-agent.js`, nie wymaga tokenu stacji i nie rejestruje MacBooka jako szkolnego komputera. Komputery uczniów/labu działają jako `stationMode=classroom`, używają tokenu z dashboardu i mogą przyjmować joby.
 
-Panel operatora może wysyłać do stacji komendy systemowe przez `workstation_messages`: `update`, `pause`, `resume`, `refresh`, `status`, `shutdown`. Wynik wraca jako wiadomość podpisana `system`, więc w konsoli zadania i logach widać, że to odpowiedź runtime, a nie zwykły tekst modelu.
+Panel operatora może wysyłać do stacji komendy systemowe przez `workstation_messages`: `update`, `pause`, `resume`, `refresh`, `status`, `shutdown`, `health`, `reconfigure`. Wynik wraca jako wiadomość podpisana `system`, więc w konsoli zadania i logach widać, że to odpowiedź runtime, a nie zwykły tekst modelu.
+
+Dodatkowe komendy operacyjne:
+
+- `health` uruchamia lokalny smoke test przez `/health/smoke` i zwraca status proxy, modelu oraz kolejki offline.
+- `reconfigure` zapisuje bezpieczny, whitelisted patch runtime do lokalnego `config.json`: tryb stacji, przyjmowanie jobów, sloty, timeout, kontekst, KV cache, SD, draft model, harmonogram, porty, batching i limit kolejki offline.
+
+Dashboard nie wysyła dowolnej komendy shell. Patch reconfigure jest ograniczony do znanych pól konfiguracyjnych i normalizowany po stronie stacji.
+
+### Offline queue i batching
+
+Agent stacji zapisuje wiadomości, których nie da się wysłać do Supabase, do `local-ai-proxy/logs/workstation-offline-queue.json`. Przy kolejnym heartbeat, pollingu lub starcie próbuje je wysłać ponownie paczkami.
+
+| Pole | Znaczenie |
+|------|-----------|
+| `messageBatchSize` | Ile wiadomości stacja zapisuje jednym requestem do Supabase; domyślnie `10`, zakres `1-50` |
+| `offlineQueueMax` | Maksymalna liczba wiadomości trzymanych lokalnie przy braku sieci; domyślnie `500`, zakres `50-5000` |
+
+Kolejka offline nie jest miejscem na sekrety. Zawiera tylko treści wiadomości operacyjnych stacji, typ wiadomości, kierunek i znaczniki czasu. Dashboard pokazuje głębokość kolejki oraz podstawowe metryki zasobów w tabeli Advanced i monitorze stacji.
 
 ### Harmonogram pracy runtime
 
@@ -240,7 +258,7 @@ Tylko wtedy, gdy katalog jest czystym repo git i nie ma lokalnych zmian. Jeśli 
 
 | Ścieżka | Co to |
 |---------|------|
-| `proxy.js` | HTTP proxy Node 18+ bez zależności (porty: in 3001 / out 8080) |
+| `proxy.js` | HTTP proxy Node 20+ bez zależności (porty: in 3001 / out 8080) |
 | `runtime-schedule.js` | Wspólna walidacja i obliczanie okien harmonogramu dla launcherów i agenta |
 | `bin/`    | Pobrany binary `llama-server` (gitignored) |
 | `models/` | Pobrane / podlinkowane pliki `.gguf` (gitignored) |
@@ -251,17 +269,20 @@ Tylko wtedy, gdy katalog jest czystym repo git i nie ma lokalnych zmian. Jeśli 
 ## Endpointy proxy
 
 ```
-GET  /health     →  { ok, proxy, llama, model, backend, advanced }
-POST /generate   →  body: { prompt, maxTokens?, temperature? }
-                    response: { text, durationMs }
-OPTIONS *        →  204 + nagłówki CORS dla dozwolonego Origin
+GET  /health       →  { ok, proxy, llama, model, backend, advanced }
+GET  /health/smoke →  { ok, text, durationMs, model, backend }
+POST /generate     →  body: { prompt, maxTokens?, temperature? }
+                      response: { text, durationMs }
+OPTIONS *          →  204 + nagłówki CORS dla dozwolonego Origin
 ```
 
 Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci. Dodatkowo sprawdza nagłówek `Origin`: domyślnie wpuszcza oficjalne Pages i localhost, a origin Twojego forka dodajesz przez `--config`.
 
+`/health/smoke` wysyła do lokalnego modelu bardzo krótki prompt z oczekiwaną odpowiedzią `OK`. Służy do szybkiego sprawdzenia, czy proxy nie tylko działa, ale potrafi faktycznie wygenerować odpowiedź przez `llama-server`.
+
 ## Troubleshooting
 
-**Windows: `Missing required command: node`.** Zaktualizuj launcher. Obecny `start.ps1` nie wymaga ręcznej instalacji Node.js: przy pełnym starcie pobierze portable Node lokalnie do `local-ai-proxy\bin`. Jeśli używasz `--no-pull`, zdejmij tę flagę przy pierwszym starcie albo zainstaluj Node.js 18+ ręcznie.
+**Windows: `Missing required command: node`.** Zaktualizuj launcher. Obecny `start.ps1` nie wymaga ręcznej instalacji Node.js: przy pełnym starcie pobierze portable Node lokalnie do `local-ai-proxy\bin`. Jeśli używasz `--no-pull`, zdejmij tę flagę przy pierwszym starcie albo zainstaluj Node.js 20+ ręcznie.
 
 **Port 8080 lub 3001 zajęty.** Skrypt zatrzyma się z komunikatem. Sprawdź proces: `lsof -iTCP:8080` (mac/Linux) lub `netstat -ano | findstr :8080` (Windows). Albo zmień `proxyPort` w `config.json`.
 

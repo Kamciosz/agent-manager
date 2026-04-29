@@ -4,7 +4,7 @@
 #  -------------------------------------------------------------------------
 #  PLATFORMA:   macOS  +  Linux         (NIE uruchamiaj na Windows!)
 #  ODPOWIEDNIK: start.bat               (← ten sam skrypt dla Windows)
-#  WYMAGANIA:   bash, curl, unzip, Node.js 18+
+#  WYMAGANIA:   bash, curl, unzip, Node.js 20+
 #  -------------------------------------------------------------------------
 #  Co robi:
 #   1. Wykrywa OS, architekturę i GPU.
@@ -81,13 +81,23 @@ require_command() {
   fi
 }
 
+ensure_node_lts() {
+  require_command node "Zainstaluj Node.js 20+ (zalecane 22 LTS): https://nodejs.org"
+  local major
+  major="$(node -p "Number(process.versions.node.split('.')[0])" 2>/dev/null || echo 0)"
+  if [ "${major:-0}" -lt 20 ]; then
+    err "Wykryto Node.js $(node --version 2>/dev/null || echo unknown). Wymagane jest Node.js 20+ (zalecane 22 LTS)."
+    exit 1
+  fi
+}
+
 ensure_workspace_dirs() {
   mkdir -p "$BIN_DIR" "$MODELS_DIR" "$LOGS_DIR"
 }
 
 check_base_requirements() {
   require_command curl "Zainstaluj curl i uruchom skrypt ponownie."
-  require_command node "Zainstaluj Node.js 18+: https://nodejs.org"
+  ensure_node_lts
 }
 
 run_safe_update() {
@@ -1362,10 +1372,7 @@ start_llama() {
 }
 
 start_proxy() {
-  if ! command -v node >/dev/null 2>&1; then
-    err "Brak Node.js w PATH. Zainstaluj Node 18+: https://nodejs.org"
-    exit 1
-  fi
+  ensure_node_lts
   log "Uruchamiam proxy na porcie $PROXY_PORT"
   nohup node "$PROXY_DIR/proxy.js" \
     >"$LOGS_DIR/proxy.log" 2>&1 &
@@ -1374,10 +1381,7 @@ start_proxy() {
 }
 
 start_workstation_agent() {
-  if ! command -v node >/dev/null 2>&1; then
-    err "Brak Node.js w PATH. Zainstaluj Node 18+: https://nodejs.org"
-    exit 1
-  fi
+  ensure_node_lts
   log "Uruchamiam agenta stacji roboczej"
   nohup node "$PROXY_DIR/workstation-agent.js" \
     >"$LOGS_DIR/workstation-agent.log" 2>&1 &
@@ -1457,7 +1461,7 @@ doctor_line() {
 }
 
 run_doctor() {
-  local backend token_groups release_urls picked asset_url bin model_path workstation_email
+  local backend token_groups release_urls picked asset_url bin model_path workstation_email node_major
   echo "Safe diagnostics only: no downloads, prompts or runtime services are started."
   echo
 
@@ -1466,9 +1470,14 @@ run_doctor() {
   [ -f "$PROXY_DIR/workstation-agent.js" ] && doctor_line "OK" "workstation-agent.js" "found" || doctor_line "WARN" "workstation-agent.js" "missing local-ai-proxy/workstation-agent.js"
 
   if command -v node >/dev/null 2>&1; then
-    doctor_line "OK" "Node.js" "$(node --version 2>/dev/null) at $(command -v node)"
+    node_major="$(node -p "Number(process.versions.node.split('.')[0])" 2>/dev/null || echo 0)"
+    if [ "${node_major:-0}" -ge 20 ]; then
+      doctor_line "OK" "Node.js" "$(node --version 2>/dev/null) at $(command -v node)"
+    else
+      doctor_line "WARN" "Node.js" "$(node --version 2>/dev/null) found; full runtime requires Node.js 20+"
+    fi
   else
-    doctor_line "WARN" "Node.js" "not found; full runtime requires Node.js 18+"
+    doctor_line "WARN" "Node.js" "not found; full runtime requires Node.js 20+"
   fi
 
   if command -v curl >/dev/null 2>&1; then

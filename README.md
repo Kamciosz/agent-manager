@@ -89,7 +89,7 @@ Deploy GitHub Pages publikuje UI. Migracje bazy są jawne i nie są wykonywane p
 | UI | GitHub Pages, vanilla JS, Tailwind CDN |
 | Baza i realtime | Supabase Postgres + Realtime |
 | Logowanie | Supabase Auth |
-| Lokalny AI | llama.cpp `llama-server` + Node 18 proxy |
+| Lokalny AI | llama.cpp `llama-server` + Node 20+ proxy |
 | Stacje | `workstation-agent.js` + Supabase REST |
 
 ## Dokumentacja

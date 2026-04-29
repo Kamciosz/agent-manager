@@ -16,6 +16,7 @@ const { getScheduleState, normalizeSchedule } = require('./runtime-schedule')
 
 const CONFIG_PATH = path.join(__dirname, 'config.json')
 const LOGS_DIR = path.join(__dirname, 'logs')
+const OFFLINE_QUEUE_PATH = path.join(LOGS_DIR, 'workstation-offline-queue.json')
 
 const SUPPORTED_KV_CACHE = ['auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4']
 
@@ -27,6 +28,8 @@ const DEFAULTS = {
   GENERATION_TIMEOUT_MS: 600000,
   CONTEXT_TOKENS: 65536,
   KV_CACHE: 'q8_0',
+  MESSAGE_BATCH_SIZE: 10,
+  OFFLINE_QUEUE_MAX: 500,
 }
 
 let activeJobs = 0
@@ -90,7 +93,8 @@ function loadConfig() {
     scheduleDumpOnStop: schedule.dumpOnStop,
     parallelSlots: clampInt(raw.parallelSlots, 1, 1, 4),
     sdEnabled: raw.sdEnabled === true,
-    draftModelName: raw.draftModelName || '',
+    draftModelPath: raw.draftModelPath || '',
+    draftModelName: raw.draftModelName || (raw.draftModelPath ? path.basename(raw.draftModelPath) : ''),
     speculativeTokens: clampInt(raw.speculativeTokens, 4, 1, 16),
     contextMode,
     contextSizeTokens,
@@ -99,6 +103,8 @@ function loadConfig() {
     generationTimeoutMs: clampInt(raw.generationTimeoutMs, DEFAULTS.GENERATION_TIMEOUT_MS, 15000, 1800000),
     autoUpdate: raw.autoUpdate === true,
     optimizationMode: raw.optimizationMode || 'standard',
+    messageBatchSize: clampInt(raw.messageBatchSize, DEFAULTS.MESSAGE_BATCH_SIZE, 1, 50),
+    offlineQueueMax: clampInt(raw.offlineQueueMax, DEFAULTS.OFFLINE_QUEUE_MAX, 50, 5000),
   }
 }
 
@@ -152,6 +158,21 @@ function currentStatus(cfg) {
 
 function availableSlots(cfg) {
   return Math.max(0, cfg.parallelSlots - activeJobs)
+}
+
+function resourceSnapshot() {
+  const memory = process.memoryUsage()
+  return {
+    freeMemMb: Math.round(os.freemem() / 1024 / 1024),
+    totalMemMb: Math.round(os.totalmem() / 1024 / 1024),
+    loadavg: os.loadavg().map((value) => Math.round(value * 100) / 100),
+    uptimeSec: Math.round(os.uptime()),
+    processRssMb: Math.round(memory.rss / 1024 / 1024),
+  }
+}
+
+function ensureLogsDir() {
+  fs.mkdirSync(LOGS_DIR, { recursive: true })
 }
 
 function isWithinSchedule(cfg) {
@@ -460,6 +481,9 @@ function workstationPayload(cfg, userId, statusOverride) {
       generationTimeoutMs: cfg.generationTimeoutMs,
       autoUpdate: cfg.autoUpdate,
       optimizationMode: cfg.optimizationMode,
+      messageBatchSize: cfg.messageBatchSize,
+      offlineQueueDepth: offlineQueueDepth(),
+      resources: resourceSnapshot(),
       authMode: cfg.stationUserId ? 'station-token' : 'legacy-operator-password',
       scheduleOutsideAction: cfg.scheduleOutsideAction,
       scheduleEndAction: cfg.scheduleEndAction,
@@ -550,8 +574,82 @@ async function callLocalProxy(cfg, prompt) {
   }
 }
 
+function readOfflineQueue() {
+  try {
+    if (!fs.existsSync(OFFLINE_QUEUE_PATH)) return []
+    const parsed = parseJsonFile(OFFLINE_QUEUE_PATH)
+    return Array.isArray(parsed) ? parsed : []
+  } catch (error) {
+    log('Nie moge wczytac offline queue:', error.message)
+    return []
+  }
+}
+
+function writeOfflineQueue(items) {
+  ensureLogsDir()
+  fs.writeFileSync(OFFLINE_QUEUE_PATH, JSON.stringify(items, null, 2) + '\n')
+}
+
+function offlineQueueDepth() {
+  return readOfflineQueue().length
+}
+
+function queueStationMessages(cfg, messages, reason) {
+  const current = readOfflineQueue()
+  const now = new Date().toISOString()
+  const next = [
+    ...current,
+    ...messages.map((message) => ({
+      ...message,
+      queued_at: message.queued_at || now,
+      queue_reason: reason || message.queue_reason || 'offline',
+    })),
+  ].slice(-cfg.offlineQueueMax)
+  writeOfflineQueue(next)
+  log(`Zapisano ${messages.length} wiadomosci do offline queue (${next.length}/${cfg.offlineQueueMax}).`)
+}
+
+function chunkArray(items, size) {
+  const chunks = []
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size))
+  return chunks
+}
+
+async function appendStationMessageDirect(cfg, session, messages) {
+  for (const batch of chunkArray(messages, cfg.messageBatchSize)) {
+    await restInsert(cfg, session, 'workstation_messages', batch)
+  }
+}
+
 async function appendStationMessage(cfg, session, message) {
-  await restInsert(cfg, session, 'workstation_messages', Array.isArray(message) ? message : [message])
+  const messages = Array.isArray(message) ? message : [message]
+  try {
+    await appendStationMessageDirect(cfg, session, messages)
+    return true
+  } catch (error) {
+    queueStationMessages(cfg, messages, error.message)
+    return false
+  }
+}
+
+async function flushOfflineQueue(cfg, session) {
+  const queued = readOfflineQueue()
+  if (!queued.length) return
+  let remaining = queued
+  let sent = 0
+  for (const batch of chunkArray(queued, cfg.messageBatchSize)) {
+    try {
+      await appendStationMessageDirect(cfg, session, batch)
+      sent += batch.length
+      remaining = remaining.slice(batch.length)
+      writeOfflineQueue(remaining)
+    } catch (error) {
+      writeOfflineQueue(remaining)
+      log('Offline queue nadal czeka:', error.message)
+      return
+    }
+  }
+  if (sent > 0) log(`Wyslano offline queue: ${sent} wiadomosci.`)
 }
 
 async function updateTaskStatus(cfg, session, taskId, status) {
@@ -692,8 +790,9 @@ async function processIncomingMessages(cfg, session) {
   for (const message of messages) {
     try {
       if (message.message_type === 'command') {
-        const command = parseCommand(message)
-        const result = await handleSystemCommand(cfg, session, message, command)
+        const commandPayload = parseCommandPayload(message)
+        const command = String(commandPayload.command || commandPayload.action || '').trim().toLowerCase()
+        const result = await handleSystemCommand(cfg, session, message, commandPayload)
         await appendSystemCommandResult(cfg, session, message, result)
         await markMessageRead(cfg, session, message.id)
         if (command === 'shutdown') await shutdown(cfg, session)
@@ -734,14 +833,20 @@ async function markMessageRead(cfg, session, messageId) {
   })
 }
 
-function parseCommand(message) {
+function parseCommandPayload(message) {
   const content = String(message.content || '').trim()
   try {
     const parsed = JSON.parse(content)
-    return String(parsed.command || parsed.action || '').trim().toLowerCase()
+    if (parsed && typeof parsed === 'object') return parsed
   } catch {
-    return content.replace(/^system:/i, '').trim().toLowerCase()
+    return { command: content.replace(/^system:/i, '').trim().toLowerCase() }
   }
+  return { command: content.replace(/^system:/i, '').trim().toLowerCase() }
+}
+
+function parseCommand(message) {
+  const payload = parseCommandPayload(message)
+  return String(payload.command || payload.action || '').trim().toLowerCase()
 }
 
 function updateRuntimeConfig(patch) {
@@ -778,8 +883,78 @@ async function runRepoUpdateCommand() {
   return runCommand('/bin/sh', [path.join(root, 'update.sh')], { timeout: 300000 })
 }
 
+async function smokeLocalProxy(cfg) {
+  const startedAt = Date.now()
+  const response = await fetch(`http://127.0.0.1:${cfg.proxyPort}/health/smoke`)
+  const body = await response.json().catch(() => ({}))
+  return {
+    ok: response.ok && body.ok !== false,
+    status: response.status,
+    durationMs: body.durationMs || Date.now() - startedAt,
+    text: body.text || '',
+    detail: body.detail || '',
+  }
+}
+
+function sanitizeRuntimePatch(cfg, patch = {}) {
+  const next = {}
+  if (Object.hasOwn(patch, 'stationMode')) {
+    next.stationMode = String(patch.stationMode).trim().toLowerCase() === 'operator' ? 'operator' : 'classroom'
+  }
+  if (Object.hasOwn(patch, 'acceptsJobs')) next.acceptsJobs = patch.acceptsJobs !== false
+  if (Object.hasOwn(patch, 'parallelSlots')) next.parallelSlots = clampInt(patch.parallelSlots, cfg.parallelSlots, 1, 4)
+  if (Object.hasOwn(patch, 'contextMode') || Object.hasOwn(patch, 'contextSizeTokens')) {
+    next.contextMode = normalizeContextMode(patch.contextMode || cfg.contextMode)
+    next.contextSizeTokens = next.contextMode === 'native'
+      ? 0
+      : clampInt(patch.contextSizeTokens, cfg.contextSizeTokens || DEFAULTS.CONTEXT_TOKENS, 65536, 262144)
+  }
+  if (Object.hasOwn(patch, 'kvCacheQuantization')) {
+    next.kvCacheQuantization = normalizeKvCache(patch.kvCacheQuantization)
+    next.effectiveKvCacheQuantization = resolveKvCache(next.kvCacheQuantization, next.contextSizeTokens ?? cfg.contextSizeTokens)
+  }
+  if (Object.hasOwn(patch, 'sdEnabled')) next.sdEnabled = patch.sdEnabled === true
+  if (Object.hasOwn(patch, 'draftModelPath')) {
+    next.draftModelPath = String(patch.draftModelPath || '').trim()
+    next.draftModelName = next.draftModelPath ? path.basename(next.draftModelPath) : ''
+  }
+  if (Object.hasOwn(patch, 'speculativeTokens')) next.speculativeTokens = clampInt(patch.speculativeTokens, cfg.speculativeTokens, 1, 16)
+  if (Object.hasOwn(patch, 'generationTimeoutMs')) next.generationTimeoutMs = clampInt(patch.generationTimeoutMs, cfg.generationTimeoutMs, 15000, 1800000)
+  if (Object.hasOwn(patch, 'autoUpdate')) next.autoUpdate = patch.autoUpdate === true
+  if (Object.hasOwn(patch, 'messageBatchSize')) next.messageBatchSize = clampInt(patch.messageBatchSize, cfg.messageBatchSize, 1, 50)
+  if (Object.hasOwn(patch, 'offlineQueueMax')) next.offlineQueueMax = clampInt(patch.offlineQueueMax, cfg.offlineQueueMax, 50, 5000)
+
+  const schedulePatch = {
+    scheduleEnabled: Object.hasOwn(patch, 'scheduleEnabled') ? patch.scheduleEnabled === true : cfg.scheduleEnabled,
+    scheduleStart: Object.hasOwn(patch, 'scheduleStart') ? patch.scheduleStart : cfg.scheduleStart,
+    scheduleEnd: Object.hasOwn(patch, 'scheduleEnd') ? patch.scheduleEnd : cfg.scheduleEnd,
+    scheduleOutsideAction: Object.hasOwn(patch, 'scheduleOutsideAction') ? patch.scheduleOutsideAction : cfg.scheduleOutsideAction,
+    scheduleEndAction: Object.hasOwn(patch, 'scheduleEndAction') ? patch.scheduleEndAction : cfg.scheduleEndAction,
+    scheduleDumpOnStop: Object.hasOwn(patch, 'scheduleDumpOnStop') ? patch.scheduleDumpOnStop === true : cfg.scheduleDumpOnStop,
+  }
+  const schedule = normalizeSchedule(schedulePatch)
+  next.scheduleEnabled = schedule.enabled
+  next.scheduleStart = schedule.start
+  next.scheduleEnd = schedule.end
+  next.scheduleOutsideAction = schedule.outsideAction
+  next.scheduleEndAction = schedule.endAction
+  next.scheduleDumpOnStop = schedule.dumpOnStop
+
+  next.optimizationMode = next.sdEnabled ? 'sd-experimental' : (Number(next.parallelSlots ?? cfg.parallelSlots) > 1 ? 'parallel' : 'standard')
+  if (next.stationMode === 'operator') next.acceptsJobs = false
+  if (next.stationMode === 'classroom' && Object.hasOwn(patch, 'acceptsJobs')) next.acceptsJobs = patch.acceptsJobs !== false
+  return next
+}
+
+function applyRuntimeReconfigure(cfg, patch) {
+  const safePatch = sanitizeRuntimePatch(cfg, patch)
+  saveLocalConfigPatch(cfg, safePatch)
+  return safePatch
+}
+
 async function handleSystemCommand(cfg, session, message, parsedCommand) {
-  const command = parsedCommand || parseCommand(message)
+  const payload = typeof parsedCommand === 'string' ? { command: parsedCommand } : (parsedCommand || parseCommandPayload(message))
+  const command = String(payload.command || payload.action || '').trim().toLowerCase()
   if (command === 'pause') {
     cfg.acceptsJobs = false
     updateRuntimeConfig({ stationMode: cfg.stationMode, acceptsJobs: false })
@@ -800,8 +975,21 @@ async function handleSystemCommand(cfg, session, message, parsedCommand) {
       `Sloty: ${activeJobs}/${cfg.parallelSlots}.`,
       `Kontekst: ${cfg.contextMode === 'native' ? 'native' : cfg.contextSizeTokens}.`,
       `KV: ${cfg.effectiveKvCacheQuantization}.`,
+      `Offline queue: ${offlineQueueDepth()}.`,
       `Model: ${cfg.modelName || 'domyslny'}.`,
     ].join(' ')
+  }
+  if (command === 'health' || command === 'smoke') {
+    const result = await smokeLocalProxy(cfg)
+    await heartbeat(cfg, session, result.ok ? undefined : 'error')
+    return result.ok
+      ? `System: smoke OK (${result.durationMs}ms). Odpowiedz modelu: ${result.text || 'pusta'}.`
+      : `System: smoke FAIL HTTP ${result.status}: ${result.detail || 'brak szczegolow'}.`
+  }
+  if (command === 'reconfigure') {
+    const safePatch = applyRuntimeReconfigure(cfg, payload.patch || payload.config || {})
+    await heartbeat(cfg, session)
+    return `System: zapisano bezpieczna rekonfiguracje: ${JSON.stringify(safePatch)}. Zmiany portu/modelu wymagaja restartu launchera.`
   }
   if (command === 'update') {
     const result = await runRepoUpdateCommand()
@@ -811,7 +999,7 @@ async function handleSystemCommand(cfg, session, message, parsedCommand) {
   if (command === 'shutdown') {
     return 'System: odebrano polecenie wylaczenia procesu stacji.'
   }
-  return `System: nieznana komenda "${command || 'pusta'}". Dostepne: update, pause, resume, refresh, status, shutdown.`
+  return `System: nieznana komenda "${command || 'pusta'}". Dostepne: update, pause, resume, refresh, status, health, reconfigure, shutdown.`
 }
 
 async function appendSystemCommandResult(cfg, session, message, content) {
@@ -906,6 +1094,7 @@ async function main() {
   await upsertWorkstation(cfg, authSession)
   await syncModels(cfg, authSession)
   await heartbeat(cfg, authSession)
+  await flushOfflineQueue(cfg, authSession).catch((error) => log('flushOfflineQueue failed:', error.message))
   log('Stacja gotowa:', workstationId, `sloty=${cfg.parallelSlots}`, `SD=${cfg.sdEnabled ? 'on' : 'off'}`)
 
   setInterval(() => {
@@ -914,6 +1103,7 @@ async function main() {
         if (!handledScheduleStop) return heartbeat(cfg, authSession)
         return null
       })
+      .then(() => flushOfflineQueue(cfg, authSession))
       .catch((error) => log('Heartbeat/schedule failed:', error.message))
   }, DEFAULTS.HEARTBEAT_MS)
 
@@ -935,7 +1125,9 @@ async function main() {
 
   setInterval(() => {
     if (shuttingDown) return
-    processIncomingMessages(cfg, authSession).catch((error) => log('pollMessages failed:', error.message))
+    processIncomingMessages(cfg, authSession)
+      .then(() => flushOfflineQueue(cfg, authSession))
+      .catch((error) => log('pollMessages failed:', error.message))
   }, DEFAULTS.MESSAGE_POLL_MS)
 }
 

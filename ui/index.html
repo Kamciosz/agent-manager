@@ -416,6 +416,10 @@
                     class="text-blue-700 hover:text-blue-800 hover:underline disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed">
                     Ponów
                   </button>
+                  <button id="btn-retry-task-any-station"
+                    class="text-indigo-700 hover:text-indigo-800 hover:underline disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed">
+                    Ponów auto
+                  </button>
                   <button id="btn-delete-task-detail"
                     class="text-red-600 hover:text-red-700 hover:underline">
                     Usuń
@@ -440,6 +444,13 @@
             <ol id="timeline" class="relative border-l-2 border-slate-200 ml-4 space-y-6">
               <!-- Wypełniane przez renderTimeline() -->
             </ol>
+          </div>
+
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6 mb-6">
+            <h3 class="text-lg font-semibold text-slate-900 mb-4">Run trace</h3>
+            <div id="run-trace-list" class="space-y-3 max-h-[620px] overflow-auto pr-1">
+              <p class="text-sm text-slate-500">Brak zdarzeń trace dla tego zadania.</p>
+            </div>
           </div>
 
           <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6 mb-6">
@@ -658,6 +669,17 @@
                 Przygotuj instrukcję
               </button>
             </div>
+            <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4 mb-4">
+              <span class="block text-sm font-semibold text-slate-900">Preset runtime <span class="help-dot" title="Szybko ustawia najczęstsze profile sali, operatora, długiego kontekstu albo RotorQuant. Możesz potem zmienić pojedyncze pola.">?</span></span>
+              <select id="station-config-preset" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                <option value="">Własny</option>
+                <option value="classroomCpu">Sala CPU</option>
+                <option value="classroomGpu">Sala GPU</option>
+                <option value="longContext">Długi kontekst 256k</option>
+                <option value="rotorQuant">RotorQuant KV</option>
+                <option value="operatorMac">Operator Mac</option>
+              </select>
+            </label>
             <div class="grid md:grid-cols-3 gap-4">
               <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <span class="block text-sm font-semibold text-slate-900">Tryb komputera <span class="help-dot" title="Operator to komputer nauczyciela z lokalnym AI i bez rejestracji jako stacja. Sala to komputer wykonawczy z tokenu. Nie służy do ukrywania procesu w systemie. Można go zatrzymać standardowo z poziomu OS. ">?</span></span>
@@ -774,6 +796,14 @@
                 <span class="block text-sm font-semibold text-slate-900">Origin aplikacji <span class="help-dot" title="Adres GitHub Pages albo lokalny origin, który może wołać proxy. Puste użyje aktualnej strony.">?</span></span>
                 <input id="station-config-origin" type="url" placeholder="https://login.github.io" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
               </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Batch wiadomości <span class="help-dot" title="Ile logów stacja wysyła do Supabase w jednej paczce po powrocie online.">?</span></span>
+                <input id="station-config-message-batch" type="number" min="1" max="50" value="10" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Offline queue <span class="help-dot" title="Maksymalna liczba lokalnie buforowanych logów, gdy stacja straci WiFi albo Supabase chwilowo nie odpowiada.">?</span></span>
+                <input id="station-config-offline-queue" type="number" min="50" max="5000" value="500" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
             </div>
             <pre id="station-config-output" class="hidden mt-5 bg-slate-900 text-slate-100 text-xs rounded-lg p-4 overflow-auto whitespace-pre-wrap"></pre>
           </div>
@@ -868,10 +898,12 @@
                       <th class="px-6 py-3 font-medium">Timeout</th>
                       <th class="px-6 py-3 font-medium">Tryb</th>
                       <th class="px-6 py-3 font-medium">Model draft</th>
+                      <th class="px-6 py-3 font-medium">Queue</th>
+                      <th class="px-6 py-3 font-medium">Zasoby</th>
                     </tr>
                   </thead>
                   <tbody id="advanced-runtime-table-body" class="divide-y divide-slate-100">
-                    <tr><td colspan="10" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>
+                    <tr><td colspan="12" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>
                   </tbody>
                 </table>
               </div>
