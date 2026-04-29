@@ -18,6 +18,11 @@
   ],
   "acceptsJobs": true,
   "scheduleEnabled": false,
+  "scheduleStart": null,
+  "scheduleEnd": null,
+  "scheduleOutsideAction": "wait",
+  "scheduleEndAction": "finish-current",
+  "scheduleDumpOnStop": false,
   "parallelSlots": 1,
   "contextMode": "extended",
   "contextSizeTokens": 65536,
@@ -25,5 +30,7 @@
   "kvCacheAdvancedValues": ["iso3/iso3", "planar3/f16", "planar3", "iso3", "planar4", "iso4", "turbo3", "turbo4"],
   "generationTimeoutMs": 600000,
   "sdEnabled": false,
+  "draftModelPath": "",
+  "speculativeTokens": 8,
   "autoUpdate": false
 }

@@ -429,7 +429,9 @@ function bindNavigation() {
   document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
   document.getElementById('btn-generate-station-config').addEventListener('click', renderStationConfigInstruction)
+  document.getElementById('station-config-mode')?.addEventListener('change', syncStationConfigMode)
   document.getElementById('form-classroom-grid')?.addEventListener('submit', handleApplyClassroomGrid)
+  document.getElementById('btn-delete-classroom-grid')?.addEventListener('click', handleDeleteClassroomGrid)
   document.getElementById('form-workstation-edit')?.addEventListener('submit', handleWorkstationEditSubmit)
   document.getElementById('form-enrollment-token')?.addEventListener('submit', handleCreateEnrollmentToken)
   document.getElementById('btn-copy-enrollment-token')?.addEventListener('click', copyLatestEnrollmentToken)
@@ -810,6 +812,11 @@ function saveClassroomLayouts(layouts) {
   localStorage.setItem(UI_STORAGE_KEYS.classroomLayouts, JSON.stringify(state.classroomLayouts))
 }
 
+function removeClassroomLayout(room) {
+  const normalized = normalizeRoom(room)
+  saveClassroomLayouts(state.classroomLayouts.filter((layout) => layout.room !== normalized))
+}
+
 function upsertClassroomLayout(room, rows, cols) {
   const normalized = normalizeClassroomLayout({ room, rows, cols })
   if (!normalized) return
@@ -1000,6 +1007,43 @@ async function handleApplyClassroomGrid(event) {
   }
 }
 
+async function handleDeleteClassroomGrid() {
+  const room = normalizeRoom(document.getElementById('classroom-grid-room')?.value || '')
+  if (!room) {
+    showToast('Podaj nazwę sali do usunięcia siatki.', TOAST_TYPE.ERROR)
+    return
+  }
+  if (!confirm(`Usunąć siatkę sali ${room}? Stacje zostaną bez przypisanej pozycji, ale rekordy komputerów zostaną.`)) return
+  removeClassroomLayout(room)
+  const selected = classroomWorkstations(state.workstations).filter((workstation) => workstationRoom(workstation) === room)
+  const results = await Promise.all(selected.map((workstation) => updateWorkstation(workstation.id, clearWorkstationClassroomPayload(workstation))))
+  if (results.every(Boolean)) {
+    await refreshWorkstations()
+    showToast(`Usunięto siatkę sali ${room}.`, TOAST_TYPE.SUCCESS)
+  }
+}
+
+function clearWorkstationClassroomPayload(workstation) {
+  return {
+    display_name: workstationDisplayName(workstation),
+    accepts_jobs: workstation.accepts_jobs !== false,
+    classroom_label: null,
+    grid_row: null,
+    grid_col: null,
+    grid_label: null,
+    metadata: {
+      ...(workstation.metadata || {}),
+      stationKind: WORKSTATION_KIND.CLASSROOM,
+      classroomLabel: null,
+      gridRow: null,
+      gridCol: null,
+      gridLabel: null,
+      classroomRows: null,
+      classroomCols: null,
+    },
+  }
+}
+
 function openWorkstationEditModal(workstationId) {
   const workstation = findWorkstation(workstationId)
   if (!workstation) return
@@ -1143,6 +1187,7 @@ function renderClassroomGrid(workstations) {
             <h4 class="font-semibold text-slate-900">${escapeHtml(room)}</h4>
             <div class="text-xs text-slate-500">${roomStations.length}/${rows * cols} stacji · siatka ${rows} x ${cols}</div>
           </div>
+          <button type="button" class="classroom-delete text-sm text-red-600 hover:underline" data-room="${escapeHtml(room)}">Usuń siatkę</button>
         </div>
         <div class="grid gap-2" style="grid-template-columns: repeat(${cols}, minmax(92px, 1fr));">
           ${cells.join('')}
@@ -1203,6 +1248,13 @@ function bindClassroomGridEvents(container) {
   container.querySelectorAll('.classroom-drop').forEach((cell) => {
     cell.addEventListener('dragover', (event) => event.preventDefault())
     cell.addEventListener('drop', (event) => handleClassroomDrop(event, cell))
+  })
+  container.querySelectorAll('.classroom-delete').forEach((button) => {
+    button.addEventListener('click', () => {
+      const input = document.getElementById('classroom-grid-room')
+      if (input) input.value = button.dataset.room || ''
+      handleDeleteClassroomGrid()
+    })
   })
 }
 
@@ -1284,7 +1336,7 @@ function renderAdvancedRuntimePanel(workstations) {
   setText('advanced-context-state', longContextCount ? `${longContextCount} long` : 'native')
 
   if (!workstations.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="10" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>'
     return
   }
 
@@ -1297,6 +1349,9 @@ function renderAdvancedRuntimePanel(workstations) {
         <td class="px-6 py-3 text-slate-600">${escapeHtml(workstationContextLabel(workstation))}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(workstationKvCacheLabel(workstation))}</td>
         <td class="px-6 py-3">${workstationSdEnabled(workstation) ? 'on' : 'off'}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(workstationScheduleSummary(workstation))}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(`proxy ${metadata.proxyPort || '—'} / llama ${metadata.llamaPort || '—'}`)}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(String(metadata.generationTimeoutMs || '—'))}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(metadata.optimizationMode || 'standard')}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(metadata.draftModelName || '—')}</td>
       </tr>
@@ -1366,6 +1421,15 @@ function workstationContextLabel(workstation) {
  */
 function workstationKvCacheLabel(workstation) {
   return workstation.metadata?.effectiveKvCacheQuantization || workstation.metadata?.kvCacheQuantization || 'auto'
+}
+
+function workstationScheduleSummary(workstation) {
+  if (!workstation.schedule_enabled && !workstation.metadata?.scheduleEnabled) return 'wyłączony'
+  const start = workstation.schedule_start || workstation.metadata?.scheduleStart || '—'
+  const end = workstation.schedule_end || workstation.metadata?.scheduleEnd || '—'
+  const outside = workstation.metadata?.scheduleOutsideAction || 'wait'
+  const endAction = workstation.metadata?.scheduleEndAction || 'finish-current'
+  return `${start}-${end}, przed: ${outside}, koniec: ${endAction}`
 }
 
 // ============================================================================
@@ -1548,10 +1612,20 @@ function renderSelectedMonitorWorkstation() {
     </div>
     <div class="mt-4 rounded-lg border border-slate-200 bg-slate-950 p-3 font-mono text-xs text-slate-100 overflow-auto">
       <div>proxy: ${escapeHtml(String(metadata.proxyPort || '—'))} · llama: ${escapeHtml(String(metadata.llamaPort || '—'))}</div>
+      <div>harmonogram: ${escapeHtml(workstationScheduleSummary(workstation))}</div>
       <div>tryb: ${escapeHtml(metadata.optimizationMode || 'standard')} · timeout: ${escapeHtml(String(metadata.generationTimeoutMs || '—'))}ms</div>
       <div>ostatni stan: ${escapeHtml(stale ? 'heartbeat stale' : 'aktywny')}</div>
     </div>
+    <div class="mt-4 flex flex-wrap gap-2">
+      <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="refresh">Odśwież</button>
+      <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="pause">Wstrzymaj</button>
+      <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="resume">Wznów</button>
+      <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="update">Aktualizuj</button>
+    </div>
   `
+  container.querySelectorAll('.monitor-station-command').forEach((button) => {
+    button.addEventListener('click', () => sendWorkstationCommand(button.dataset.id, button.dataset.command))
+  })
 }
 
 /**
@@ -2495,33 +2569,101 @@ function populateRepoSuggestions() {
  * @returns {void}
  */
 function renderStationConfigInstruction() {
+  const stationMode = document.getElementById('station-config-mode').value || WORKSTATION_KIND.CLASSROOM
+  const acceptsJobs = stationMode === WORKSTATION_KIND.CLASSROOM && document.getElementById('station-config-accepts-jobs').value !== 'false'
   const slots = document.getElementById('station-config-slots').value || '1'
   const context = document.getElementById('station-config-context').value || 'native'
   const kv = document.getElementById('station-config-kv').value || 'auto'
   const sd = document.getElementById('station-config-sd').value === 'true'
-  const schedule = document.getElementById('station-config-schedule').value.trim()
+  const draftModel = document.getElementById('station-config-draft-model').value.trim()
+  const speculativeTokens = document.getElementById('station-config-speculative-tokens').value || '8'
+  const scheduleStart = document.getElementById('station-config-schedule-start').value
+  const scheduleEnd = document.getElementById('station-config-schedule-end').value
+  const scheduleEnabled = Boolean(scheduleStart && scheduleEnd)
+  const scheduleOutside = document.getElementById('station-config-schedule-outside').value || 'wait'
+  const scheduleEndAction = document.getElementById('station-config-schedule-end-action').value || 'finish-current'
+  const scheduleDump = document.getElementById('station-config-schedule-dump').value === 'true'
   const autoUpdate = document.getElementById('station-config-update').value === 'true'
+  const timeoutMs = document.getElementById('station-config-timeout').value || '600000'
+  const proxyPort = document.getElementById('station-config-proxy-port').value || '3001'
+  const llamaPort = document.getElementById('station-config-llama-port').value || '8080'
+  const modelPath = document.getElementById('station-config-model-path').value.trim()
+  const currentOrigin = /^https?:/.test(window.location.origin) ? window.location.origin : ''
+  const origin = document.getElementById('station-config-origin').value.trim() || currentOrigin
   const output = document.getElementById('station-config-output')
-  const scheduleLine = schedule ? `Harmonogram: ${schedule}` : 'Harmonogram: wyłączony'
+  const scheduleLine = scheduleEnabled ? `Harmonogram: ${scheduleStart}-${scheduleEnd}` : 'Harmonogram: wyłączony'
+  const configPreview = {
+    proxyPort: Number(proxyPort),
+    llamaPort: Number(llamaPort),
+    llamaUrl: `http://127.0.0.1:${llamaPort}`,
+    modelPath,
+    stationMode,
+    acceptsJobs,
+    allowedOrigins: [origin].filter(Boolean),
+    scheduleEnabled,
+    scheduleStart: scheduleEnabled ? scheduleStart : null,
+    scheduleEnd: scheduleEnabled ? scheduleEnd : null,
+    scheduleOutsideAction: scheduleOutside,
+    scheduleEndAction,
+    scheduleDumpOnStop: scheduleDump,
+    parallelSlots: Number(slots),
+    contextMode: context === 'native' ? 'native' : 'extended',
+    contextSizeTokens: context === 'native' ? 0 : Number(context),
+    kvCacheQuantization: kv,
+    sdEnabled: sd,
+    draftModelPath: draftModel || '',
+    speculativeTokens: Number(speculativeTokens),
+    generationTimeoutMs: Number(timeoutMs),
+    autoUpdate,
+  }
   output.textContent = [
-    'Na komputerze stacji uruchom:',
+    stationMode === WORKSTATION_KIND.OPERATOR ? 'Na komputerze operatora uruchom:' : 'Na komputerze stacji uruchom:',
     'Windows: start.bat --config',
     'macOS/Linux: ./start.sh --config',
     '',
     'Wybierz w konfiguratorze:',
+    `Tryb komputera: ${stationMode}`,
+    `Przyjmowanie jobów: ${acceptsJobs ? 'włączone' : 'wstrzymane'}`,
     `Równoległe zadania: ${slots}`,
     `Kontekst modelu: ${context}`,
     `KV cache: ${kv}`,
     `SD: ${sd ? 'włączone' : 'wyłączone'}`,
+    `Draft model: ${draftModel || 'brak'}`,
+    `Tokeny SD: ${speculativeTokens}`,
     scheduleLine,
+    `Przed oknem pracy: ${scheduleOutside}`,
+    `Po końcu okna: ${scheduleEndAction}`,
+    `Dump po stopie: ${scheduleDump ? 'włączony' : 'wyłączony'}`,
     `Auto-update: ${autoUpdate ? 'włączony' : 'wyłączony'}`,
+    `Timeout generowania: ${timeoutMs} ms`,
+    `Port proxy: ${proxyPort}`,
+    `Port llama: ${llamaPort}`,
+    `Origin aplikacji: ${origin || 'ustaw w launcherze'}`,
     kv.includes('planar') || kv.includes('iso') || kv.includes('turbo')
       ? 'Uwaga: Planar/Iso/Turbo wymagają builda llama.cpp zgodnego z RotorQuant; stock llama.cpp spadnie do q8_0.'
       : 'q8_0 jest domyślnym wyborem dla stock llama.cpp i długiego kontekstu.',
     '',
-    'Po zapisie zostaw okno launchera otwarte. Stacja pojawi się w tabeli po pierwszym heartbeat.',
+    'Praca w tle: harmonogram wait czeka lekko przed oknem pracy i nie ładuje modelu. Proces pozostaje normalnie widoczny dla systemu operacyjnego.',
+    stationMode === WORKSTATION_KIND.OPERATOR
+      ? 'Operator uruchamia lokalne AI/proxy bez tokenu stacji i bez workstation-agent.'
+      : 'Po zapisie zostaw launcher działający. Stacja pojawi się w tabeli po pierwszym heartbeat.',
+    '',
+    'Podgląd config.json:',
+    JSON.stringify(configPreview, null, 2),
   ].join('\n')
   output.classList.remove('hidden')
+}
+
+function syncStationConfigMode() {
+  const mode = document.getElementById('station-config-mode')?.value || WORKSTATION_KIND.CLASSROOM
+  const acceptsJobs = document.getElementById('station-config-accepts-jobs')
+  if (!acceptsJobs) return
+  if (mode === WORKSTATION_KIND.OPERATOR) {
+    acceptsJobs.value = 'false'
+    acceptsJobs.disabled = true
+  } else {
+    acceptsJobs.disabled = false
+  }
 }
 
 // ============================================================================
@@ -3068,6 +3210,7 @@ function bindHelpTooltips() {
 document.addEventListener('DOMContentLoaded', () => {
   bindHelpTooltips()
   bindNavigation()
+  syncStationConfigMode()
   bindTaskModal()
   bindAgentModal()
   initAuth()

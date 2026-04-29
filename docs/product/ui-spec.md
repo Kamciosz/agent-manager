@@ -104,14 +104,15 @@ Lista profili + `Dodaj profil` modal: name, role, skills (tagi), concurrencyLimi
 - Karty: aktywne zadania, wolne sloty stacji, stacje bez świeżego heartbeat.
 - Lista `Zadania w ruchu` pozwala wejść bezpośrednio do Task Detail.
 - Lista `Stacje robocze` pokazuje status, sloty i ostrzeżenie `Może stać`, gdy heartbeat jest stary.
-- Panel `Monitor stacji` pokazuje szczegóły wybranej stacji: sloty, kontekst, KV, SD, platformę, heartbeat, modele i porty runtime.
+- Panel `Monitor stacji` pokazuje szczegóły wybranej stacji: sloty, kontekst, KV, SD, harmonogram, platformę, heartbeat, modele i porty runtime. Te same komendy stacji, które są w tabeli stacji, są dostępne także tutaj, bo operator często reaguje podczas obserwacji monitora.
 - `Live log` zbiera ostatnie wpisy z `messages` i `workstation_messages`, w tym postęp jobów ze stacji.
 
 ### 11. Advanced runtime
 
-- Widok `Advanced` pokazuje `parallelSlots`, aktywne joby, kontekst, KV cache, SD, tryb optymalizacji i draft model raportowane przez stacje.
+- Widok `Advanced` pokazuje `parallelSlots`, aktywne joby, kontekst, KV cache, SD, harmonogram, porty, timeout, tryb optymalizacji i draft model raportowane przez stacje.
 - Formularz dodawania polecenia nie pokazuje `parallelSlots`, SD ani JSON. Te ustawienia należą do konfiguracji stacji roboczej.
-- Widok `Stacje robocze` zawiera prosty konfigurator pól: równoległe zadania, kontekst modelu, KV cache, SD, harmonogram i auto-update. UI generuje instrukcję dla launchera, ale nie zapisuje lokalnego `config.json` przez przeglądarkę.
+- Widok `Stacje robocze` zawiera konfigurator pól lokalnego runtime: tryb operator/classroom, przyjmowanie jobów, porty, origin aplikacji, ścieżkę modelu, równoległe zadania, kontekst modelu, KV cache, SD, draft model, timeout, harmonogram start/koniec, zachowanie poza oknem pracy, dump diagnostyczny i auto-update. UI generuje instrukcję oraz podgląd `config.json`, ale nie zapisuje lokalnego pliku przez przeglądarkę.
+- Siatki sal można tworzyć, zmieniać i usuwać bez kasowania rekordów stacji; usunięcie siatki zdejmuje przypisanie sali/pozycji z komputerów tej sali.
 - Stacja w poleceniu ma tryb `Automatycznie - AI wybierze stację`, dokładnie jedną wskazaną stację z listy albo wybór kafelkiem.
 - `parallelSlots` jest ustawieniem lokalnego runtime; domyślnie `1`, zakres `1-4`.
 - Kontekst jest ustawieniem lokalnego runtime; domyślnie `64k` z `q8_0` KV cache (~50% pamięci KV), opcjonalnie `native` i presety do `256k`.

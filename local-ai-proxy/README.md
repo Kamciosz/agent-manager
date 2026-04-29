@@ -194,6 +194,17 @@ MacBook nauczyciela powinien działać jako `stationMode=operator`. Wtedy launch
 
 Panel operatora może wysyłać do stacji komendy systemowe przez `workstation_messages`: `update`, `pause`, `resume`, `refresh`, `status`, `shutdown`. Wynik wraca jako wiadomość podpisana `system`, więc w konsoli zadania i logach widać, że to odpowiedź runtime, a nie zwykły tekst modelu.
 
+### Harmonogram pracy runtime
+
+Dashboard pokazuje wszystkie pola harmonogramu, które zapisuje launcher:
+
+- `scheduleEnabled`, `scheduleStart`, `scheduleEnd` określają okno, w którym model może być załadowany.
+- `scheduleOutsideAction=wait` utrzymuje lekki launcher przed oknem pracy i nie ładuje modelu; `exit` kończy proces bez startu runtime.
+- `scheduleEndAction=finish-current` pozwala dokończyć aktywny job i zatrzymać runtime; `stop-now` zatrzymuje od razu.
+- `scheduleDumpOnStop` zapisuje diagnostyczny dump JSON w `local-ai-proxy/logs` przy stopie z harmonogramu.
+
+To jest tryb spokojnej pracy w tle i kontroli zużycia zasobów. Proces nie jest ukrywany przed systemem operacyjnym ani administratorem urządzenia.
+
 ### `parallelSlots`
 
 `parallelSlots` określa, ile jobów agent stacji może próbować obsłużyć naraz.

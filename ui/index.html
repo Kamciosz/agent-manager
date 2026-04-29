@@ -478,7 +478,7 @@
                 <p class="text-sm text-slate-500 mt-1">Ułóż stacje w rzędach i kolumnach, np. sala 226: 4 rzędy po 6 komputerów z etykietami 226_2_5.</p>
               </div>
             </div>
-            <form id="form-classroom-grid" class="grid md:grid-cols-4 gap-4 items-end mb-5">
+            <form id="form-classroom-grid" class="grid md:grid-cols-5 gap-4 items-end mb-5">
               <label class="block">
                 <span class="block text-sm font-medium text-slate-700 mb-1">Sala</span>
                 <input id="classroom-grid-room" type="text" value="226" placeholder="np. 226"
@@ -497,6 +497,10 @@
               <button type="submit"
                 class="bg-slate-900 hover:bg-slate-800 text-white font-medium px-4 py-2 rounded-lg transition">
                 Ułóż siatkę
+              </button>
+              <button id="btn-delete-classroom-grid" type="button"
+                class="border border-red-200 text-red-700 hover:bg-red-50 font-medium px-4 py-2 rounded-lg transition">
+                Usuń siatkę
               </button>
             </form>
             <div id="workstation-classroom-grid" class="space-y-4">
@@ -613,6 +617,20 @@
             </div>
             <div class="grid md:grid-cols-3 gap-4">
               <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Tryb komputera <span class="help-dot" title="Operator to komputer nauczyciela z lokalnym AI i bez rejestracji jako stacja. Sala to komputer wykonawczy z tokenu. Nie służy do ukrywania procesu w systemie. Można go zatrzymać standardowo z poziomu OS. ">?</span></span>
+                <select id="station-config-mode" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                  <option value="classroom">stacja szkolna</option>
+                  <option value="operator">operator / MacBook nauczyciela</option>
+                </select>
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Przyjmowanie jobów <span class="help-dot" title="Dla stacji szkolnej oznacza, czy komputer może pobierać polecenia. Operator zawsze działa bez pobierania jobów. ">?</span></span>
+                <select id="station-config-accepts-jobs" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                  <option value="true">włączone</option>
+                  <option value="false">wstrzymane</option>
+                </select>
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <span class="block text-sm font-semibold text-slate-900">Równoległe zadania <span class="help-dot" title="Ile zleceń stacja może robić naraz. Zostaw 1, jeśli nie wiesz.">?</span></span>
                 <input id="station-config-slots" type="number" min="1" max="4" value="1" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
               </label>
@@ -650,8 +668,41 @@
                 </select>
               </label>
               <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <span class="block text-sm font-semibold text-slate-900">Harmonogram <span class="help-dot" title="Puste oznacza brak harmonogramu. Przykład: 18:00-08:00.">?</span></span>
-                <input id="station-config-schedule" type="text" placeholder="np. 18:00-08:00" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+                <span class="block text-sm font-semibold text-slate-900">Draft model <span class="help-dot" title="Ścieżka do mniejszego modelu dla SD. Puste wyłącza realne SD nawet jeśli przełącznik jest włączony.">?</span></span>
+                <input id="station-config-draft-model" type="text" placeholder="local-ai-proxy/models/draft.gguf" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Tokeny SD <span class="help-dot" title="Ile tokenów generuje draft model w jednym kroku. Zakres launchera: 1-16.">?</span></span>
+                <input id="station-config-speculative-tokens" type="number" min="1" max="16" value="8" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Godzina startu <span class="help-dot" title="Od kiedy launcher może załadować model i przyjmować pracę. Puste wyłącza harmonogram.">?</span></span>
+                <input id="station-config-schedule-start" type="time" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Godzina końca <span class="help-dot" title="Do kiedy runtime ma działać w oknie pracy. Może przechodzić przez północ, np. 18:00-08:00.">?</span></span>
+                <input id="station-config-schedule-end" type="time" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Przed oknem pracy <span class="help-dot" title="wait: launcher czeka bez ładowania modelu. exit: kończy pracę bez startu runtime.">?</span></span>
+                <select id="station-config-schedule-outside" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                  <option value="wait">czekaj lekko</option>
+                  <option value="exit">wyjdź</option>
+                </select>
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Po końcu okna <span class="help-dot" title="finish-current kończy aktywny job i zatrzymuje runtime. stop-now zatrzymuje natychmiast.">?</span></span>
+                <select id="station-config-schedule-end-action" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                  <option value="finish-current">dokończ bieżące</option>
+                  <option value="stop-now">zatrzymaj od razu</option>
+                </select>
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Dump po stopie <span class="help-dot" title="Zapisuje diagnostyczny JSON w logs przy zatrzymaniu z harmonogramu.">?</span></span>
+                <select id="station-config-schedule-dump" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg">
+                  <option value="false">wyłączony</option>
+                  <option value="true">włączony</option>
+                </select>
               </label>
               <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <span class="block text-sm font-semibold text-slate-900">Auto-update <span class="help-dot" title="Launcher spróbuje bezpiecznie pobrać aktualizacje przed startem.">?</span></span>
@@ -659,6 +710,26 @@
                   <option value="false">wyłączony</option>
                   <option value="true">włączony</option>
                 </select>
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Timeout generowania <span class="help-dot" title="Maksymalny czas oczekiwania proxy na odpowiedź modelu. Domyślnie 600000 ms.">?</span></span>
+                <input id="station-config-timeout" type="number" min="15000" max="1800000" step="15000" value="600000" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Port proxy <span class="help-dot" title="Lokalny port przeglądarkowego proxy. Domyślnie 3001.">?</span></span>
+                <input id="station-config-proxy-port" type="number" min="1024" max="65535" value="3001" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Port llama <span class="help-dot" title="Lokalny port llama-server. Domyślnie 8080.">?</span></span>
+                <input id="station-config-llama-port" type="number" min="1024" max="65535" value="8080" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Ścieżka modelu <span class="help-dot" title="Opcjonalna ścieżka GGUF. Puste oznacza, że launcher zapyta lub użyje zapisanej wartości.">?</span></span>
+                <input id="station-config-model-path" type="text" placeholder="local-ai-proxy/models/model.gguf" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              </label>
+              <label class="block rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <span class="block text-sm font-semibold text-slate-900">Origin aplikacji <span class="help-dot" title="Adres GitHub Pages albo lokalny origin, który może wołać proxy. Puste użyje aktualnej strony.">?</span></span>
+                <input id="station-config-origin" type="url" placeholder="https://login.github.io" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
               </label>
             </div>
             <pre id="station-config-output" class="hidden mt-5 bg-slate-900 text-slate-100 text-xs rounded-lg p-4 overflow-auto whitespace-pre-wrap"></pre>
@@ -749,12 +820,15 @@
                       <th class="px-6 py-3 font-medium">Kontekst</th>
                       <th class="px-6 py-3 font-medium">KV cache</th>
                       <th class="px-6 py-3 font-medium">SD</th>
+                      <th class="px-6 py-3 font-medium">Harmonogram</th>
+                      <th class="px-6 py-3 font-medium">Porty</th>
+                      <th class="px-6 py-3 font-medium">Timeout</th>
                       <th class="px-6 py-3 font-medium">Tryb</th>
                       <th class="px-6 py-3 font-medium">Model draft</th>
                     </tr>
                   </thead>
                   <tbody id="advanced-runtime-table-body" class="divide-y divide-slate-100">
-                    <tr><td colspan="7" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>
+                    <tr><td colspan="10" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>
                   </tbody>
                 </table>
               </div>

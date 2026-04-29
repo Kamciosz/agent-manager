@@ -132,10 +132,12 @@ Manualny test UI po tej rundzie:
 8. Na MacBooku operatora uruchom `./start.sh --no-pull` i sprawdź w podsumowaniu, że `stationMode` to `operator`, a `station agent` jest pominięty.
 9. W **Stacje robocze** sprawdź, że MacBook operatora ma typ `operator`, nie pojawia się w planie sali i nie jest dostępny przy wyborze stacji dla polecenia.
 10. Ułóż salę `226` jako 4 x 6 i odśwież stronę; plan nadal pokazuje puste pola oraz podpisy w stylu `226_2_5`.
-11. W **Polecenia** przełącz widok z listy na kafelki i utwórz polecenie, wybierając stację kafelkiem.
-12. Wyślij do stacji komendy `Odśwież`, `Wstrzymaj`, `Wznów` i `Aktualizuj`; w logu stacji wynik powinien być podpisany jako `system`.
-13. W konfiguratorze KV wybierz `iso3/iso3` albo `planar3/f16`; stock llama.cpp ma spaść do `q8_0/q8_0`, a kompatybilny build RotorQuant ma przyjąć osobne typy K/V.
-14. Utwórz proste polecenie `2 + 2`; odpowiedź stacji ma zawierać bezpośredni wynik, bez przepisywania pól `Tytuł`, `Opis`, `Repo` ani `Kontekst`.
+11. Usuń siatkę sali `226`; rekordy stacji mają zostać, ale sala/pozycje powinny się wyczyścić i trafić do nieprzypisanych.
+12. W konfiguratorze stacji wybierz tryb `operator`, ustaw porty, timeout, `18:00-08:00`, `wait`, `finish-current`, dump i wygeneruj instrukcję; podgląd `config.json` ma zawierać te pola.
+13. W **Polecenia** przełącz widok z listy na kafelki i utwórz polecenie, wybierając stację kafelkiem.
+14. Wyślij do stacji komendy `Odśwież`, `Wstrzymaj`, `Wznów` i `Aktualizuj` z tabeli stacji oraz z monitora; w logu stacji wynik powinien być podpisany jako `system`.
+15. W konfiguratorze KV wybierz `iso3/iso3` albo `planar3/f16`; stock llama.cpp ma spaść do `q8_0/q8_0`, a kompatybilny build RotorQuant ma przyjąć osobne typy K/V.
+16. Utwórz proste polecenie `2 + 2`; odpowiedź stacji ma zawierać bezpośredni wynik, bez przepisywania pól `Tytuł`, `Opis`, `Repo` ani `Kontekst`.
 
 ---
 
