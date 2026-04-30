@@ -1014,7 +1014,7 @@ function runCommand(command, args, options = {}) {
 async function runRepoUpdateCommand() {
   const root = path.join(__dirname, '..')
   if (process.platform === 'win32') {
-    return runCommand('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'update.ps1')], { timeout: 300000 })
+    return runCommand('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'launcher', 'update.ps1')], { timeout: 300000 })
   }
   return runCommand('/bin/sh', [path.join(root, 'update.sh')], { timeout: 300000 })
 }

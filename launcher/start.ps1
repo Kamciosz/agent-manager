@@ -10,7 +10,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$RootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RootDir = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $ScriptPath = $MyInvocation.MyCommand.Path
 $ProxyDir = Join-Path $RootDir 'local-ai-proxy'
 $BinDir = Join-Path $ProxyDir 'bin'

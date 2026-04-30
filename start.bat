@@ -2,7 +2,7 @@
 setlocal
 
 set "ROOT_DIR=%~dp0"
-set "PS_SCRIPT=%ROOT_DIR%start.ps1"
+set "PS_SCRIPT=%ROOT_DIR%launcher\start.ps1"
 set "NO_PAUSE=0"
 
 if /I "%~1"=="--no-pause" set "NO_PAUSE=1"

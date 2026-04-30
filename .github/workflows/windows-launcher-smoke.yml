@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - 'start.bat'
-      - 'start.ps1'
+      - 'launcher/start.ps1'
       - 'local-ai-proxy/**'
       - 'tests/**'
       - '.nvmrc'
@@ -13,7 +13,7 @@ on:
   pull_request:
     paths:
       - 'start.bat'
-      - 'start.ps1'
+      - 'launcher/start.ps1'
       - 'local-ai-proxy/**'
       - 'tests/**'
       - '.nvmrc'
@@ -38,12 +38,12 @@ jobs:
       - name: Node tests
         run: node --test tests/*.test.js
 
-      - name: Parse start.ps1
+      - name: Parse launcher/start.ps1
         shell: powershell
         run: |
           $tokens = $null
           $errors = $null
-          $scriptPath = (Resolve-Path .\start.ps1).Path
+          $scriptPath = (Resolve-Path .\launcher\start.ps1).Path
           $null = [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref] $tokens, [ref] $errors)
           if ($errors -and $errors.Count -gt 0) {
             $errors | ForEach-Object { Write-Error $_.Message }
@@ -54,7 +54,7 @@ jobs:
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path artifacts\windows-launcher | Out-Null
-          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --help 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-ps1-help.txt
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\launcher\start.ps1 --help 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-ps1-help.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Batch wrapper help path
@@ -66,7 +66,7 @@ jobs:
       - name: Safe doctor path
         shell: powershell
         run: |
-          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --doctor 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-ps1-doctor.txt
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\launcher\start.ps1 --doctor 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-ps1-doctor.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Safe doctor path without Node in PATH
@@ -74,7 +74,7 @@ jobs:
         run: |
           $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\WindowsPowerShell\v1.0"
-          & $powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 --doctor 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-ps1-doctor-no-node-path.txt
+          & $powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\launcher\start.ps1 --doctor 2>&1 | Tee-Object -FilePath artifacts\windows-launcher\start-ps1-doctor-no-node-path.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Select-String -Path artifacts\windows-launcher\start-ps1-doctor-no-node-path.txt -Pattern 'portable Node.js|Node.js' | Out-Null
 

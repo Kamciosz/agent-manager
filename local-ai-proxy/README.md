@@ -20,7 +20,7 @@ plik .gguf w models/         ← model wybrany przy pierwszym starcie
 ## Wymagania
 
 - **macOS / Linux**: Node.js 20+ (zalecane 22 LTS), `bash`, `curl`, `unzip`. Apple Silicon → backend Metal, NVIDIA → CUDA, AMD → ROCm, w pozostałych przypadkach Vulkan/CPU.
-- **Windows 10/11**: `cmd.exe` + PowerShell (są domyślnie). Jeśli `node` nie istnieje w PATH, `start.ps1` pobierze portable Node.js do `local-ai-proxy\bin` bez instalatora i bez uprawnień administratora. NVIDIA → CUDA, w pozostałych Vulkan/CPU.
+- **Windows 10/11**: `cmd.exe` + PowerShell (są domyślnie). Jeśli `node` nie istnieje w PATH, `launcher\start.ps1` pobierze portable Node.js do `local-ai-proxy\bin` bez instalatora i bez uprawnień administratora. NVIDIA → CUDA, w pozostałych Vulkan/CPU.
 - **Model GGUF**: dowolny plik `.gguf` z HuggingFace (np. `Qwen2.5-3B-Instruct-Q4_K_M.gguf`). Mniejsze modele (3B–7B) działają na laptopach bez GPU.
 
 ## Jak uruchomić
@@ -32,7 +32,7 @@ W katalogu głównym repo (nie tutaj) **wybierz skrypt odpowiedni dla swojego sy
 | 🍎 **macOS** — dwuklik w Finderze | dwuklik | [`start.command`](../start.command) |
 | 🍎 **macOS** — z terminala | `./start.sh` | [`start.sh`](../start.sh) |
 | 🐧 **Linux** (Ubuntu, Debian, Fedora, Arch…) | `./start.sh` | [`start.sh`](../start.sh) |
-| 🪟 **Windows 10 / 11** — dwuklik | dwuklik | [`start.bat`](../start.bat) → [`start.ps1`](../start.ps1) |
+| 🪟 **Windows 10 / 11** — dwuklik | dwuklik | [`start.bat`](../start.bat) → [`launcher/start.ps1`](../launcher/start.ps1) |
 
 > ⚠️ `start.sh` jest tylko dla macOS/Linux, `start.bat` tylko dla Windows. Każdy skrypt drukuje na starcie banner z nazwą systemu i odmawia startu na niewłaściwym OS.
 
@@ -46,20 +46,20 @@ W katalogu głównym repo (nie tutaj) **wybierz skrypt odpowiedni dla swojego sy
 start.bat
 ```
 
-Po dwukliku w Windows okno `start.bat` powinno zostać otwarte. Plik BAT nie pyta już o dane i nie uruchamia procesów przez zagnieżdżone `cmd /c`; przekazuje sterowanie do `start.ps1`. Jeśli launcher trafi na błąd, pokaże komunikat i poczeka na klawisz, żeby dało się przeczytać przyczynę. Po poprawnym starcie zostaw okno otwarte — zamknięcie konsoli może zatrzymać lokalne procesy AI.
+Po dwukliku w Windows okno `start.bat` powinno zostać otwarte. Plik BAT nie pyta już o dane i nie uruchamia procesów przez zagnieżdżone `cmd /c`; przekazuje sterowanie do `launcher\start.ps1`. Jeśli launcher trafi na błąd, pokaże komunikat i poczeka na klawisz, żeby dało się przeczytać przyczynę. Po poprawnym starcie zostaw okno otwarte — zamknięcie konsoli może zatrzymać lokalne procesy AI.
 
 Jeśli uruchamiasz bezpośrednio z PowerShella, użyj ścieżki względnej:
 
 ```powershell
-.\start.ps1
+.\launcher\start.ps1
 ```
 
-Samo `start.ps1` nie działa w Windows PowerShell, bo PowerShell domyślnie nie uruchamia skryptów z bieżącego katalogu bez `./` lub `.\`.
+Samo `launcher\start.ps1` nie działa w Windows PowerShell, bo PowerShell domyślnie nie uruchamia skryptów z bieżącego katalogu bez `./` lub `.\`.
 
 Jeśli Windows pokazuje ostrzeżenie bezpieczeństwa dla pliku pobranego z internetu i ufasz tej kopii repo, możesz jednorazowo zdjąć blokadę:
 
 ```powershell
-Unblock-File .\start.ps1
+Unblock-File .\launcher\start.ps1
 ```
 
 Skrypt **przy pierwszym uruchomieniu** zapyta o model (URL z HuggingFace lub ścieżka do lokalnego pliku `.gguf`), pobierze binary `llama-server` z [GitHub Releases llama.cpp](https://github.com/ggerganov/llama.cpp/releases/latest) i zapisze konfigurację do `local-ai-proxy/config.json`. Na Windowsie, jeśli brakuje Node.js, najpierw pobierze portable Node do `local-ai-proxy\bin`. Launcher dobiera paczkę do backendu GPU, ale jeśli upstream nie publikuje dokładnego wariantu, używa bezpiecznego fallbacku CPU zamiast przerywać start. Zapyta też jednorazowo o token instalacyjny stacji z dashboardu oraz origin aplikacji Pages, żeby `workstation-agent.js` mógł odbierać joby, a lokalny proxy wpuszczał tylko zaufaną stronę. Kolejne uruchomienia są bez pytań.
@@ -292,7 +292,7 @@ Każdy `POST /generate` i `POST /v1/chat/completions` rejestruje się w mapie ak
 
 ## Troubleshooting
 
-**Windows: `Missing required command: node`.** Zaktualizuj launcher. Obecny `start.ps1` nie wymaga ręcznej instalacji Node.js: przy pełnym starcie pobierze portable Node lokalnie do `local-ai-proxy\bin`. Jeśli używasz `--no-pull`, zdejmij tę flagę przy pierwszym starcie albo zainstaluj Node.js 20+ ręcznie.
+**Windows: `Missing required command: node`.** Zaktualizuj launcher. Obecny `launcher\start.ps1` nie wymaga ręcznej instalacji Node.js: przy pełnym starcie pobierze portable Node lokalnie do `local-ai-proxy\bin`. Jeśli używasz `--no-pull`, zdejmij tę flagę przy pierwszym starcie albo zainstaluj Node.js 20+ ręcznie.
 
 **Port 8080 lub 3001 zajęty.** Skrypt zatrzyma się z komunikatem. Sprawdź proces: `lsof -iTCP:8080` (mac/Linux) lub `netstat -ano | findstr :8080` (Windows). Albo zmień `proxyPort` w `config.json`.
 
@@ -308,9 +308,9 @@ Każdy `POST /generate` i `POST /v1/chat/completions` rejestruje się w mapie ak
 
 **Windows: okno znika od razu.** Obecny `start.bat` powinien zawsze zostać na końcu z komunikatem. Jeśli nadal znika, uruchom z `cmd.exe` ręcznie: `start.bat --no-pull`, a potem sprawdź `local-ai-proxy\logs\start-windows.log`, `llama-server.err.log`, `proxy.err.log` i `workstation-agent.err.log`.
 
-**PowerShell mówi, że `start.ps1` nie jest rozpoznany.** To normalne zachowanie Windows PowerShell. Uruchom `.\start.ps1` albo prościej `.\start.bat` z katalogu repo.
+**PowerShell mówi, że `launcher\start.ps1` nie jest rozpoznany.** To normalne zachowanie Windows PowerShell. Uruchom `.\launcher\start.ps1` albo prościej `.\start.bat` z katalogu repo.
 
-**PowerShell pyta, czy uruchomić skrypt pobrany z internetu.** To znacznik bezpieczeństwa Windows dla plików z ZIP-a/pobrania. Jeśli ufasz repo, uruchom `Unblock-File .\start.ps1` w katalogu projektu albo używaj `start.bat`, który startuje PowerShell z właściwą polityką wykonania.
+**PowerShell pyta, czy uruchomić skrypt pobrany z internetu.** To znacznik bezpieczeństwa Windows dla plików z ZIP-a/pobrania. Jeśli ufasz repo, uruchom `Unblock-File .\launcher\start.ps1` w katalogu projektu albo używaj `start.bat`, który startuje PowerShell z właściwą polityką wykonania.
 
 **Launcher czeka i nie ładuje modelu.** To może być poprawne, jeśli ustawiony jest harmonogram i aktualna godzina jest poza oknem. Zmień ustawienie przez `./start.sh --schedule` albo `start.bat --schedule`.
 

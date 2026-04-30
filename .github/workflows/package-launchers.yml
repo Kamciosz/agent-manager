@@ -53,7 +53,9 @@ jobs:
           Ten plik nie powinien trafiac do gita.
           TXT
           done
-          cp start.bat start.ps1 Aktualizuj.bat update.ps1 "dist/windows/AgentManager/"
+          cp start.bat Aktualizuj.bat "dist/windows/AgentManager/"
+          mkdir -p "dist/windows/AgentManager/launcher"
+          cp launcher/start.ps1 launcher/update.ps1 "dist/windows/AgentManager/launcher/"
           cp start.sh start.command Aktualizuj.command update.sh "dist/macos/AgentManager/"
           cp start.sh Aktualizuj.command update.sh "dist/linux/AgentManager/"
           chmod +x dist/macos/AgentManager/start.sh dist/macos/AgentManager/start.command dist/macos/AgentManager/Aktualizuj.command dist/macos/AgentManager/update.sh

@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$RootDir = Split-Path -Parent $PSCommandPath
+# Skrypt leży w launcher/, ale działamy na głównym katalogu repo.
+$RootDir = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $UpdateZipUrl = if ($env:AGENT_MANAGER_UPDATE_ZIP_URL) { $env:AGENT_MANAGER_UPDATE_ZIP_URL } else { 'https://github.com/Kamciosz/agent-manager/archive/refs/heads/main.zip' }
 
 function Write-UpdateLog([string] $Message) { Write-Host "[update] $Message" }

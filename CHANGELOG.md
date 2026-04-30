@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Decluttered repository root: moved internal planning docs (`opt.md`, `opt2.md`, `todo.md`) to `docs/internal/` and added a "Co znajdziesz w głównym katalogu" guide in `README.md` for non-technical users.
+- Decluttered repository root: moved internal planning docs (`opt.md`, `opt2.md`, `todo.md`) to `docs/internal/`, moved Windows launcher engine (`start.ps1`, `update.ps1`) to `launcher/`, and rewrote the README "Co znajdziesz w głównym katalogu" section as a single per-OS table for non-technical operators.
 - Added safe workstation enrollment through dashboard-issued tokens.
 - Added classroom station controls, grid management, monitor view and remote runtime commands.
 - Added long-context llama.cpp settings, KV cache compression options, RotorQuant-friendly model path handling and speculative decoding controls.

@@ -6,43 +6,34 @@ Najprościej: otwierasz aplikację, wpisujesz polecenie dla AI, a AI kierownik d
 
 ## Co znajdziesz w głównym katalogu
 
-Jeśli pierwszy raz otwierasz folder z plikami, oto ściąga — co czym jest i w co kliknąć.
+**Nie czytasz tej tabeli, jeśli używasz tylko aplikacji w przeglądarce.** Te pliki są dla operatora stacji roboczej (komputer, który ma uruchamiać AI lokalnie).
 
-### Pliki do klikania (uruchamianie i aktualizacja stacji)
+### Twój system → kliknij dwa razy ten plik
 
-| Plik | System | Co robi |
-|------|--------|---------|
-| [start.command](start.command) | macOS | Dwuklik w Finderze → uruchamia stację roboczą. |
-| [start.bat](start.bat) | Windows | Dwuklik w Eksploratorze → uruchamia stację roboczą. |
-| [start.sh](start.sh) | Linux / macOS (Terminal) | `./start.sh` w terminalu → uruchamia stację. |
-| [start.ps1](start.ps1) | Windows PowerShell | Wersja PowerShell launchera (alternatywa dla `.bat`). |
-| [Aktualizuj.command](Aktualizuj.command) | macOS | Dwuklik → pobiera najnowszą wersję programu. |
-| [Aktualizuj.bat](Aktualizuj.bat) | Windows | Dwuklik → pobiera najnowszą wersję programu. |
-| [update.sh](update.sh) / [update.ps1](update.ps1) | Linux / Windows | Ten sam update wywoływany z terminala. |
+| Twój system | Uruchom stację | Zaktualizuj stację |
+|-------------|----------------|--------------------|
+| 🍎 macOS | dwuklik [start.command](start.command) | dwuklik [Aktualizuj.command](Aktualizuj.command) |
+| 🪟 Windows 10/11 | dwuklik [start.bat](start.bat) | dwuklik [Aktualizuj.bat](Aktualizuj.bat) |
+| 🐧 Linux (terminal) | `./start.sh` | `./update.sh` |
 
-Nie potrzebujesz żadnego z tych plików, jeśli korzystasz tylko z aplikacji w przeglądarce.
+To wszystko, co operator musi wiedzieć. Pozostałe pliki są tylko silnikiem — nie klikaj ich, nie usuwaj.
 
-### Dokumenty do czytania
+### Pozostałe pliki w katalogu (do wglądu)
 
-| Plik | Dla kogo |
-|------|----------|
-| [README.md](README.md) | Ten plik — start tutaj. |
-| [FORK_GUIDE.md](FORK_GUIDE.md) | Właściciel forka — jak postawić własną kopię. |
-| [CHANGELOG.md](CHANGELOG.md) | Co się zmieniło w kolejnych wersjach. |
+| Plik / folder | Co to jest |
+|---------------|-----------|
+| [README.md](README.md) | Ten dokument. |
+| [FORK_GUIDE.md](FORK_GUIDE.md) | Instrukcja dla osoby, która zakłada własną kopię systemu. |
+| [CHANGELOG.md](CHANGELOG.md) | Lista zmian w kolejnych wersjach. |
 | [SECURITY.md](SECURITY.md) | Jak zgłosić problem bezpieczeństwa. |
-
-### Foldery
-
-| Folder | Co zawiera |
-|--------|-----------|
-| [ui/](ui/) | Aplikacja, którą widzisz w przeglądarce. |
-| [local-ai-proxy/](local-ai-proxy/) | Lokalny program stacji roboczej (uruchamiany przez `start.*`). |
-| [supabase/](supabase/) | Migracje bazy danych i Edge Functions (instaluje właściciel forka). |
+| [ui/](ui/) | Aplikacja webowa (to, co widzisz w przeglądarce). |
+| [local-ai-proxy/](local-ai-proxy/) | Lokalny program stacji roboczej. |
+| [supabase/](supabase/) | Konfiguracja bazy danych (instaluje właściciel forka). |
 | [docs/](docs/) | Pełna dokumentacja produktu, architektury i developera. |
-| [tests/](tests/) | Testy akceptacyjne. |
-| [infra/](infra/) | Notatki o infrastrukturze. |
+| [tests/](tests/), [infra/](infra/) | Testy i notatki techniczne. |
+| [launcher/](launcher/) | Silnik launchera dla Windows (używany automatycznie przez `start.bat`). |
 
-Wewnętrzne plany rozwoju i lista zadań są w [docs/internal/](docs/internal/) — nie musisz tam zaglądać, żeby używać aplikacji.
+Wewnętrzne plany rozwoju są w [docs/internal/](docs/internal/) — nie musisz tam zaglądać, żeby używać aplikacji.
 
 ## Szybki start: używam aplikacji
 
