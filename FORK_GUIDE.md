@@ -33,14 +33,14 @@ Workflow GitHub Pages **nie stosuje migracji bazy danych**. Zrób to ręcznie je
 Metoda bez terminala:
 
 1. W Supabase otwórz **SQL Editor**.
-2. Otwórz pliki z [supabase/migrations](supabase/migrations) w kolejności nazw.
-3. Wklej zawartość każdego pliku i kliknij **Run**.
-4. Jeśli plik jest już zastosowany, większość poleceń jest idempotentna (`if not exists`, `drop policy if exists`).
+2. Jeśli to **nowy projekt od zera**, otwórz plik [supabase/setup_from_zero.sql](supabase/setup_from_zero.sql).
+3. Wklej całą zawartość i kliknij **Run**.
+4. Jeśli aktualizujesz **już istniejącą kopię**, używaj tylko nowych plików z [supabase/migrations](supabase/migrations) w kolejności nazw.
 
 Opcjonalnie dla osób technicznych:
 
 1. Użyj Supabase CLI albo narzędzi MCP Supabase.
-2. Zastosuj migracje z [supabase/migrations](supabase/migrations).
+2. Dla nowego projektu od zera zastosuj [supabase/setup_from_zero.sql](supabase/setup_from_zero.sql), a dla istniejącego projektu tylko brakujące pliki z [supabase/migrations](supabase/migrations).
 3. Po zmianach uruchom security/performance advisors.
 
 ## Krok 4 — skopiuj wartości API
@@ -165,7 +165,7 @@ Update jest bezpieczny: jeśli katalog ma lokalne zmiany, launcher pominie `git 
 | Objaw | Co zrobić |
 |-------|-----------|
 | Aplikacja nie ładuje danych | Sprawdź GitHub Secrets i czy migracje Supabase zostały zastosowane |
-| Rejestracja działa, ale tabele puste/błędy RLS | Zastosuj migracje z [supabase/migrations](supabase/migrations) jeszcze raz w kolejności |
+| Rejestracja działa, ale tabele puste/błędy RLS | Dla nowego projektu uruchom ponownie [supabase/setup_from_zero.sql](supabase/setup_from_zero.sql); dla istniejącej kopii dołóż brakujące pliki z [supabase/migrations](supabase/migrations) |
 | Lokalny AI nie łączy się z aplikacją | Uruchom `--doctor`, sprawdź `allowedOrigins` w `local-ai-proxy/config.json` |
 | Windows okno znika | Uruchom `start.bat --doctor --no-pause` z `cmd.exe` |
 | Update nic nie zmienia | Repo ma lokalne zmiany albo nie jest klonem git; to bezpieczne zachowanie |

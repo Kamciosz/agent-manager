@@ -35,7 +35,8 @@ Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa
 │   └── labyrinth.js        — preset Hermes Labyrinth
 │
 ├── supabase/               — konfiguracja backendu
-│   ├── migrations/         — migracje SQL stosowane poza workflow Pages
+│   ├── setup_from_zero.sql — jeden plik SQL do świeżej instalacji od zera
+│   ├── migrations/         — kolejne migracje SQL dla istniejących instalacji
 │   └── functions/          — Edge Functions dla tokenów instalacyjnych stacji
 │
 ├── .github/

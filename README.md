@@ -1,66 +1,94 @@
 # Agent Manager
 
-Status: **alpha**. To jest robocza instrukcja i panel do dodawania poleceń dla AI.
+Status: **alpha**.
 
-Najprościej: otwierasz aplikację, wpisujesz polecenie dla AI, a AI kierownik decyduje, czy wykona je przeglądarkowy agent, czy dostępna stacja robocza.
+Agent Manager to panel online do zarzadzania poleceniami AI oraz stacjami roboczymi z lokalnymi modelami GGUF.
 
-W obecnej alpha są dwa sposoby działania tego samego systemu:
+To nie jest sam chat w przegladarce. Normalny sposob pracy wyglada tak:
 
-- **tryb przeglądarkowy** — to domyślny tryb alpha; panel działa bez lokalnego modelu, a przepływ zadania obsługuje przeglądarkowy kierownik i executor,
-- **stacja robocza** — dodatkowy komputer z lokalnym modelem GGUF; podłączasz go wtedy, gdy chcesz prawdziwy model lokalny zamiast samego trybu przeglądarkowego.
+1. Operator otwiera panel.
+2. Ma podlaczona co najmniej jedna stacje robocza.
+3. Dodaje polecenie dla AI.
+4. AI kierownik kieruje zadanie do odpowiedniej stacji.
+5. Panel pokazuje postep, wiadomosci i wynik.
 
-To nie są dwa różne produkty. Panel online jest zawsze ten sam, a lokalna stacja tylko rozszerza go o własny model.
+## Najwazniejsze
 
-Jeśli chcesz tylko korzystać z gotowej aplikacji, czytaj przede wszystkim sekcję **Tryb przeglądarkowy**. Jeśli instalujesz własną kopię albo lokalną stację roboczą, niżej są dodatkowe instrukcje.
+- Panel online jest centrum sterowania.
+- Stacja robocza jest standardowym wykonawca zadan.
+- Kazdy fork ma wlasny adres GitHub Pages i wlasny projekt Supabase.
+- Bez aktywnej stacji panel nadal sie otworzy, a alpha moze uzyc fallbacku przegladarkowego. Traktuj to jako tryb awaryjny, nie docelowy.
 
-Wewnętrzne plany rozwoju są w [docs/internal/](docs/internal/) — nie musisz tam zaglądać, żeby używać aplikacji.
+## Szybki start
 
-## Tryb przeglądarkowy
+1. Otworz adres swojej aplikacji.
+   Jesli korzystasz z czyjejs kopii, dostaniesz link od wlasciciela.
+   Jesli masz wlasna kopie, adres znajdziesz w **Settings -> Pages**.
+2. Zaloguj sie kontem, ktore ma role panelowa.
+   Typowe role: `operator`, `teacher`, `manager`, `admin`.
+3. Wejdz do widoku **Stacje robocze** i sprawdz, czy przynajmniej jedna stacja jest online.
+4. Jesli nie ma aktywnej stacji, uruchom launcher na wybranym komputerze.
+5. Kliknij **Dodaj polecenie** i wpisz zadanie dla AI.
+6. Obserwuj wykonanie w **Monitorze** albo w szczegolach zadania.
 
-1. Otwórz aplikację w przeglądarce. Jeśli robisz własną kopię, użyj adresu z **Settings → Pages**.
-2. Zaloguj się kontem, któremu właściciel Supabase nadał rolę panelową (`operator`, `teacher`, `manager` albo `admin`).
-3. Kliknij **Dodaj polecenie**.
-4. Wpisz, co AI ma zrobić, albo wybierz szablon **Hermes Labyrinth** dla pracy przez mapę ról, bram i testów.
-5. Obserwuj status w czasie rzeczywistym w widoku **Monitor** albo w szczegółach polecenia.
+## Czy trzeba terminala i npm
 
-W tym trybie nie instalujesz modelu ani launchera. Panel działa jako **Panel online**. To jest zamierzony tryb alpha, a nie awaria.
+W skrocie: **npm nie jest potrzebny**.
 
-## Hermes Labyrinth
+- W tym repo nie ma `package.json`, nie robisz `npm install` i nie robisz buildu frontendu.
+- Zwykly uzytkownik panelu nie potrzebuje terminala.
+- Operator stacji na Windows lub macOS moze wszystko zrobic dwuklikiem przez launcher.
+- Terminal przydaje sie glownie na Linuxie albo przy diagnostyce (`--doctor`, `--update`).
+- Wlasciciel forka moze postawic prawie caly system bez terminala: od zera uruchamia jeden plik SQL `supabase/setup_from_zero.sql`, a terminal najczesciej przydaje sie dopiero przy wdrozeniu Edge Functions.
 
-Szablon **Hermes Labyrinth** prowadzi polecenie przez etapy: rozpoznanie, mapa, podział ról, wykonanie, weryfikacja i raport. AI kierownik zapisuje ten workflow w kontekście zadania i przekazuje go executorowi albo stacji roboczej.
+## Co oznacza status w panelu
 
-Szczegóły: [docs/product/hermes-labyrinth.md](docs/product/hermes-labyrinth.md).
+- **AI lokalny**: ten komputer widzi dzialajacy lokalny runtime i moze korzystac z modelu GGUF.
+- **Panel online**: panel dziala, ale ten komputer nie ma aktywnego lokalnego runtime.
 
-## Lokalna stacja robocza
+Wazne:
 
-Ta sekcja jest dla osoby, która chce podłączyć do panelu własny komputer z lokalnym modelem GGUF. Jeśli korzystasz tylko z aplikacji w przeglądarce, możesz ją pominąć.
+- **Panel online** nie oznacza, ze system jest martwy.
+- Jesli inna stacja jest online, zadania dalej moga wykonac sie na niej.
+- Jesli nie ma zadnej stacji, alpha moze wejsc w fallback przegladarkowy.
 
-1. Pobierz paczkę launchera z GitHub Actions albo sklonuj repo.
-2. Uruchom plik dla swojego systemu:
+## Uruchom stacje robocza
 
-| System | Najprostszy start | Aktualizacja | Diagnostyka |
-|--------|-------------------|--------------|-------------|
+To jest standardowy sposob wykonywania zadan w Agent Managerze.
+
+| System | Uruchomienie | Aktualizacja | Diagnostyka |
+|--------|--------------|--------------|-------------|
 | Windows 10/11 | dwuklik [start.bat](start.bat) | dwuklik [Aktualizuj.bat](Aktualizuj.bat) | `start.bat --doctor --no-pause` |
 | macOS | dwuklik [start.command](start.command) | dwuklik [Aktualizuj.command](Aktualizuj.command) | `./start.sh --doctor` |
 | Linux | `./start.sh` | `./update.sh` | `./start.sh --doctor` |
 
-3. W dashboardzie wygeneruj token instalacyjny w widoku **Stacje robocze** i wklej go przy pierwszym starcie. Launcher nie pyta o hasło operatora. Na Windowsie sam pobierze portable Node.js, jeśli nie ma go w PATH.
-4. Zostaw okno launchera otwarte, kiedy komputer ma wykonywać polecenia.
-5. Stacja pojawi się w aplikacji w widoku **Stacje robocze**.
+Po pierwszym starcie:
 
-Ważne: `local-ai-proxy/config.json` jest lokalny i nie powinien trafić do gita. Przykład bez sekretów jest w [local-ai-proxy/config.example.json](local-ai-proxy/config.example.json).
+1. W panelu wygeneruj token instalacyjny w widoku **Stacje robocze**.
+2. Wklej token przy pierwszym uruchomieniu launchera.
+3. Zostaw okno launchera otwarte, kiedy komputer ma wykonywac zadania.
+4. Wroc do panelu i sprawdz, czy stacja pojawila sie jako online.
+
+Na Windowsie launcher moze sam pobrac portable Node.js, jesli nie ma go w PATH.
+
+`local-ai-proxy/config.json` jest plikiem lokalnym i nie powinien trafic do gita. Przyklad bez sekretow masz w [local-ai-proxy/config.example.json](local-ai-proxy/config.example.json).
 
 ## Aktualizacja
 
-Najprościej użyj:
+Najprostsza sciezka:
 
 - Windows: [Aktualizuj.bat](Aktualizuj.bat)
 - macOS: [Aktualizuj.command](Aktualizuj.command)
 - Linux: `./update.sh`
 
-To uruchamia bezpieczny update launchera. W repo git robi `git pull --ff-only`, a w instalacji z ZIP-a pobiera najnowszy kod z GitHuba i zachowuje lokalne `config.json`, modele, binarki oraz logi. Jeśli repo ma lokalne zmiany, update zostanie pominięty z komunikatem zamiast nadpisywać pliki.
+Aktualizator:
 
-W repo git możesz też użyć flagi:
+- w repo git robi bezpieczne `git pull --ff-only`,
+- w instalacji z ZIP-a pobiera najnowszy kod z GitHuba,
+- zachowuje lokalne `config.json`, modele, binarki i logi,
+- nie nadpisuje lokalnych zmian po cichu.
+
+Jesli wolisz terminal, mozesz tez uzyc:
 
 ```bash
 ./start.sh --update
@@ -70,50 +98,57 @@ W repo git możesz też użyć flagi:
 start.bat --update
 ```
 
-## Dla właściciela forka
+## Hermes Labyrinth
 
-Jeśli zakładasz własną kopię, najprościej zacznij od [FORK_GUIDE.md](FORK_GUIDE.md). W skrócie:
+Szablon **Hermes Labyrinth** pomaga rozbic polecenie na etapy: rozpoznanie, mapa, podzial rol, wykonanie, weryfikacja i raport.
 
-1. Fork repozytorium.
-2. Utwórz projekt Supabase.
-3. Wklej migracje SQL z [supabase/migrations](supabase/migrations) w Supabase SQL Editor albo zastosuj je przez Supabase CLI/tools.
-4. Wdróż Edge Functions z [supabase/functions](supabase/functions) i ustaw w Supabase sekret `SUPABASE_SERVICE_ROLE_KEY` tylko dla funkcji; gotowe komendy są w [FORK_GUIDE.md](FORK_GUIDE.md).
+To nie jest osobny tryb programu. To gotowy sposob przygotowania polecenia w tym samym panelu.
+
+Szczegoly: [docs/product/hermes-labyrinth.md](docs/product/hermes-labyrinth.md).
+
+## Dla wlasciciela wlasnej kopii
+
+Jesli zakladasz wlasna kopie systemu, zacznij od [FORK_GUIDE.md](FORK_GUIDE.md).
+
+W skrocie:
+
+1. Zrob fork repozytorium.
+2. Utworz projekt Supabase.
+3. Dla nowego projektu od zera uruchom [supabase/setup_from_zero.sql](supabase/setup_from_zero.sql). Jesli aktualizujesz juz istniejaca kopie, uruchamiaj tylko nowe pliki z [supabase/migrations](supabase/migrations).
+4. Wdroz funkcje z [supabase/functions](supabase/functions).
 5. Dodaj `SUPABASE_URL` i `SUPABASE_ANON_KEY` do GitHub Secrets.
-6. Włącz GitHub Pages z GitHub Actions.
-7. Uruchom workflow **Deploy**.
+6. Wlacz GitHub Pages.
+7. Uruchom deploy.
 
-Deploy GitHub Pages publikuje UI. Migracje bazy są jawne i nie są wykonywane przez workflow Pages.
+Deploy publikuje tylko panel `ui/`. Nie zmienia automatycznie bazy danych.
 
-## Bezpieczeństwo alpha
+## Bezpieczenstwo alpha
 
-- Publiczny `anon/publishable key` Supabase może być użyty w frontendzie, ale dane chroni RLS.
-- Konto przeglądarkowego panelu musi mieć jawne `app_metadata.role`: `admin`, `manager`, `operator`, `teacher`, `executor` albo `viewer`. Samo założenie konta nie daje dostępu do danych panelu.
-- Launchery nie mają już wpisanego domyślnego projektu Supabase. Każdy fork podaje własny URL i key.
-- Stacje używają jednorazowego tokenu instalacyjnego z dashboardu. Hasło operatora nie jest zapisywane lokalnie; po aktywacji stacja dostaje ograniczoną sesję techniczną.
-- Supabase service-role key jest potrzebny tylko w sekretach Edge Functions i nie może trafić do GitHub Pages, launcherów ani `config.json`.
-- Lokalny proxy akceptuje tylko skonfigurowane originy aplikacji oraz localhost.
-- `local-ai-proxy/config.json`, modele, binarki i logi są ignorowane przez git.
-- CI ma guard blokujący przypadkowe dodanie lokalnego configu i oczywistych sekretów.
+- Publiczny `anon/publishable key` moze byc w frontendzie, ale dane chroni RLS.
+- Konto bez jawnej roli panelowej nie powinno miec dostepu do danych aplikacji.
+- `SUPABASE_SERVICE_ROLE_KEY` jest tylko dla Edge Functions, nigdy dla Pages, launchera ani `config.json`.
+- Token instalacyjny stacji jest jednorazowy.
+- `local-ai-proxy/config.json`, modele, binarki i logi sa lokalne i ignorowane przez git.
 
 ## Technologia
 
-| Warstwa | Rozwiązanie |
+| Warstwa | Rozwiazanie |
 |---------|-------------|
-| UI | GitHub Pages, vanilla JS, Tailwind CDN |
-| Baza i realtime | Supabase Postgres + Realtime |
-| Logowanie | Supabase Auth |
-| Lokalny AI | llama.cpp `llama-server` + Node 20+ proxy |
-| Stacje | `workstation-agent.js` + Supabase REST |
+| Panel | GitHub Pages, vanilla JS, Tailwind CDN |
+| Backend | Supabase Postgres + Realtime + Auth |
+| Lokalny runtime | llama.cpp `llama-server` + Node proxy |
+| Stacje | `workstation-agent.js` + launcher per system |
 
 ## Dokumentacja
 
 | Sekcja | Plik |
 |--------|------|
-| Nawigacja po docs | [docs/index.md](docs/index.md) |
+| Mapa dokumentacji | [docs/index.md](docs/index.md) |
 | Architektura | [docs/architecture/overview.md](docs/architecture/overview.md) |
 | Lokalny runtime | [local-ai-proxy/README.md](local-ai-proxy/README.md) |
 | Specyfikacja UI | [docs/product/ui-spec.md](docs/product/ui-spec.md) |
 | Hermes Labyrinth | [docs/product/hermes-labyrinth.md](docs/product/hermes-labyrinth.md) |
 | Testy | [docs/dev/testing.md](docs/dev/testing.md) |
-| Krytyczny QA alpha | [docs/product/bad-mood-qa.md](docs/product/bad-mood-qa.md) |
-| Jak forknąć | [FORK_GUIDE.md](FORK_GUIDE.md) |
+| Jak zrobic wlasna kopie | [FORK_GUIDE.md](FORK_GUIDE.md) |
+
+Wewnetrzne plany rozwoju sa w [docs/internal/](docs/internal/) i nie sa potrzebne do codziennej pracy z systemem.
