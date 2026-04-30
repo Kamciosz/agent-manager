@@ -23,4 +23,5 @@
 - Stopped automatic localhost proxy polling on public Pages to avoid console noise when local AI is not running.
 - Reduced dashboard work during filtering and Realtime bursts by debouncing renders and reusing delegated task-list handlers.
 - Fixed the initial dashboard header so the active `Polecenia` view no longer loads with a stale `Dashboard` title.
+- Documented a performance environment review and made hidden dashboard panels render lazily with delegated dynamic-list handlers.
 - Kept validation on plain Node commands without npm, bundlers, or package installation.

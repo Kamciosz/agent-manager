@@ -63,6 +63,8 @@ const VIEW = {
   SETTINGS: 'settings',
 }
 
+const TASK_LIST_VIEWS = [VIEW.DASHBOARD, VIEW.TASKS]
+
 const TOAST_TYPE = {
   SUCCESS: 'success',
   ERROR: 'error',
@@ -209,6 +211,7 @@ const state = {
   classroomLayouts: loadClassroomLayouts(),
   agentSkills: [],
   editingAgentId: null,
+  agents: [],
   tasks: [],
   workstations: [],
   enrollmentTokens: [],
@@ -332,8 +335,7 @@ async function handleAuthenticated(user) {
   document.getElementById('user-email').textContent = user.email
 
   // Krok 1: załaduj dane do widoków
-  const loadJobs = [refreshTasks(), refreshAgents(), refreshWorkstations(), refreshMonitorLog()]
-  if (canManageEnrollmentTokens()) loadJobs.push(refreshEnrollmentTokens())
+  const loadJobs = [refreshTasks(), refreshWorkstations()]
   await Promise.all(loadJobs)
   renderEnrollmentPanelVisibility()
 
@@ -497,7 +499,26 @@ function navigateTo(viewName) {
     link.classList.toggle('text-blue-700', isActive)
     link.classList.toggle('text-slate-600', !isActive)
   })
-  if (viewName === VIEW.SETTINGS) renderSettingsForm()
+  renderActiveView(viewName)
+}
+
+function renderActiveView(viewName = state.currentView) {
+  if (TASK_LIST_VIEWS.includes(viewName)) {
+    renderFilteredTasksNow()
+    renderStats(state.tasks)
+  } else if (viewName === VIEW.AGENTS) {
+    refreshAgents()
+  } else if (viewName === VIEW.WORKSTATIONS) {
+    renderWorkstationsView(state.workstations)
+    if (canManageEnrollmentTokens()) refreshEnrollmentTokens()
+  } else if (viewName === VIEW.MONITOR) {
+    renderMonitorPanel()
+    refreshMonitorLog()
+  } else if (viewName === VIEW.ADVANCED) {
+    renderAdvancedRuntimePanel(state.workstations)
+  } else if (viewName === VIEW.SETTINGS) {
+    renderSettingsForm()
+  }
 }
 
 /**
@@ -518,6 +539,9 @@ function bindNavigation() {
   bindTaskListDelegation('tasks-table-body')
   bindTaskListDelegation('tasks-table-body-full')
   bindTaskListDelegation('tasks-cards')
+  bindWorkstationListDelegation()
+  bindMonitorDelegation()
+  bindTaskWorkstationCardDelegation()
   document.getElementById('btn-logout').addEventListener('click', handleLogout)
   document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
@@ -935,10 +959,12 @@ async function getMessagesForTask(taskId) {
 async function refreshTasks() {
   const tasks = await getTasks()
   state.tasks = tasks || []
-  renderFilteredTasks()
-  applyTaskViewMode()
+  if (TASK_LIST_VIEWS.includes(state.currentView)) {
+    renderFilteredTasks()
+    applyTaskViewMode()
+  }
   renderStats(tasks)
-  renderMonitorPanel()
+  if (state.currentView === VIEW.MONITOR) renderMonitorPanel()
 }
 
 function renderFilteredTasks() {
@@ -1029,6 +1055,13 @@ function isElementVisible(id) {
   return Boolean(element && !element.classList.contains('hidden'))
 }
 
+function bindDelegatedClick(containerId, datasetKey, handler) {
+  const container = document.getElementById(containerId)
+  if (!container || container.dataset[datasetKey] === 'true') return
+  container.dataset[datasetKey] = 'true'
+  container.addEventListener('click', handler)
+}
+
 // ============================================================================
 // CRUD: WORKSTATIONS
 // ============================================================================
@@ -1062,14 +1095,26 @@ async function refreshWorkstations() {
   if (state.selectedMonitorWorkstationId && !findWorkstation(state.selectedMonitorWorkstationId)) {
     state.selectedMonitorWorkstationId = null
   }
+  if (state.currentView === VIEW.WORKSTATIONS) renderWorkstationsView(workstations)
+  if (state.currentView === VIEW.MONITOR) renderMonitorPanel()
+  if (state.currentView === VIEW.ADVANCED) renderAdvancedRuntimePanel(workstations)
+  if (TASK_LIST_VIEWS.includes(state.currentView)) renderFilteredTasks()
+  renderStats(state.tasks)
+  refreshTaskModalWorkstationsIfOpen()
+  if (state.currentView === VIEW.SETTINGS) renderSettingsForm()
+}
+
+function renderWorkstationsView(workstations) {
   renderWorkstationsTable(workstations)
   renderClassroomGrid(workstations)
-  renderMonitorPanel()
-  renderAdvancedRuntimePanel(workstations)
-  renderFilteredTasks()
-  renderStats(state.tasks)
-  populateTaskWorkstationSelects()
-  renderSettingsForm()
+  renderEnrollmentPanelVisibility()
+}
+
+function refreshTaskModalWorkstationsIfOpen() {
+  if (!isElementVisible('modal-submit-task')) return
+  const selectedWorkstationId = document.getElementById('task-workstation')?.value || ''
+  const selectedModelName = document.getElementById('task-model')?.value || ''
+  populateTaskWorkstationSelects(selectedWorkstationId, selectedModelName)
 }
 
 /**
@@ -1567,15 +1612,32 @@ function renderWorkstationsTable(workstations) {
     `
   }).join('')
 
-  tbody.querySelectorAll('.workstation-edit').forEach((button) => {
-    button.addEventListener('click', () => openWorkstationEditModal(button.dataset.id))
-  })
-  tbody.querySelectorAll('.workstation-message').forEach((button) => {
-    button.addEventListener('click', () => openWorkstationMessageModal(button.dataset.id, null))
-  })
-  tbody.querySelectorAll('.workstation-command').forEach((button) => {
-    button.addEventListener('click', () => sendWorkstationCommand(button.dataset.id, button.dataset.command))
-  })
+}
+
+function bindWorkstationListDelegation() {
+  const tableBody = document.getElementById('workstations-table-body')
+  if (!tableBody || tableBody.dataset.workstationDelegated === 'true') return
+  tableBody.dataset.workstationDelegated = 'true'
+  tableBody.addEventListener('click', handleWorkstationListClick)
+}
+
+function handleWorkstationListClick(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement
+  if (!target) return
+  const editButton = target.closest('.workstation-edit')
+  if (editButton?.dataset.id) {
+    openWorkstationEditModal(editButton.dataset.id)
+    return
+  }
+  const messageButton = target.closest('.workstation-message')
+  if (messageButton?.dataset.id) {
+    openWorkstationMessageModal(messageButton.dataset.id, null)
+    return
+  }
+  const commandButton = target.closest('.workstation-command')
+  if (commandButton?.dataset.id && commandButton.dataset.command) {
+    sendWorkstationCommand(commandButton.dataset.id, commandButton.dataset.command)
+  }
 }
 
 function workstationCommandButtons(workstation) {
@@ -1998,9 +2060,6 @@ function renderMonitorActiveTasks(tasks) {
       <div class="text-xs text-slate-500 mt-1">Stacja: ${escapeHtml(resolveWorkstationName(task.requested_workstation_id))} · ${formatDate(task.created_at)}</div>
     </button>
   `).join('')
-  list.querySelectorAll('.monitor-task').forEach((button) => {
-    button.addEventListener('click', () => openTaskDetail(button.dataset.taskId))
-  })
 }
 
 /**
@@ -2028,12 +2087,32 @@ function renderMonitorWorkstations(workstations) {
       </button>
     `
   }).join('')
-  list.querySelectorAll('.monitor-workstation').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.selectedMonitorWorkstationId = button.dataset.id
-      renderSelectedMonitorWorkstation()
-    })
-  })
+}
+
+function bindMonitorDelegation() {
+  bindDelegatedClick('monitor-active-tasks-list', 'monitorDelegated', handleMonitorListClick)
+  bindDelegatedClick('monitor-workstations-list', 'monitorDelegated', handleMonitorListClick)
+  bindDelegatedClick('monitor-station-detail', 'monitorDelegated', handleMonitorListClick)
+}
+
+function handleMonitorListClick(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement
+  if (!target) return
+  const taskButton = target.closest('.monitor-task')
+  if (taskButton?.dataset.taskId) {
+    openTaskDetail(taskButton.dataset.taskId)
+    return
+  }
+  const workstationButton = target.closest('.monitor-workstation')
+  if (workstationButton?.dataset.id) {
+    state.selectedMonitorWorkstationId = workstationButton.dataset.id
+    renderSelectedMonitorWorkstation()
+    return
+  }
+  const commandButton = target.closest('.monitor-station-command')
+  if (commandButton?.dataset.id && commandButton.dataset.command) {
+    sendWorkstationCommand(commandButton.dataset.id, commandButton.dataset.command)
+  }
 }
 
 function renderSelectedMonitorWorkstation() {
@@ -2089,9 +2168,6 @@ function renderSelectedMonitorWorkstation() {
       <button class="monitor-station-command rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50" data-id="${workstation.id}" data-command="reconfigure">Rekonfiguruj</button>
     </div>
   `
-  container.querySelectorAll('.monitor-station-command').forEach((button) => {
-    button.addEventListener('click', () => sendWorkstationCommand(button.dataset.id, button.dataset.command))
-  })
 }
 
 /**
@@ -2301,8 +2377,13 @@ function renderTaskWorkstationCards(workstations, selectedId = '') {
     }),
   ]
   container.innerHTML = cards.join('')
-  container.querySelectorAll('.task-workstation-card').forEach((button) => {
-    button.addEventListener('click', () => selectTaskWorkstation(button.dataset.id || ''))
+}
+
+function bindTaskWorkstationCardDelegation() {
+  bindDelegatedClick('task-workstation-cards', 'taskWorkstationDelegated', (event) => {
+    const target = event.target instanceof Element ? event.target : event.target?.parentElement
+    const card = target?.closest('.task-workstation-card')
+    if (card) selectTaskWorkstation(card.dataset.id || '')
   })
 }
 
@@ -3190,7 +3271,7 @@ function subscribeToEnrollmentTokens() {
   state.enrollmentTokensSubscription = supabase
     .channel('workstation-enrollment-tokens')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'workstation_enrollment_tokens' }, () => {
-      scheduleRefresh('enrollmentTokensRefresh', refreshEnrollmentTokens)
+      if (state.currentView === VIEW.WORKSTATIONS) scheduleRefresh('enrollmentTokensRefresh', refreshEnrollmentTokens)
     })
     .subscribe()
 }
@@ -3204,10 +3285,10 @@ function subscribeToMonitorLog() {
   state.monitorLogSubscription = supabase
     .channel('monitor-log')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-      scheduleRefresh('monitorLogRefresh', refreshMonitorLog)
+      if (state.currentView === VIEW.MONITOR) scheduleRefresh('monitorLogRefresh', refreshMonitorLog)
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'workstation_messages' }, () => {
-      scheduleRefresh('monitorLogRefresh', refreshMonitorLog)
+      if (state.currentView === VIEW.MONITOR) scheduleRefresh('monitorLogRefresh', refreshMonitorLog)
     })
     .subscribe()
 }
@@ -4011,6 +4092,7 @@ async function deleteAgent(id) {
  */
 async function refreshAgents() {
   const agents = await getAgents()
+  state.agents = agents || []
   renderAgentsTable(agents)
 }
 
