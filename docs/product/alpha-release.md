@@ -33,7 +33,7 @@ Architektura pozostaje prosta:
 
 - GitHub Pages odpowiada HTTP 200.
 - Deployed `app.js` nie zawiera placeholderów `__SUPABASE_URL__` ani `__SUPABASE_ANON_KEY__`.
-- Supabase ma tabele `tasks`, `assignments`, `agents`, `messages`, `workstations`, `workstation_models`, `workstation_messages`, `workstation_jobs`.
+- Supabase ma tabele `tasks`, `assignments`, `agents`, `messages`, `workstations`, `workstation_models`, `workstation_messages`, `workstation_jobs`, `task_feedback`, `task_events`.
 - Supabase ma startowe profile agentów: `AI Kierownik`, `Executor Kodujący`, `Tester Weryfikator`.
 - Utworzenie zadania w UI zapisuje rekord w `tasks`.
 - Usunięcie zadania z listy lub szczegółów usuwa rekord z `tasks` i odświeża widok bez błędów RLS.

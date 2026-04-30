@@ -38,7 +38,7 @@ Nie rekomenduję teraz migracji na Python/LangChain, ciężkiego React/Vite, aut
 | Cancel/retry/reassign zadań | Wdrożone: `Anuluj`, `Ponów` i `Ponów auto` z czyszczeniem wskazanej stacji/modelu | P0 | `supabase/migrations`, `ui/app.js`, `ui/manager.js`, `workstation-agent.js` |
 | Offline queue stacji | Wdrożone | P0 | `workstation-agent.js`, `local-ai-proxy/README.md` |
 | Batching logów i pollingu | Wdrożone dla wiadomości stacji i flushu kolejki offline | P0 | `workstation-agent.js`, config |
-| Run trace zadania | Wdrożone | P1 | `ui/app.js`, `ui/index.html`, `messages`, `workstation_messages`, `workstation_jobs` |
+| Run trace i audit log zadania | Wdrożone | P1 | `ui/app.js`, `ui/index.html`, `messages`, `workstation_messages`, `workstation_jobs`, `task_events` |
 | Health smoke modelu | Wdrożone | P1 | `proxy.js`, `workstation-agent.js`, monitor UI |
 | Metryki zasobów stacji | Wdrożone w heartbeat i monitorze | P1 | `workstation-agent.js`, `ui/app.js` |
 | Presety runtime i `reconfigure` | Wdrożone | P1 | `ui/app.js`, `workstation-agent.js` |
@@ -50,7 +50,7 @@ Nie rekomenduję teraz migracji na Python/LangChain, ciężkiego React/Vite, aut
 
 ## Kolejność implementacji
 
-1. P0/P1 z tej rundy są wdrożone: retry auto, offline queue, batching, run trace, smoke, metryki, presety i `reconfigure`.
+1. P0/P1 z tej rundy są wdrożone: retry auto, offline queue, batching, run trace, audit log, smoke, metryki, presety i `reconfigure`.
 2. Następny etap po stabilizacji beta: rozbić `ui/app.js` na moduły i dodać automatyczne testy browserowe dla panelu.
 3. Dopiero po tym wracać do większych tematów: pełny multi-tenant, sandbox narzędzi AI albo migracja stacku.
 

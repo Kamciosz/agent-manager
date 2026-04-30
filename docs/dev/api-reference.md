@@ -55,6 +55,24 @@ Przechowuje ręczną ocenę wyniku pojedynczego zadania. To lekki odpowiednik ew
 
 Na parę `task_id + user_id` przypada jedna ocena. RLS pozwala użytkownikom aplikacji czytać feedback i zarządzać własnym wpisem; techniczne konta stacji nie mają dostępu do tej tabeli.
 
+### Tabela `task_events` — historia zmian
+
+Przechowuje audit log operacji na `tasks`. Wpisy powstają z triggera bazy przy utworzeniu, edycji, zmianie statusu, anulowaniu, ponowieniu i usunięciu polecenia. `task_id` nie ma FK do `tasks`, żeby ostatni wpis `task.deleted` nie zniknął razem z rekordem zadania.
+
+| Pole | Typ | Opis |
+|------|-----|------|
+| `id` | UUID | Unikalny identyfikator |
+| `task_id` | UUID | ID zadania, którego dotyczy zdarzenie |
+| `task_title` | tekst | Tytuł zadania w momencie zdarzenia |
+| `actor_user_id` | UUID | ID użytkownika lub technicznej stacji, jeśli jest dostępne |
+| `actor_kind` | tekst | `user`, `station` albo `system` |
+| `event_type` | tekst | Np. `task.created`, `task.edited`, `task.status_changed`, `task.cancelled`, `task.retried` |
+| `summary` | tekst | Krótkie podsumowanie zdarzenia do UI |
+| `metadata` | JSON | Szczegóły, np. zmienione pola albo stary/nowy status |
+| `created_at` | timestamp | Data zdarzenia |
+
+RLS pozwala użytkownikom aplikacji czytać historię. Wpisy nie są tworzone bezpośrednio przez UI, tylko przez trigger `record_task_event`.
+
 ### Tabela `assignments` — przydziały
 
 Przechowuje informacje o tym który agent wykonawczy dostał które zadanie.
@@ -253,6 +271,16 @@ await supabase
     rating: 'good',
     comment: 'Wynik spełnia oczekiwania smoke testu.'
   }, { onConflict: 'task_id,user_id' })
+```
+
+### Pobierz historię zmian zadania
+
+```js
+const { data: events } = await supabase
+  .from('task_events')
+  .select('*')
+  .eq('task_id', taskId)
+  .order('created_at', { ascending: true })
 ```
 
 Prosty dataset regresyjny dla ręcznych porównań znajduje się w `tests/data/regression-prompts.json`.

@@ -129,6 +129,15 @@ const TASK_FEEDBACK_LABELS = {
   bad: 'Zły',
 }
 
+const TASK_EVENT_LABELS = {
+  'task.created': 'Utworzono',
+  'task.edited': 'Edytowano',
+  'task.status_changed': 'Status',
+  'task.cancelled': 'Anulowano',
+  'task.retried': 'Ponowiono',
+  'task.deleted': 'Usunięto',
+}
+
 const RUNTIME_PRESETS = {
   classroomCpu: {
     label: 'Sala CPU',
@@ -192,6 +201,7 @@ const state = {
   currentTaskAiMessages: [],
   currentTaskWorkstationMessages: [],
   currentTaskJobs: [],
+  currentTaskEvents: [],
   currentTaskFeedback: null,
   selectedTaskFeedbackRating: null,
   editingTaskId: null,
@@ -210,6 +220,7 @@ const state = {
   messagesSubscription: null,
   taskWorkstationMessagesSubscription: null,
   taskWorkstationJobsSubscription: null,
+  taskEventsSubscription: null,
   workstationsSubscription: null,
   enrollmentTokensSubscription: null,
   monitorLogSubscription: null,
@@ -2301,6 +2312,26 @@ async function getWorkstationJobsForTask(taskId) {
   }
 }
 
+/**
+ * Pobiera historię zmian powiązaną z zadaniem.
+ * @param {string} taskId
+ * @returns {Promise<Array>}
+ */
+async function getTaskEventsForTask(taskId) {
+  try {
+    const { data, error } = await supabase
+      .from('task_events')
+      .select('*')
+      .eq('task_id', taskId)
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    return data || []
+  } catch (error) {
+    console.error('[app.js] getTaskEventsForTask failed:', error)
+    return []
+  }
+}
+
 function upsertCurrentTaskJob(job) {
   const existingIndex = state.currentTaskJobs.findIndex((item) => item.id === job.id)
   if (existingIndex >= 0) {
@@ -2316,6 +2347,7 @@ function renderRunTrace() {
   const container = document.getElementById('run-trace-list')
   if (!container) return
   const events = [
+    ...state.currentTaskEvents.map((event) => ({ kind: 'audit', at: event.created_at, event })),
     ...state.currentTaskJobs.map((job) => ({ kind: 'job', at: job.created_at, job })),
     ...state.currentTaskAiMessages.map((message) => ({ kind: 'ai', at: message.created_at, message })),
     ...state.currentTaskWorkstationMessages.map((message) => ({ kind: 'station', at: message.created_at, message })),
@@ -2328,6 +2360,7 @@ function renderRunTrace() {
 }
 
 function runTraceEventHtml(event, index) {
+  if (event.kind === 'audit') return runTraceAuditHtml(event.event, index)
   if (event.kind === 'job') return runTraceJobHtml(event.job, index)
   const message = event.message
   const isStation = event.kind === 'station'
@@ -2343,6 +2376,27 @@ function runTraceEventHtml(event, index) {
           <div class="text-xs text-slate-500">${formatDate(message.created_at)}</div>
         </div>
         <pre class="mt-2 whitespace-pre-wrap break-words text-sm text-slate-700 font-sans">${escapeHtml(truncateText(message.content || '', 800))}</pre>
+      </div>
+    </div>
+  `
+}
+
+/**
+ * Renderuje zdarzenie audit logu we wspólnej osi Run trace.
+ * @param {Object} event
+ * @param {number} index
+ * @returns {string}
+ */
+function runTraceAuditHtml(event, index) {
+  return `
+    <div class="grid grid-cols-[72px_1fr] gap-3">
+      <div class="pt-3 text-right font-mono text-xs text-slate-400">${String(index + 1).padStart(2, '0')}</div>
+      <div class="rounded-lg border border-violet-200 bg-violet-50 p-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="font-semibold text-slate-900">Historia · ${escapeHtml(TASK_EVENT_LABELS[event.event_type] || event.event_type || 'zdarzenie')}</div>
+          <div class="text-xs text-slate-500">${formatDate(event.created_at)}</div>
+        </div>
+        <div class="mt-2 text-sm text-slate-700">${escapeHtml(event.summary || '')}</div>
       </div>
     </div>
   `
@@ -2457,6 +2511,70 @@ function workstationMessageHtml(message) {
       <div class="text-sm text-slate-800">${escapeHtml(message.content || '')}</div>
     </div>
   `
+}
+
+/**
+ * Renderuje historię zmian w widoku szczegółów zadania.
+ * @param {Array} events
+ * @returns {void}
+ */
+function renderTaskEvents(events) {
+  const list = document.getElementById('task-events-list')
+  if (!list) return
+  state.currentTaskEvents = events
+  if (!events.length) {
+    list.innerHTML = '<p class="text-sm text-slate-500">Historia zmian jest pusta.</p>'
+    renderRunTrace()
+    return
+  }
+  list.innerHTML = events.map((event) => taskEventHtml(event)).join('')
+  renderRunTrace()
+}
+
+/**
+ * Dopisuje nowe zdarzenie historii zmian z Realtime.
+ * @param {Object} event
+ * @returns {void}
+ */
+function appendTaskEvent(event) {
+  state.currentTaskEvents = [...state.currentTaskEvents, event]
+    .sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime())
+  renderTaskEvents(state.currentTaskEvents)
+}
+
+/**
+ * Generuje HTML pojedynczego zdarzenia historii zmian.
+ * @param {Object} event
+ * @returns {string}
+ */
+function taskEventHtml(event) {
+  const fields = Array.isArray(event.metadata?.changed_fields) ? event.metadata.changed_fields : []
+  const actor = taskEventActorLabel(event)
+  return `
+    <div class="rounded-lg border border-violet-100 bg-violet-50 px-4 py-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="text-sm font-semibold text-slate-900">${escapeHtml(TASK_EVENT_LABELS[event.event_type] || event.event_type || 'Zdarzenie')}</div>
+        <div class="text-xs text-slate-500">${formatDate(event.created_at)}</div>
+      </div>
+      <div class="mt-1 text-sm text-slate-700">${escapeHtml(event.summary || '')}</div>
+      <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <span>${escapeHtml(actor)}</span>
+        ${fields.length ? `<span>· pola: ${escapeHtml(fields.join(', '))}</span>` : ''}
+      </div>
+    </div>
+  `
+}
+
+/**
+ * Zwraca etykietę aktora zdarzenia historii zmian.
+ * @param {Object} event
+ * @returns {string}
+ */
+function taskEventActorLabel(event) {
+  if (event.actor_user_id && state.user?.id && event.actor_user_id === state.user.id) return 'Ty'
+  if (event.actor_kind === 'station') return 'Stacja robocza'
+  if (event.actor_kind === 'user') return 'Użytkownik panelu'
+  return 'System'
 }
 
 function renderTaskConsole() {
@@ -2716,6 +2834,7 @@ async function openTaskDetail(taskId) {
   state.currentTaskAiMessages = []
   state.currentTaskWorkstationMessages = []
   state.currentTaskJobs = []
+  state.currentTaskEvents = []
   state.currentTaskFeedback = null
   state.selectedTaskFeedbackRating = null
   navigateTo(VIEW.TASK_DETAIL)
@@ -2744,6 +2863,10 @@ async function openTaskDetail(taskId) {
 
   const workstationJobs = await getWorkstationJobsForTask(taskId)
   state.currentTaskJobs = workstationJobs
+
+  const taskEvents = await getTaskEventsForTask(taskId)
+  state.currentTaskEvents = taskEvents
+  renderTaskEvents(taskEvents)
   renderRunTrace()
   renderTaskConsole()
 
@@ -2766,6 +2889,9 @@ async function openTaskDetail(taskId) {
   })
   state.taskWorkstationJobsSubscription = subscribeToTaskWorkstationJobs(taskId, (job) => {
     upsertCurrentTaskJob(job)
+  })
+  state.taskEventsSubscription = subscribeToTaskEvents(taskId, (event) => {
+    appendTaskEvent(event)
   })
 }
 
@@ -3020,6 +3146,24 @@ function subscribeToTaskWorkstationJobs(taskId, callback) {
 }
 
 /**
+ * Subskrybuje nowe zdarzenia historii zmian dla zadania.
+ * @param {string} taskId
+ * @param {Function} callback
+ * @returns {Object}
+ */
+function subscribeToTaskEvents(taskId, callback) {
+  return supabase
+    .channel(`task-${taskId}-events`)
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'task_events',
+      filter: `task_id=eq.${taskId}`,
+    }, (payload) => callback(payload.new))
+    .subscribe()
+}
+
+/**
  * Subskrybuje wszystkie zmiany w `tasks` aby trzymać dashboard świeży.
  * @returns {void}
  */
@@ -3116,6 +3260,10 @@ function cleanupTaskSubscriptions() {
     supabase.removeChannel(state.taskWorkstationJobsSubscription)
     state.taskWorkstationJobsSubscription = null
   }
+  if (state.taskEventsSubscription) {
+    supabase.removeChannel(state.taskEventsSubscription)
+    state.taskEventsSubscription = null
+  }
 }
 
 /**
@@ -3154,6 +3302,9 @@ function cleanupAppSession() {
   state.currentTaskId = null
   state.currentTaskAiMessages = []
   state.currentTaskWorkstationMessages = []
+  state.currentTaskJobs = []
+  state.currentTaskEvents = []
+  state.currentTaskFeedback = null
   state.selectedMonitorWorkstationId = null
 }
 

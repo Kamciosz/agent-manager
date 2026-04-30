@@ -149,7 +149,7 @@ Manualny test UI po tej rundzie:
 19. Wyślij do stacji komendę `Smoke`; wynik ma pokazać odpowiedź `/health/smoke`, model, backend i czas generowania albo czytelny błąd połączenia.
 20. W konfiguratorze stacji wybierz preset, zmień `messageBatchSize` i `offlineQueueMax`, kliknij `Rekonfiguruj`; odpowiedź systemowa ma pokazać zastosowane pola, a następny heartbeat ma odświeżyć metadane.
 21. Odłącz stację od internetu/Supabase, wyślij wiadomość operacyjną i przywróć sieć; `offlineQueueDepth` ma wzrosnąć, a potem spaść po flushu.
-22. W szczegółach zadania sprawdź `Run trace`; lista ma łączyć joby stacji, wiadomości AI i wiadomości runtime w kolejności czasu.
+22. W szczegółach zadania sprawdź `Run trace` i `Historia zmian`; lista trace ma łączyć audit log, joby stacji, wiadomości AI i wiadomości runtime w kolejności czasu.
 23. Dla zadania po błędzie kliknij `Ponów auto`; `requested_workstation_id` i `requested_model_name` mają się wyczyścić, a manager ma ponownie dobrać stację.
 24. W konfiguratorze KV wybierz `iso3/iso3` albo `planar3/f16`; stock llama.cpp ma spaść do `q8_0/q8_0`, a kompatybilny build RotorQuant ma przyjąć osobne typy K/V.
 25. Utwórz proste polecenie `2 + 2`; odpowiedź stacji ma zawierać bezpośredni wynik, bez przepisywania pól `Tytuł`, `Opis`, `Repo` ani `Kontekst`.
