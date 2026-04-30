@@ -20,7 +20,7 @@ tests/
 ```bash
 node --test tests/*.test.js
 bash tests/acceptance/run.sh
-PAGES_URL=https://kamciosz.github.io/agent-manager bash tests/acceptance/run.sh
+PAGES_URL=https://twoj-login.github.io/agent-manager bash tests/acceptance/run.sh
 SUPABASE_URL=... SUPABASE_ANON_KEY=... SUPABASE_TEST_EMAIL=... SUPABASE_TEST_PASSWORD=... bash tests/acceptance/run.sh
 ```
 

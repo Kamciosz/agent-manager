@@ -37,7 +37,7 @@ Wewnętrzne plany rozwoju są w [docs/internal/](docs/internal/) — nie musisz 
 
 ## Szybki start: używam aplikacji
 
-1. Otwórz aplikację: https://kamciosz.github.io/agent-manager/
+1. Otwórz swoją stronę GitHub Pages po deployu. Każdy fork ma własny adres, który znajdziesz w **Settings → Pages**.
 2. Zaloguj się kontem, któremu właściciel Supabase nadał rolę panelową (`operator`, `teacher`, `manager` albo `admin`).
 3. Kliknij **Dodaj polecenie**.
 4. Wpisz, co AI ma zrobić, albo wybierz szablon **Hermes Labyrinth** dla pracy przez mapę ról, bram i testów.

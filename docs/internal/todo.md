@@ -450,7 +450,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 ## Faza 7 — Alpha
 
 - [x] Wszystkie zadania faz 2–6 odznaczone
-- [x] Link aplikacji publiczny na GitHub Pages — zweryfikowano `https://kamciosz.github.io/agent-manager/` i wstrzyknięty `app.js` bez placeholderów.
+- [x] Link aplikacji publiczny na GitHub Pages — zweryfikowano adres Pages tej kopii i wstrzyknięty `app.js` bez placeholderów.
 - [x] README zaktualizowane o link do działającej aplikacji — sekcja szybkiego startu wskazuje publiczny adres Pages.
 
 ### 7.1 Alpha hardening runtime i UI

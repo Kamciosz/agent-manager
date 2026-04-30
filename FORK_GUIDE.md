@@ -72,7 +72,7 @@ supabase functions deploy redeem-workstation-enrollment --no-verify-jwt
 ```
 
 `SUPABASE_URL` i `SUPABASE_ANON_KEY` są dostępne dla Edge Functions z runtime Supabase; service-role key ustawiasz osobno, tylko jako sekret funkcji.
-`ALLOWED_APP_ORIGINS` to lista originów oddzielonych przecinkami, które mogą wywoływać tokenowe Edge Functions z przeglądarki. Domyślnie funkcje dopuszczają `https://kamciosz.github.io`, `http://localhost` i `http://127.0.0.1`, ale fork powinien dopisać własny adres GitHub Pages.
+`ALLOWED_APP_ORIGINS` to lista originów oddzielonych przecinkami, które mogą wywoływać tokenowe Edge Functions z przeglądarki. Domyślnie funkcje dopuszczają Twój własny adres GitHub Pages, `http://localhost` i `http://127.0.0.1`; fork powinien dopisać własny origin.
 `redeem-workstation-enrollment` ma wyłączone JWT verification, bo stacja nie ma jeszcze sesji użytkownika; sekretem wejściowym jest jednorazowy token instalacyjny.
 
 Jeśli nie chcesz używać terminala, poproś osobę techniczną o wykonanie tego kroku albo zrób tylko konfigurację UI i bazy, a stacje dołącz później.

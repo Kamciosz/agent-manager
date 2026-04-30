@@ -2,7 +2,7 @@
 
 ## Środowisko
 
-- Aplikacja produkcyjna: `https://kamciosz.github.io/agent-manager/`.
+- Aplikacja produkcyjna: adres Pages tej kopii.
 - Frontend: statyczne ES modules, bez npm, bundlera i `package.json`.
 - Runtime lokalny operatora: `./start.sh --doctor --no-pull` przechodzi bez startowania usług; port proxy 3001 jest wolny, model i 256k context są skonfigurowane.
 - Aktualny dashboard po zalogowaniu pokazuje 2 zadania, 0 aktywnych stacji sali i brak błędów konsoli.

@@ -114,7 +114,7 @@ node --check local-ai-proxy/proxy.js local-ai-proxy/workstation-agent.js local-a
 node --check tests/acceptance/supabase-smoke.mjs
 node --test tests/*.test.js
 bash tests/acceptance/run.sh
-PAGES_URL=https://kamciosz.github.io/agent-manager bash tests/acceptance/run.sh
+PAGES_URL=https://twoj-login.github.io/agent-manager bash tests/acceptance/run.sh
 SUPABASE_URL=... SUPABASE_ANON_KEY=... SUPABASE_TEST_EMAIL=... SUPABASE_TEST_PASSWORD=... bash tests/acceptance/run.sh
 ./start.sh --doctor
 git diff --check
