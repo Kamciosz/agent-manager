@@ -191,6 +191,25 @@ await supabase
 
 Dopuszczalne wartości `status`: `pending`, `analyzing`, `in_progress`, `done`, `failed`, `cancelled`.
 
+### Edytuj polecenie przed wykonaniem
+
+UI pozwala poprawić tytuł, opis, priorytet, repo, kontekst, stację i model tylko wtedy, gdy zadanie jest jeszcze bezpieczne do zmiany: `pending`, `failed` albo `cancelled`.
+
+```js
+await supabase
+  .from('tasks')
+  .update({
+    title: 'Popraw formularz logowania',
+    description: 'Dodaj walidację emaila i czytelny błąd.',
+    priority: 'high',
+    git_repo: 'owner/repo',
+    requested_workstation_id: workstationId || null,
+    requested_model_name: modelName || null,
+  })
+  .eq('id', taskId)
+  .in('status', ['pending', 'failed', 'cancelled'])
+```
+
 ### Anuluj i ponów zadanie
 
 Panel anuluje aktywne zadanie przez ustawienie `tasks.status = 'cancelled'` oraz anulowanie aktywnych `workstation_jobs` dla tego `task_id`. Spóźniony wynik stacji albo fallbackowego executora nie powinien nadpisać statusu `cancelled`.

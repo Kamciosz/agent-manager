@@ -8,7 +8,9 @@
 - Added task cancel, retry, active quota enforcement and cancellation-safe workstation execution.
 - Added workstation offline message queue, batched message writes, resource telemetry, health smoke checks, runtime presets and safe reconfigure commands.
 - Added task run trace for browser messages, station messages and workstation jobs.
+- Added task editing for pending, failed and cancelled commands before retry/execution.
 - Added lightweight Node test coverage for runtime schedule logic and launcher smoke workflows.
 - Added station config validation warnings in the dashboard.
 - Added task result feedback with `good`/`bad` ratings and a small manual regression dataset.
+- Added no-npm static UI smoke workflow for `ui/` changes.
 - Kept validation on plain Node commands without npm, bundlers, or package installation.

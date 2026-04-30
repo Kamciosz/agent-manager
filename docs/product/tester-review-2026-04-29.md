@@ -34,6 +34,7 @@ Walidacja wykonana w tej rundzie: statyczny review kodu, `node --check`, `bash -
 |---|---|---|---|
 | P0 | Run trace pojedynczego zadania | Wdrożone | Task Detail pokazuje joby stacji, wiadomości AI i wiadomości runtime na jednej osi |
 | P0 | Anulowanie i ponawianie | Wdrożone | Dodano `cancelled`, `Anuluj`, `Ponów` i `Ponów auto` z ponownym doborem stacji |
+| P1 | Edycja polecenia przed wykonaniem | Wdrożone | Oczekujące, anulowane i błędne polecenia można poprawić w tym samym wizardzie bez tworzenia duplikatu |
 | P1 | Presety konfiguracji stacji | Wdrożone | `Operator Mac`, `Sala CPU`, `Sala GPU`, `Długi kontekst`, `RotorQuant` |
 | P1 | Walidacja wygenerowanego configu w UI | Wdrożone | Panel sprawdza porty, harmonogram, SD bez draft modelu, 256k i konflikty pamięci |
 | P1 | Aktualność dokumentacji API | Ulepszone | Dodano opis `task_feedback`; pełny opis wszystkich tabel stacji pozostaje do dalszego porządkowania |
@@ -60,11 +61,11 @@ Walidacja wykonana w tej rundzie: statyczny review kodu, `node --check`, `bash -
 
 ## Decyzja testera po tej rundzie
 
-Produkt jest alpha-plus blisko beta: działa jako panel szkolno-operatorski z lokalnymi stacjami, ma trace, anulowanie/ponawianie, presety, smoke runtime i oceny wyników. Największa przewaga forka to połączenie GitHub Pages + Supabase + lokalne szkolne stacje bez haseł operatora. Największe ryzyko to rosnąca złożoność `ui/app.js` oraz brak automatycznych E2E.
+Produkt jest alpha-plus blisko beta: działa jako panel szkolno-operatorski z lokalnymi stacjami, ma trace, anulowanie/ponawianie, edycję oczekujących poleceń, presety, smoke runtime i oceny wyników. Największa przewaga forka to połączenie GitHub Pages + Supabase + lokalne szkolne stacje bez haseł operatora. Największe ryzyko to rosnąca złożoność `ui/app.js` oraz brak automatycznych E2E.
 
 ## Usprawnienie wdrożone z review
 
-Dodano filtry poleceń po tekście, statusie i priorytecie. To bezpośrednio odpowiada na lukę operacyjną z konkurencyjnych widoków runs/traces: przy większej liczbie poleceń operator ma szybko zawęzić listę, bez przechodzenia do Supabase.
+Dodano filtry poleceń po tekście, statusie i priorytecie oraz edycję polecenia przed wykonaniem. To bezpośrednio odpowiada na lukę operacyjną z konkurencyjnych widoków runs/traces: operator może szybko znaleźć polecenie i poprawić literówkę, priorytet, repo, stację albo model bez tworzenia duplikatu.
 
 ## Usprawnienie wdrożone z sugestii modeli
 

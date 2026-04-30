@@ -39,7 +39,7 @@ Ten dokument zapisuje test w dwóch rolach: bardzo surowy tester oraz nietechnic
 
 ## Checklist przed wydaniem alpha
 
-- [ ] GitHub Actions: deploy, security scan, Windows smoke, unix smoke, package launchers przechodzą.
+- [ ] GitHub Actions: deploy, static UI smoke, security scan, Windows smoke, unix smoke, package launchers przechodzą.
 - [ ] Supabase migrations zastosowane w testowym projekcie.
 - [ ] Bez sesji nie da się czytać `tasks`, `assignments`, `messages`, `agents`.
 - [ ] Użytkownik potrafi dodać polecenie bez znajomości JSON.

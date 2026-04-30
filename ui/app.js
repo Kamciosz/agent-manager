@@ -87,6 +87,7 @@ const STATUS_LABELS = {
 
 const ACTIVE_TASK_STATUSES = [STATUS.PENDING, STATUS.ANALYZING, STATUS.IN_PROGRESS]
 const RETRYABLE_TASK_STATUSES = [STATUS.FAILED, STATUS.CANCELLED]
+const EDITABLE_TASK_STATUSES = [STATUS.PENDING, STATUS.FAILED, STATUS.CANCELLED]
 
 const WORKSTATION_STALE_MS = 2 * 60 * 1000
 
@@ -193,6 +194,7 @@ const state = {
   currentTaskJobs: [],
   currentTaskFeedback: null,
   selectedTaskFeedbackRating: null,
+  editingTaskId: null,
   editingWorkstationId: null,
   selectedMonitorWorkstationId: null,
   taskViewMode: loadTaskViewMode(),
@@ -514,6 +516,10 @@ function bindNavigation() {
     if (!state.currentTaskId) return
     handleDeleteTask(state.currentTaskId)
   })
+  document.getElementById('btn-edit-task-detail')?.addEventListener('click', () => {
+    if (!state.currentTaskId) return
+    handleEditTask(state.currentTaskId)
+  })
   document.getElementById('btn-cancel-task-detail')?.addEventListener('click', () => {
     if (!state.currentTaskId) return
     handleCancelTask(state.currentTaskId)
@@ -606,6 +612,43 @@ async function getTaskById(id) {
     return data
   } catch (error) {
     console.error('[app.js] getTaskById failed:', error)
+    return null
+  }
+}
+
+/**
+ * Aktualizuje edytowalne pola polecenia, jeśli nie jest aktywnie wykonywane.
+ * @param {string} id
+ * @param {Object} payload
+ * @returns {Promise<Object|null>}
+ */
+async function updateTask(id, { title, description, priority, repo, context, template, workstationId, modelName }) {
+  try {
+    const row = {
+      title,
+      description,
+      priority,
+      git_repo: repo || null,
+      context: { template: template || null, raw: context || null },
+      requested_workstation_id: workstationId || null,
+      requested_model_name: modelName || null,
+    }
+    const { data, error } = await supabase
+      .from('tasks')
+      .update(row)
+      .eq('id', id)
+      .in('status', EDITABLE_TASK_STATUSES)
+      .select()
+      .maybeSingle()
+    if (error) throw error
+    if (!data) {
+      showToast('Polecenie jest już w toku albo zakończone. Edycja została zablokowana.', TOAST_TYPE.INFO)
+      return null
+    }
+    return data
+  } catch (error) {
+    console.error('[app.js] updateTask failed:', error)
+    showToast('Nie udało się zapisać zmian polecenia.', TOAST_TYPE.ERROR)
     return null
   }
 }
@@ -800,6 +843,24 @@ async function handleRetryTask(taskId, options = {}) {
   if (!ok) return
   await refreshTasks()
   showToast(options.clearWorkstation ? 'Polecenie wróciło do kolejki z automatycznym doborem stacji.' : 'Polecenie wróciło do kolejki.', TOAST_TYPE.SUCCESS)
+}
+
+/**
+ * Ładuje polecenie i otwiera wizard w trybie edycji.
+ * @param {string} taskId
+ * @returns {Promise<void>}
+ */
+async function handleEditTask(taskId) {
+  const task = state.tasks.find((item) => item.id === taskId) || await getTaskById(taskId)
+  if (!task) {
+    showToast('Nie znaleziono polecenia do edycji.', TOAST_TYPE.ERROR)
+    return
+  }
+  if (!canEditTask(task)) {
+    showToast('Edytować można tylko polecenia oczekujące, anulowane albo po błędzie.', TOAST_TYPE.INFO)
+    return
+  }
+  openTaskModal(task)
 }
 
 /**
@@ -2074,21 +2135,38 @@ function findWorkstation(workstationId) {
 
 /**
  * Uzupełnia select stacji i modeli w wizardzie zadania.
+ * @param {string} [selectedWorkstationId]
+ * @param {string} [selectedModelName]
  * @returns {void}
  */
-function populateTaskWorkstationSelects() {
+function populateTaskWorkstationSelects(selectedWorkstationId = '', selectedModelName = '') {
   const workstationSelect = document.getElementById('task-workstation')
   const modelSelect = document.getElementById('task-model')
   if (!workstationSelect || !modelSelect) return
-  const schoolStations = selectableWorkstations(state.workstations)
+  const schoolStations = selectableWorkstationsForTask(selectedWorkstationId)
 
   workstationSelect.innerHTML = [
     '<option value="">Automatycznie - AI wybierze stację</option>',
     groupedWorkstationOptionsHtml(schoolStations, true),
   ].join('')
+  workstationSelect.value = schoolStations.some((workstation) => workstation.id === selectedWorkstationId) ? selectedWorkstationId : ''
 
-  populateTaskModelSelect(workstationSelect.value)
+  populateTaskModelSelect(workstationSelect.value, selectedModelName)
   renderTaskWorkstationCards(schoolStations, workstationSelect.value)
+}
+
+/**
+ * Zwraca stacje dostępne w wizardzie, zachowując wcześniej wybraną stację przy edycji.
+ * @param {string} selectedWorkstationId
+ * @returns {Array}
+ */
+function selectableWorkstationsForTask(selectedWorkstationId = '') {
+  const stations = selectableWorkstations(state.workstations)
+  const selected = findWorkstation(selectedWorkstationId)
+  if (selected && isClassroomWorkstation(selected) && !stations.some((workstation) => workstation.id === selected.id)) {
+    return [...stations, selected]
+  }
+  return stations
 }
 
 function groupedWorkstationOptionsHtml(workstations, includeStatus = false) {
@@ -2106,9 +2184,10 @@ function groupedWorkstationOptionsHtml(workstations, includeStatus = false) {
 /**
  * Uzupełnia select modeli dla wybranej stacji.
  * @param {string} workstationId
+ * @param {string} [selectedModelName]
  * @returns {void}
  */
-function populateTaskModelSelect(workstationId) {
+function populateTaskModelSelect(workstationId, selectedModelName = '') {
   const modelSelect = document.getElementById('task-model')
   if (!modelSelect) return
 
@@ -2122,12 +2201,14 @@ function populateTaskModelSelect(workstationId) {
 
   const workstation = findWorkstation(workstationId)
   const models = workstation ? getWorkstationModelLabels(workstation) : []
+  if (selectedModelName && !models.includes(selectedModelName)) models.unshift(selectedModelName)
   modelSelect.disabled = models.length === 0
   modelSelect.innerHTML = models.length
     ? models.map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join('')
     : '<option value="">Brak wykrytych modeli</option>'
+  if (selectedModelName && models.includes(selectedModelName)) modelSelect.value = selectedModelName
   renderTaskWorkstationAdvancedInfo(workstation)
-  renderTaskWorkstationCards(selectableWorkstations(state.workstations), workstationId)
+  renderTaskWorkstationCards(selectableWorkstationsForTask(workstationId), workstationId)
 }
 
 function renderTaskWorkstationCards(workstations, selectedId = '') {
@@ -2488,8 +2569,14 @@ function renderTasksTable(tbodyId, tasks) {
   // Klik na wiersz → otwórz Task Detail
   tbody.querySelectorAll('.task-row').forEach((row) => {
     row.addEventListener('click', (event) => {
-      if (event.target.closest('.task-delete, .task-cancel, .task-retry')) return
+      if (event.target.closest('.task-edit, .task-delete, .task-cancel, .task-retry')) return
       openTaskDetail(row.dataset.taskId)
+    })
+  })
+  tbody.querySelectorAll('.task-edit').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation()
+      handleEditTask(button.dataset.id)
     })
   })
   tbody.querySelectorAll('.task-delete').forEach((button) => {
@@ -2515,6 +2602,9 @@ function renderTasksTable(tbodyId, tasks) {
 function taskActionsHtml(task) {
   const label = escapeHtml(task.title || '')
   return [
+    canEditTask(task)
+      ? `<button class="task-edit text-slate-700 hover:underline text-sm mr-3" data-id="${task.id}" aria-label="Edytuj polecenie ${label}">Edytuj</button>`
+      : '',
     canCancelTask(task)
       ? `<button class="task-cancel text-amber-700 hover:underline text-sm mr-3" data-id="${task.id}" aria-label="Anuluj polecenie ${label}">Anuluj</button>`
       : '',
@@ -2527,6 +2617,15 @@ function taskActionsHtml(task) {
 
 function canCancelTask(task) {
   return ACTIVE_TASK_STATUSES.includes(task?.status)
+}
+
+/**
+ * Sprawdza, czy polecenie może być edytowane bez wyścigu z aktywną stacją.
+ * @param {Object} task
+ * @returns {boolean}
+ */
+function canEditTask(task) {
+  return EDITABLE_TASK_STATUSES.includes(task?.status)
 }
 
 function canRetryTask(task) {
@@ -2687,6 +2786,11 @@ function renderTaskDetail(task) {
   setText('detail-retry', `${taskRetryCount(task)} / ${Math.max(0, taskMaxAttempts(task) - 1)}`)
   setText('detail-log-path', `Zadania / ${task.title || 'bez tytułu'} / konsola / ${String(task.id).slice(0, 8)}`)
   document.getElementById('btn-delete-task-detail').dataset.taskId = task.id
+  const editButton = document.getElementById('btn-edit-task-detail')
+  if (editButton) {
+    editButton.dataset.taskId = task.id
+    editButton.disabled = !canEditTask(task)
+  }
   const cancelButton = document.getElementById('btn-cancel-task-detail')
   if (cancelButton) {
     cancelButton.dataset.taskId = task.id
@@ -3307,29 +3411,106 @@ function syncStationConfigMode() {
 const wizard = {
   step: 1,
   template: null,
+  mode: 'create',
+  editingTaskId: null,
 }
 
 /**
- * Otwiera modal Submit Task w pierwszym kroku.
+ * Otwiera wizard tworzenia nowego polecenia.
  * @returns {void}
  */
-function openTaskModal() {
-  wizard.step = 1
-  wizard.template = null
+function openCreateTaskModal() {
+  openTaskModal(null)
+}
+
+/**
+ * Otwiera modal Submit Task w trybie tworzenia albo edycji.
+ * @param {Object|null} task
+ * @returns {void}
+ */
+function openTaskModal(task = null) {
+  const editing = Boolean(task?.id)
+  wizard.step = editing ? 2 : 1
+  wizard.mode = editing ? 'edit' : 'create'
+  wizard.editingTaskId = editing ? task.id : null
+  state.editingTaskId = wizard.editingTaskId
+  wizard.template = editing ? taskTemplateFromRecord(task) : null
   document.getElementById('form-task').reset()
   document.getElementById('task-labyrinth-guide')?.classList.add('hidden')
-  document.querySelectorAll('.template-card').forEach((card) => card.classList.remove('border-blue-500', 'bg-blue-50'))
+  markSelectedTemplateCard(wizard.template)
+  document.getElementById('modal-task-title').textContent = editing ? 'Edytuj polecenie dla AI' : 'Nowe polecenie dla AI'
+  document.getElementById('wizard-submit').textContent = editing ? 'Zapisz zmiany' : 'Wyślij polecenie'
   const settings = getSettings()
-  document.getElementById('task-repo').value = settings.defaultRepo || ''
   populateRepoSuggestions()
-  populateTaskWorkstationSelects()
-  const workstationSelect = document.getElementById('task-workstation')
-  if (settings.defaultWorkstation && findWorkstation(settings.defaultWorkstation)) {
-    workstationSelect.value = settings.defaultWorkstation
-    populateTaskModelSelect(settings.defaultWorkstation)
+  if (editing) {
+    fillTaskFormFromRecord(task)
+  } else {
+    document.getElementById('task-repo').value = settings.defaultRepo || ''
+    const defaultWorkstation = settings.defaultWorkstation && findWorkstation(settings.defaultWorkstation)
+      ? settings.defaultWorkstation
+      : ''
+    populateTaskWorkstationSelects(defaultWorkstation)
   }
   renderWizardStep()
   document.getElementById('modal-submit-task').classList.remove('hidden')
+}
+
+/**
+ * Podświetla kartę aktualnie wybranego szablonu.
+ * @param {string|null} template
+ * @returns {void}
+ */
+function markSelectedTemplateCard(template) {
+  document.querySelectorAll('.template-card').forEach((card) => {
+    const active = Boolean(template) && card.dataset.template === template
+    card.classList.toggle('border-blue-500', active)
+    card.classList.toggle('bg-blue-50', active)
+  })
+}
+
+/**
+ * Odczytuje identyfikator szablonu z rekordu zadania.
+ * @param {Object} task
+ * @returns {string}
+ */
+function taskTemplateFromRecord(task) {
+  const context = task?.context || {}
+  return context.template || context.raw?.workflow?.id || 'custom'
+}
+
+/**
+ * Wypełnia formularz wizardu danymi istniejącego zadania.
+ * @param {Object} task
+ * @returns {void}
+ */
+function fillTaskFormFromRecord(task) {
+  const fields = taskContextFields(task)
+  document.getElementById('task-title').value = task.title || ''
+  document.getElementById('task-description').value = task.description || ''
+  document.getElementById('task-priority').value = task.priority || 'medium'
+  document.getElementById('task-repo').value = task.git_repo || ''
+  document.getElementById('task-links').value = fields.links
+  document.getElementById('task-requirements').value = fields.requirements
+  document.getElementById('task-avoid').value = fields.avoid
+  populateTaskWorkstationSelects(task.requested_workstation_id || '', task.requested_model_name || '')
+  renderHermesLabyrinthAssist()
+}
+
+/**
+ * Mapuje zapisany kontekst zadania na pola formularza.
+ * @param {Object} task
+ * @returns {{links:string, requirements:string, avoid:string}}
+ */
+function taskContextFields(task) {
+  const context = task?.context || {}
+  const raw = context.raw ?? context
+  if (!raw) return { links: '', requirements: '', avoid: '' }
+  if (typeof raw === 'string') return { links: '', requirements: raw, avoid: '' }
+  return {
+    links: raw.links || '',
+    requirements: raw.requirements || '',
+    avoid: raw.avoid || '',
+  }
 }
 
 /**
@@ -3337,6 +3518,9 @@ function openTaskModal() {
  * @returns {void}
  */
 function closeAllModals() {
+  state.editingTaskId = null
+  wizard.mode = 'create'
+  wizard.editingTaskId = null
   document.getElementById('modal-submit-task').classList.add('hidden')
   document.getElementById('modal-agent').classList.add('hidden')
   document.getElementById('modal-workstation-message').classList.add('hidden')
@@ -3364,7 +3548,7 @@ function renderWizardStep() {
   document.getElementById('wizard-back').classList.toggle('hidden', wizard.step === 1)
   document.getElementById('wizard-next').classList.toggle('hidden', wizard.step === 3)
   document.getElementById('wizard-submit').classList.toggle('hidden', wizard.step !== 3)
-  document.getElementById('wizard-draft').classList.toggle('hidden', wizard.step !== 3)
+  document.getElementById('wizard-draft').classList.toggle('hidden', wizard.step !== 3 || wizard.mode === 'edit')
   if (wizard.step === 3) renderReviewSummary()
 }
 
@@ -3444,8 +3628,8 @@ function validateTaskForm() {
  * @returns {void}
  */
 function bindTaskModal() {
-  document.getElementById('btn-add-task').addEventListener('click', openTaskModal)
-  document.getElementById('btn-add-task-2').addEventListener('click', openTaskModal)
+  document.getElementById('btn-add-task').addEventListener('click', openCreateTaskModal)
+  document.getElementById('btn-add-task-2').addEventListener('click', openCreateTaskModal)
   document.getElementById('btn-refresh-workstations').addEventListener('click', refreshWorkstations)
   document.querySelectorAll('.modal-close').forEach((b) => b.addEventListener('click', closeAllModals))
   document.getElementById('task-workstation').addEventListener('change', (event) => {
@@ -3479,8 +3663,7 @@ function bindTaskModal() {
   document.querySelectorAll('.template-card').forEach((card) => {
     card.addEventListener('click', () => {
       wizard.template = card.dataset.template
-      document.querySelectorAll('.template-card').forEach((c) => c.classList.remove('border-blue-500', 'bg-blue-50'))
-      card.classList.add('border-blue-500', 'bg-blue-50')
+      markSelectedTemplateCard(wizard.template)
       applySelectedTemplatePreset()
       renderHermesLabyrinthAssist()
     })
@@ -3558,7 +3741,18 @@ function renderHermesLabyrinthAssist() {
  * @returns {Promise<void>}
  */
 async function submitTaskForm() {
+  if (!validateTaskForm()) return
   const data = collectTaskFormData()
+  if (wizard.mode === 'edit' && wizard.editingTaskId) {
+    const updated = await updateTask(wizard.editingTaskId, data)
+    if (!updated) return
+    rememberRepo(data.repo)
+    closeAllModals()
+    await refreshTasks()
+    if (state.currentTaskId === updated.id) renderTaskDetail(updated)
+    showToast('Polecenie zaktualizowane.', TOAST_TYPE.SUCCESS)
+    return
+  }
   const created = await createTask(data)
   if (created) {
     rememberRepo(data.repo)

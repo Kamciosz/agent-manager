@@ -409,6 +409,10 @@
                   pending
                 </span>
                 <div class="flex flex-wrap justify-end gap-3 text-sm font-medium">
+                  <button id="btn-edit-task-detail"
+                    class="text-slate-700 hover:text-slate-900 hover:underline disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed">
+                    Edytuj
+                  </button>
                   <button id="btn-cancel-task-detail"
                     class="text-amber-700 hover:text-amber-800 hover:underline disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed">
                     Anuluj
@@ -993,7 +997,7 @@
   <div id="modal-submit-task" class="hidden fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
       <div class="p-6 border-b border-slate-200 flex items-center justify-between">
-        <h3 class="text-xl font-semibold text-slate-900">Nowe polecenie dla AI</h3>
+        <h3 id="modal-task-title" class="text-xl font-semibold text-slate-900">Nowe polecenie dla AI</h3>
         <button class="modal-close text-slate-500 hover:text-slate-900 text-2xl leading-none">×</button>
       </div>
 

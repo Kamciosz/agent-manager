@@ -120,6 +120,7 @@ Po pushu muszą przejść workflow:
 | Workflow | Co sprawdza |
 |----------|-------------|
 | `Deploy to GitHub Pages` | Wstrzyknięcie Supabase secrets i publikację `ui/` |
+| `Static UI smoke` | Składnię modułów `ui/*.js`, testy `node:test`, brak `package.json` i statyczne serwowanie `ui/` |
 | `Security scan` | Brak śledzonego `local-ai-proxy/config.json` i oczywistych sekretów |
 | `Windows launcher smoke` | `node --test`, parser PowerShell, `start.ps1 --help`, `start.bat --help`, `start.ps1 --doctor` |
 | `macOS and Linux launcher smoke` | `bash -n`, `node --check`, `node --test`, `start.sh --help`, `start.sh --doctor` |

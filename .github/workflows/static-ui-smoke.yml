@@ -1,0 +1,67 @@
+name: Static UI smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ui/**'
+      - 'tests/**'
+      - '.nvmrc'
+      - '.github/workflows/static-ui-smoke.yml'
+  pull_request:
+    paths:
+      - 'ui/**'
+      - 'tests/**'
+      - '.nvmrc'
+      - '.github/workflows/static-ui-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enforce zero npm project files
+        run: |
+          if git ls-files | grep -E '(^|/)package\.json$'; then
+            echo "Agent Manager stays zero npm/zero bundler; remove package.json files."
+            exit 1
+          fi
+
+      - name: Static module checks
+        run: |
+          node --check --input-type=module < ui/app.js
+          node --check --input-type=module < ui/ai-client.js
+          node --check --input-type=module < ui/manager.js
+          node --check --input-type=module < ui/executor.js
+          node --check --input-type=module < ui/settings.js
+          node --check --input-type=module < ui/labyrinth.js
+
+      - name: Node tests
+        run: node --test tests/*.test.js
+
+      - name: Static page smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 4173 -d ui > /tmp/agent-manager-ui-smoke.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..20}; do
+            if curl -fsS http://127.0.0.1:4173/ >/tmp/agent-manager-ui-smoke.html; then
+              break
+            fi
+            sleep 0.2
+          done
+          grep -q 'Agent Manager' /tmp/agent-manager-ui-smoke.html
+          curl -fsS http://127.0.0.1:4173/app.js >/dev/null

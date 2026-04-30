@@ -43,7 +43,7 @@ Nie rekomenduję teraz migracji na Python/LangChain, ciężkiego React/Vite, aut
 | Metryki zasobów stacji | Wdrożone w heartbeat i monitorze | P1 | `workstation-agent.js`, `ui/app.js` |
 | Presety runtime i `reconfigure` | Wdrożone | P1 | `ui/app.js`, `workstation-agent.js` |
 | Node 20/22 LTS | Wdrożone w dokumentacji, `.nvmrc`, launcherach i workflow bez npm/package.json | P1 | README, workflow |
-| `node:test` bez npm | Wdrożone | P2 | `tests/`, workflows |
+| `node:test` i static UI smoke bez npm | Wdrożone | P2 | `tests/`, workflows, `ui/` |
 | Changelog/security docs | Wdrożone | P2 | `CHANGELOG.md`, `SECURITY.md` |
 | React/Vite albo Python rewrite | Odrzucone teraz | Later | Cały frontend/backend |
 | Tooling AI z `execute_command` | Odrzucone bez sandboxa | Later | przyszły sandbox |
