@@ -4,18 +4,18 @@ Status: **alpha**. To jest robocza instrukcja i panel do dodawania poleceń dla 
 
 Najprościej: otwierasz aplikację, wpisujesz polecenie dla AI, a AI kierownik decyduje, czy wykona je przeglądarkowy agent, czy dostępna stacja robocza.
 
-Do korzystania w przeglądarce nie potrzebujesz żadnego modelu. Model GGUF jest potrzebny tylko wtedy, gdy chcesz uruchomić lokalną stację roboczą na własnym komputerze.
+W obecnej alpha są dwa sposoby działania tego samego systemu:
 
-W tym repo są dwa tryby:
+- **tryb przeglądarkowy** — to domyślny tryb alpha; panel działa bez lokalnego modelu, a przepływ zadania obsługuje przeglądarkowy kierownik i executor,
+- **stacja robocza** — dodatkowy komputer z lokalnym modelem GGUF; podłączasz go wtedy, gdy chcesz prawdziwy model lokalny zamiast samego trybu przeglądarkowego.
 
-- **tylko przeglądarka** — zwykłe używanie aplikacji, bez modelu i bez launchera,
-- **lokalna stacja** — opcjonalnie uruchamiasz model GGUF na swoim komputerze.
+To nie są dwa różne produkty. Panel online jest zawsze ten sam, a lokalna stacja tylko rozszerza go o własny model.
 
-Jeśli chcesz tylko korzystać z gotowej aplikacji, czytaj przede wszystkim sekcję **Jak używać w przeglądarce**. Jeśli instalujesz własną kopię albo lokalną stację roboczą, niżej są dodatkowe instrukcje.
+Jeśli chcesz tylko korzystać z gotowej aplikacji, czytaj przede wszystkim sekcję **Tryb przeglądarkowy**. Jeśli instalujesz własną kopię albo lokalną stację roboczą, niżej są dodatkowe instrukcje.
 
 Wewnętrzne plany rozwoju są w [docs/internal/](docs/internal/) — nie musisz tam zaglądać, żeby używać aplikacji.
 
-## Jak używać w przeglądarce
+## Tryb przeglądarkowy
 
 1. Otwórz aplikację w przeglądarce. Jeśli robisz własną kopię, użyj adresu z **Settings → Pages**.
 2. Zaloguj się kontem, któremu właściciel Supabase nadał rolę panelową (`operator`, `teacher`, `manager` albo `admin`).
@@ -23,7 +23,7 @@ Wewnętrzne plany rozwoju są w [docs/internal/](docs/internal/) — nie musisz 
 4. Wpisz, co AI ma zrobić, albo wybierz szablon **Hermes Labyrinth** dla pracy przez mapę ról, bram i testów.
 5. Obserwuj status w czasie rzeczywistym w widoku **Monitor** albo w szczegółach polecenia.
 
-Nie musisz instalować niczego, jeśli wystarcza tryb przeglądarkowy alpha.
+W tym trybie nie instalujesz modelu ani launchera. Panel działa jako **Panel online**. To jest zamierzony tryb alpha, a nie awaria.
 
 ## Hermes Labyrinth
 
@@ -31,9 +31,9 @@ Szablon **Hermes Labyrinth** prowadzi polecenie przez etapy: rozpoznanie, mapa, 
 
 Szczegóły: [docs/product/hermes-labyrinth.md](docs/product/hermes-labyrinth.md).
 
-## Opcjonalnie: lokalna stacja robocza
+## Lokalna stacja robocza
 
-Ta sekcja jest tylko dla osoby, która uruchamia lokalny model GGUF na konkretnym komputerze. Jeśli korzystasz tylko z aplikacji w przeglądarce, możesz ją pominąć.
+Ta sekcja jest dla osoby, która chce podłączyć do panelu własny komputer z lokalnym modelem GGUF. Jeśli korzystasz tylko z aplikacji w przeglądarce, możesz ją pominąć.
 
 1. Pobierz paczkę launchera z GitHub Actions albo sklonuj repo.
 2. Uruchom plik dla swojego systemu:
