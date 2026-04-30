@@ -22,7 +22,7 @@ Architektura pozostaje prosta:
 ## Znane ograniczenia
 
 - Model bezpieczeństwa jest team-space dla jawnych ról panelu: `admin`, `manager`, `operator`, `teacher`, `executor`, `viewer`. Samo założenie konta Supabase nie daje dostępu do danych aplikacji.
-- Migracje z `supabase/migrations/` trzeba stosować jawnie przez Supabase tools lub SQL editor.
+- Świeży start z `supabase/setup_from_zero.sql` i przyszłe migracje z `supabase/migrations/` trzeba stosować jawnie przez Supabase tools lub SQL editor.
 - Ochrona Supabase Auth przed leaked passwords nie jest dostępna w darmowym planie; w alpha jest świadomie zaakceptowanym ograniczeniem planu, a nie blockerem kodu.
 - Stacje robocze używają jednorazowego tokenu instalacyjnego i ograniczonej sesji technicznej; hasło operatora nie jest zapisywane w `local-ai-proxy/config.json`.
 - Local AI zależy od modelu GGUF i wydajności komputera; ciężkie modele mogą startować długo.

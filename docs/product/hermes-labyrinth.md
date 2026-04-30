@@ -41,7 +41,7 @@ Formularz zapisze w `tasks.context.raw.workflow` role, bramy, kontrakt wyjścia 
 - Wizard: [ui/index.html](../../ui/index.html) pokazuje kartę **Hermes Labyrinth** i mapę bram.
 - Manager: [ui/manager.js](../../ui/manager.js) wykrywa workflow i generuje instrukcję z bramami dla executora albo stacji.
 - Executor: [ui/executor.js](../../ui/executor.js) uwzględnia kontekst labiryntu w pytaniach i raporcie.
-- Profile: migracja [202604291030_seed_hermes_labyrinth_profiles.sql](../../supabase/migrations/202604291030_seed_hermes_labyrinth_profiles.sql) dodaje archetypy ról do tabeli `agents`.
+- Profile: historyczna migracja [202604291030_seed_hermes_labyrinth_profiles.sql](../../supabase/migrations/archive/202604291030_seed_hermes_labyrinth_profiles.sql) dodaje archetypy ról do tabeli `agents`.
 - Copilot: prompt [hermes-labyrinth.prompt.md](../../.github/prompts/hermes-labyrinth.prompt.md) pozwala używać tego samego workflow w VS Code.
 
 ## Ograniczenia alpha

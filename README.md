@@ -39,7 +39,7 @@ W skrocie: **npm nie jest potrzebny**.
 - Zwykly uzytkownik panelu nie potrzebuje terminala.
 - Operator stacji na Windows lub macOS moze wszystko zrobic dwuklikiem przez launcher.
 - Terminal przydaje sie glownie na Linuxie albo przy diagnostyce (`--doctor`, `--update`).
-- Wlasciciel forka moze postawic prawie caly system bez terminala: od zera uruchamia jeden plik SQL `supabase/setup_from_zero.sql`, a terminal najczesciej przydaje sie dopiero przy wdrozeniu Edge Functions.
+- Wlasciciel forka moze postawic prawie caly system bez terminala: od zera uruchamia jeden plik SQL `supabase/setup_from_zero.sql`, a katalog `supabase/migrations/` zostaje tylko na przyszle aktualizacje.
 
 ## Co oznacza status w panelu
 
@@ -114,7 +114,7 @@ W skrocie:
 
 1. Zrob fork repozytorium.
 2. Utworz projekt Supabase.
-3. Dla nowego projektu od zera uruchom [supabase/setup_from_zero.sql](supabase/setup_from_zero.sql). Jesli aktualizujesz juz istniejaca kopie, uruchamiaj tylko nowe pliki z [supabase/migrations](supabase/migrations).
+3. Dla nowego projektu od zera uruchom [supabase/setup_from_zero.sql](supabase/setup_from_zero.sql). Jesli aktualizujesz juz istniejaca kopie, uruchamiaj tylko nowe pliki z [supabase/migrations](supabase/migrations). Historyczne pliki zostaly przeniesione do [supabase/migrations/archive](supabase/migrations/archive).
 4. Wdroz funkcje z [supabase/functions](supabase/functions).
 5. Dodaj `SUPABASE_URL` i `SUPABASE_ANON_KEY` do GitHub Secrets.
 6. Wlacz GitHub Pages.

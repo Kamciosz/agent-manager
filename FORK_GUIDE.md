@@ -35,12 +35,12 @@ Metoda bez terminala:
 1. W Supabase otwórz **SQL Editor**.
 2. Jeśli to **nowy projekt od zera**, otwórz plik [supabase/setup_from_zero.sql](supabase/setup_from_zero.sql).
 3. Wklej całą zawartość i kliknij **Run**.
-4. Jeśli aktualizujesz **już istniejącą kopię**, używaj tylko nowych plików z [supabase/migrations](supabase/migrations) w kolejności nazw.
+4. Jeśli aktualizujesz **już istniejącą kopię**, używaj tylko nowych plików z [supabase/migrations](supabase/migrations) w kolejności nazw. Stary łańcuch krok po kroku został schowany do [supabase/migrations/archive](supabase/migrations/archive), żeby główny katalog był prosty.
 
 Opcjonalnie dla osób technicznych:
 
 1. Użyj Supabase CLI albo narzędzi MCP Supabase.
-2. Dla nowego projektu od zera zastosuj [supabase/setup_from_zero.sql](supabase/setup_from_zero.sql), a dla istniejącego projektu tylko brakujące pliki z [supabase/migrations](supabase/migrations).
+2. Dla nowego projektu od zera zastosuj [supabase/setup_from_zero.sql](supabase/setup_from_zero.sql), a dla istniejącego projektu tylko brakujące pliki z [supabase/migrations](supabase/migrations). Starsze pliki referencyjne są w [supabase/migrations/archive](supabase/migrations/archive).
 3. Po zmianach uruchom security/performance advisors.
 
 ## Krok 4 — skopiuj wartości API

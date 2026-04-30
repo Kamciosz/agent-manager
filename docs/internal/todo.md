@@ -511,7 +511,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 
 ### 7.9 Domknięcie luk z opt.md/opt2.md (wave 2)
 - **Co:** Domknąć szybkie wartościowe luki: idempotency_key dla jobów, sweeper wygasłych lease, cancel/AbortController w proxy, OpenAI-compatible `/v1/chat/completions`, JSONL log proxy z rotacją, paginacja listy zadań w UI
-- **Gdzie:** `ui/manager.js`, `ui/app.js`, `ui/index.html`, `local-ai-proxy/proxy.js`, `local-ai-proxy/workstation-agent.js`, `supabase/migrations/202604302350_release_expired_workstation_jobs.sql`, `CHANGELOG.md`, `local-ai-proxy/README.md`, `docs/dev/api-reference.md`
+- **Gdzie:** `ui/manager.js`, `ui/app.js`, `ui/index.html`, `local-ai-proxy/proxy.js`, `local-ai-proxy/workstation-agent.js`, `supabase/migrations/archive/202604302350_release_expired_workstation_jobs.sql`, `CHANGELOG.md`, `local-ai-proxy/README.md`, `docs/dev/api-reference.md`
 - **Gotowe gdy:** stacja przed każdym claimem zwalnia wygasłe lease, jeden retry kierownika nie tworzy duplikatów rekordów `workstation_jobs`, proxy potrafi anulować aktywny request i odpowiada w formacie OpenAI dla zewnętrznych integracji, listę zadań można doczytywać starszymi stronami zamiast twardego limitu 50
 - **Nie rób:** nie wprowadzaj streamingu SSE, organizations/multi-tenant, Hermes `workflow_runs` ani frameworka frontendowego — to większa praca z opt.md, poza tym pass'em
 - [x] Gotowe — wave 2 dowieziona, pozostałe duże pozycje (SSE streaming, organizations, workflow_runs, Playwright E2E, Vite/Preact) świadomie odłożone jako osobne fazy beta.

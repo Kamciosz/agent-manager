@@ -36,7 +36,8 @@ Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa
 │
 ├── supabase/               — konfiguracja backendu
 │   ├── setup_from_zero.sql — jeden plik SQL do świeżej instalacji od zera
-│   ├── migrations/         — kolejne migracje SQL dla istniejących instalacji
+│   ├── migrations/         — tylko przyszłe migracje dla istniejących instalacji
+│   │   └── archive/        — historyczny łańcuch dawnych migracji
 │   └── functions/          — Edge Functions dla tokenów instalacyjnych stacji
 │
 ├── .github/
@@ -59,8 +60,9 @@ Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa
 |-----------|--------------|
 | Wygląd interfejsu | `ui/index.html` i klasy Tailwind CDN |
 | Logika UI, połączenie z Supabase | `ui/app.js` oraz małe moduły w `ui/*.js` |
-| Schemat tabel w bazie danych | `supabase/migrations/` |
-| Polityki dostępu (kto widzi co) | najnowsze migracje w `supabase/migrations/` |
+| Pełny stan świeżej bazy danych | `supabase/setup_from_zero.sql` |
+| Przyszłe aktualizacje istniejącej instalacji | `supabase/migrations/` |
+| Historyczne migracje krok po kroku | `supabase/migrations/archive/` |
 | Konfiguracja deploy | `.github/workflows/deploy.yml` |
 | Dokumentacja | `docs/` |
 
@@ -71,7 +73,7 @@ Każdy `git push` do gałęzi `main`:
 2. Podmienia placeholdery Supabase w `ui/app.js`
 3. Publikuje `ui/` na GitHub Pages
 
-Migracje SQL z `supabase/migrations/` nie są wykonywane przez workflow Pages.
+Plik `supabase/setup_from_zero.sql` ani przyszłe migracje z `supabase/migrations/` nie są wykonywane przez workflow Pages.
 Stosuj je przez Supabase tools albo panel SQL przed wdrożeniem funkcji zależnych od nowego schematu.
 
 Szczegółowy setup: [FORK_GUIDE.md](../../FORK_GUIDE.md)
