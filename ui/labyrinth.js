@@ -8,6 +8,20 @@
 export const HERMES_LABYRINTH_TEMPLATE_ID = 'hermes-labyrinth'
 export const HERMES_LABYRINTH_LABEL = 'Hermes Labyrinth'
 
+export const TASK_ROUTE = {
+  INSTANT: 'instant',
+  FAST: 'fast',
+  STANDARD: 'standard',
+  DEEP: 'deep',
+}
+
+export const TASK_ROUTE_CONFIG = {
+  [TASK_ROUTE.INSTANT]: { maxTokens: 180, temperature: 0.2, timeoutMs: 30000, contextTokens: 4096, outputContract: 'Odpowiedz bezpośrednio. Bez nagłówków. Maksymalnie 3 zdania.' },
+  [TASK_ROUTE.FAST]: { maxTokens: 700, temperature: 0.3, timeoutMs: 120000, contextTokens: 8192, outputContract: 'Sekcje: Wynik, Sprawdzenie, Następny krok jeśli potrzebny.' },
+  [TASK_ROUTE.STANDARD]: { maxTokens: 1800, temperature: 0.35, timeoutMs: 600000, contextTokens: 32768, outputContract: 'Sekcje: Plan, Wykonanie, Dowody, Ryzyka, Raport końcowy.' },
+  [TASK_ROUTE.DEEP]: { maxTokens: 4000, temperature: 0.25, timeoutMs: 1800000, contextTokens: 65536, outputContract: 'Zwróć markdown zgodny z JSON: mapa, decyzje, wykonanie, artefakty, testy, blokery, raport.' },
+}
+
 export const HERMES_LABYRINTH_PRESET = {
   title: 'Uruchom Hermes Labyrinth dla: ',
   description: [
@@ -69,16 +83,19 @@ export function isHermesLabyrinthTemplate(template) {
  * @returns {Object}
  */
 export function buildHermesLabyrinthContext(baseContext = {}) {
+  const routing = classifyTask(baseContext)
   return {
     ...(baseContext || {}),
+    routing,
     workflow: {
       id: HERMES_LABYRINTH_TEMPLATE_ID,
       name: HERMES_LABYRINTH_LABEL,
       inspiration: 'Hermes Agent style multi-agent routing, adapted for Agent Manager fork',
-      mode: 'manager-led-labyrinth',
+      mode: routing.route,
       roles: HERMES_LABYRINTH_ROLES,
       gates: HERMES_LABYRINTH_GATES,
       rules: HERMES_LABYRINTH_RULES,
+      budgets: TASK_ROUTE_CONFIG[routing.route],
       outputContract: [
         'Mapa: cel, pliki, ryzyka, kolejność, routing',
         'Ścieżka: wykonane kroki i decyzje managera/stacji',
@@ -87,6 +104,58 @@ export function buildHermesLabyrinthContext(baseContext = {}) {
       ],
     },
   }
+}
+
+/**
+ * Klasyfikuje zadanie do budżetu wykonania instant/fast/standard/deep.
+ * @param {Object|null} input
+ * @returns {{route:string, reason:string[], modelProfile:string, maxOutputTokens:number, timeoutMs:number, contextTokens:number}}
+ */
+export function classifyTask(input = {}) {
+  const text = [input.title, input.description, input.requirements, input.links, input.avoid].filter(Boolean).join('\n').toLowerCase()
+  const words = text.split(/\s+/).filter(Boolean).length
+  const reason = []
+  let score = 0
+  if (words > 80) { score += 1; reason.push('words_gt_80') }
+  if (words > 250) { score += 2; reason.push('words_gt_250') }
+  if (/analiza|research|architektura|rls|bezpiecze|migrac|benchmark|audyt|produkcyj/.test(text)) { score += 2; reason.push('deep_keyword') }
+  if (/testy|e2e|playwright|supabase|migrac|edge function|kolejk|lease|retry/.test(text)) { score += 1; reason.push('engineering_keyword') }
+  if (input.template === HERMES_LABYRINTH_TEMPLATE_ID || input.workflow?.id === HERMES_LABYRINTH_TEMPLATE_ID) { score += 1; reason.push('hermes_template') }
+  const route = words < 25 && score === 0 ? TASK_ROUTE.INSTANT : score <= 1 ? TASK_ROUTE.FAST : score <= 3 ? TASK_ROUTE.STANDARD : TASK_ROUTE.DEEP
+  const cfg = TASK_ROUTE_CONFIG[route]
+  return {
+    route,
+    reason: reason.length ? reason : ['short_simple_task'],
+    modelProfile: route === TASK_ROUTE.INSTANT ? 'tiny-router' : route === TASK_ROUTE.FAST ? 'fast-general' : route === TASK_ROUTE.STANDARD ? 'code-executor' : 'deep-reasoner',
+    maxOutputTokens: cfg.maxTokens,
+    timeoutMs: cfg.timeoutMs,
+    contextTokens: cfg.contextTokens,
+  }
+}
+
+/**
+ * Zwraca routing zapisany w zadaniu albo klasyfikuje zadanie z pól rekordu.
+ * @param {Object|null} task
+ * @returns {{route:string, reason:string[], modelProfile:string, maxOutputTokens:number, timeoutMs:number, contextTokens:number}}
+ */
+export function taskRouting(task) {
+  const context = task?.context || {}
+  const raw = context.raw || context
+  if (raw?.routing?.route && TASK_ROUTE_CONFIG[raw.routing.route]) return raw.routing
+  if (raw?.workflow?.mode && TASK_ROUTE_CONFIG[raw.workflow.mode]) {
+    const cfg = TASK_ROUTE_CONFIG[raw.workflow.mode]
+    return { route: raw.workflow.mode, reason: ['workflow_mode'], modelProfile: raw.routing?.modelProfile || 'code-executor', maxOutputTokens: cfg.maxTokens, timeoutMs: cfg.timeoutMs, contextTokens: cfg.contextTokens }
+  }
+  return classifyTask({ title: task?.title, description: task?.description, template: context.template })
+}
+
+/**
+ * Zwraca konfigurację budżetu dla routingu zadania.
+ * @param {Object|null} task
+ * @returns {Object}
+ */
+export function taskRouteConfig(task) {
+  return TASK_ROUTE_CONFIG[taskRouting(task).route] || TASK_ROUTE_CONFIG[TASK_ROUTE.STANDARD]
 }
 
 /**

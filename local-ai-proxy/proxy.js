@@ -7,6 +7,8 @@
  *              Endpointy:
  *                GET  /health    → status proxy + llama-server + nazwa modelu
  *                GET  /health/smoke → krótka generacja kontrolna modelu
+ *                GET  /metrics   → metryki queue/duration/tokens/s
+ *                GET  /models    → aktualny model i capabilities gatewaya
  *                POST /generate  → { prompt, maxTokens?, temperature? } → { text }
  *                OPTIONS *       → CORS preflight dla dozwolonych originów
  *
@@ -17,6 +19,7 @@
 const http = require('node:http')
 const fs = require('node:fs')
 const path = require('node:path')
+const { randomUUID } = require('node:crypto')
 
 // ============================================================================
 // STAŁE
@@ -30,6 +33,7 @@ const DEFAULTS = {
   TIMEOUT_MS: 600000,
   CONTEXT_TOKENS: 65536,
   KV_CACHE: 'q8_0',
+  RATE_LIMIT_PER_MINUTE: 120,
   ALLOWED_ORIGINS: ['https://kamciosz.github.io', 'http://localhost', 'http://127.0.0.1'],
 }
 
@@ -39,8 +43,19 @@ const SUPPORTED_KV_CACHE = ['auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1'
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Request-Id, X-Agent-Role, X-Workflow-Mode',
   'Access-Control-Max-Age': '86400',
+}
+
+const gatewayState = {
+  activeRequests: 0,
+  queuedRequests: [],
+  totalRequests: 0,
+  failedRequests: 0,
+  totalDurationMs: 0,
+  totalOutputTokens: 0,
+  recent: [],
+  rateLimit: new Map(),
 }
 
 function parseJsonFile(filePath) {
@@ -56,7 +71,7 @@ function parseJsonFile(filePath) {
 
 /**
  * Wczytuje config.json. Brak pliku = pusty obiekt z domyślnymi wartościami.
- * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, allowedOrigins:string[], parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, contextMode:string, contextSizeTokens:number, kvCacheQuantization:string, effectiveKvCacheQuantization:string, generationTimeoutMs:number, autoUpdate:boolean, optimizationMode:string, messageBatchSize:number, offlineQueueMax:number }}
+ * @returns {{ proxyPort:number, llamaUrl:string, modelName:string, backend:string, allowedOrigins:string[], parallelSlots:number, sdEnabled:boolean, draftModelName:string, speculativeTokens:number, contextMode:string, contextSizeTokens:number, kvCacheQuantization:string, effectiveKvCacheQuantization:string, generationTimeoutMs:number, autoUpdate:boolean, optimizationMode:string, messageBatchSize:number, offlineQueueMax:number, rateLimitPerMinute:number }}
  */
 function loadConfig() {
   let cfg = {}
@@ -90,6 +105,7 @@ function loadConfig() {
     optimizationMode: cfg.optimizationMode || 'standard',
     messageBatchSize: clampInt(cfg.messageBatchSize, 10, 1, 50),
     offlineQueueMax: clampInt(cfg.offlineQueueMax, 500, 50, 5000),
+    rateLimitPerMinute: clampInt(cfg.rateLimitPerMinute, DEFAULTS.RATE_LIMIT_PER_MINUTE, 10, 600),
   }
 }
 
@@ -244,12 +260,12 @@ function readBody(req) {
 // ============================================================================
 
 /**
- * Wysyła prompt do llama-server `/completion` i zwraca wygenerowany tekst.
+ * Wysyła prompt do llama-server `/completion` i zwraca wygenerowany tekst oraz metryki.
  * @param {string} prompt
  * @param {{ maxTokens?:number, temperature?:number }} opts
  * @param {string} llamaUrl - bazowy URL llama-server (np. http://127.0.0.1:8080)
  * @param {number} timeoutMs
- * @returns {Promise<string>}
+ * @returns {Promise<Object>}
  */
 async function forwardToLlama(prompt, opts, llamaUrl, timeoutMs = DEFAULTS.TIMEOUT_MS) {
   const payload = JSON.stringify({
@@ -267,6 +283,7 @@ async function forwardToLlama(prompt, opts, llamaUrl, timeoutMs = DEFAULTS.TIMEO
   }, timeoutMs)
 
   try {
+    const startedAt = Date.now()
     const response = await fetch(`${llamaUrl}/completion`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -278,7 +295,15 @@ async function forwardToLlama(prompt, opts, llamaUrl, timeoutMs = DEFAULTS.TIMEO
       throw new Error(`llama-server HTTP ${response.status} ${detail.slice(0, 300)}`)
     }
     const data = await response.json()
-    return cleanGeneratedText(data.content)
+    const text = cleanGeneratedText(data.content)
+    const durationMs = Date.now() - startedAt
+    const outputTokens = estimateTokens(text)
+    return {
+      text,
+      durationMs,
+      outputTokens,
+      tokensPerSecond: durationMs > 0 ? Math.round((outputTokens / durationMs) * 100000) / 100 : null,
+    }
   } catch (error) {
     if (timedOut || error?.name === 'AbortError') {
       throw new Error(`llama-server timeout after ${timeoutMs}ms`)
@@ -287,6 +312,93 @@ async function forwardToLlama(prompt, opts, llamaUrl, timeoutMs = DEFAULTS.TIMEO
   } finally {
     clearTimeout(timeout)
   }
+}
+
+/**
+ * Estymuje liczbę tokenów bez lokalnego tokenizera.
+ * @param {string} value
+ * @returns {number}
+ */
+function estimateTokens(value) {
+  return Math.max(1, Math.ceil(String(value || '').length / 4))
+}
+
+/**
+ * Wykonuje generację z limitem współbieżności równym parallelSlots.
+ * @param {Object} cfg
+ * @param {Function} work
+ * @returns {Promise<Object>}
+ */
+function enqueueGeneration(cfg, work) {
+  return new Promise((resolve, reject) => {
+    const queuedAt = Date.now()
+    const run = () => {
+      gatewayState.activeRequests += 1
+      Promise.resolve()
+        .then(() => work(Date.now() - queuedAt))
+        .then(resolve, reject)
+        .finally(() => {
+          gatewayState.activeRequests = Math.max(0, gatewayState.activeRequests - 1)
+          const next = gatewayState.queuedRequests.shift()
+          if (next) next()
+        })
+    }
+    if (gatewayState.activeRequests < Math.max(1, cfg.parallelSlots || 1)) run()
+    else gatewayState.queuedRequests.push(run)
+  })
+}
+
+/**
+ * Zapisuje metrykę requestu w pamięci procesu.
+ * @param {Object} metric
+ * @returns {void}
+ */
+function recordMetric(metric) {
+  gatewayState.totalRequests += 1
+  if (metric.errorCode) gatewayState.failedRequests += 1
+  gatewayState.totalDurationMs += Number(metric.durationMs || 0)
+  gatewayState.totalOutputTokens += Number(metric.outputTokens || 0)
+  gatewayState.recent.unshift({ ...metric, at: new Date().toISOString() })
+  gatewayState.recent = gatewayState.recent.slice(0, 50)
+}
+
+/**
+ * Buduje snapshot metryk gatewaya.
+ * @param {Object} cfg
+ * @returns {Object}
+ */
+function metricsSnapshot(cfg) {
+  return {
+    ok: true,
+    model: cfg.modelName,
+    backend: cfg.backend,
+    activeRequests: gatewayState.activeRequests,
+    queuedRequests: gatewayState.queuedRequests.length,
+    totalRequests: gatewayState.totalRequests,
+    failedRequests: gatewayState.failedRequests,
+    averageDurationMs: gatewayState.totalRequests ? Math.round(gatewayState.totalDurationMs / gatewayState.totalRequests) : 0,
+    averageOutputTokens: gatewayState.totalRequests ? Math.round(gatewayState.totalOutputTokens / gatewayState.totalRequests) : 0,
+    recent: gatewayState.recent,
+  }
+}
+
+/**
+ * Prosty lokalny rate limit per origin/IP.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {Object} cfg
+ * @returns {boolean}
+ */
+function consumeRateLimit(req, cfg) {
+  const key = req.headers.origin || req.socket.remoteAddress || 'local'
+  const now = Date.now()
+  const bucket = gatewayState.rateLimit.get(key) || { count: 0, resetAt: now + 60000 }
+  if (now > bucket.resetAt) {
+    bucket.count = 0
+    bucket.resetAt = now + 60000
+  }
+  bucket.count += 1
+  gatewayState.rateLimit.set(key, bucket)
+  return bucket.count <= cfg.rateLimitPerMinute
 }
 
 /**
@@ -339,6 +451,7 @@ async function handleHealth(cfg, req, res) {
       optimizationMode: cfg.optimizationMode,
       messageBatchSize: cfg.messageBatchSize,
       offlineQueueMax: cfg.offlineQueueMax,
+      rateLimitPerMinute: cfg.rateLimitPerMinute,
     },
   })
 }
@@ -346,7 +459,7 @@ async function handleHealth(cfg, req, res) {
 async function handleHealthSmoke(cfg, req, res) {
   const startedAt = Date.now()
   try {
-    const text = await forwardToLlama(
+    const result = await forwardToLlama(
       'Odpowiedz dokładnie jednym słowem: OK',
       { maxTokens: 8, temperature: 0 },
       cfg.llamaUrl,
@@ -357,8 +470,8 @@ async function handleHealthSmoke(cfg, req, res) {
       proxy: 'up',
       llama: 'generated',
       model: cfg.modelName,
-      text,
-      durationMs: Date.now() - startedAt,
+      text: result.text,
+      durationMs: result.durationMs || Date.now() - startedAt,
     })
   } catch (error) {
     sendJson(req, res, cfg, 502, {
@@ -392,18 +505,47 @@ async function handleGenerate(cfg, req, res) {
     sendJson(req, res, cfg, 400, { error: 'Missing prompt' })
     return
   }
+  if (!consumeRateLimit(req, cfg)) {
+    sendJson(req, res, cfg, 429, { error: 'Rate limit exceeded', limitPerMinute: cfg.rateLimitPerMinute })
+    return
+  }
+  const requestId = String(body.requestId || req.headers['x-request-id'] || randomUUID())
+  const workflowMode = String(body.workflowMode || req.headers['x-workflow-mode'] || 'standard')
+  const role = String(body.role || req.headers['x-agent-role'] || 'shared')
+  const promptChars = body.prompt.length
+  const estimatedInputTokens = estimateTokens(body.prompt)
   try {
     const startedAt = Date.now()
-    const text = await forwardToLlama(
-      body.prompt,
-      { maxTokens: body.maxTokens, temperature: body.temperature },
-      cfg.llamaUrl,
-      cfg.generationTimeoutMs,
+    const result = await enqueueGeneration(
+      cfg,
+      async (queueWaitMs) => ({
+        queueWaitMs,
+        ...(await forwardToLlama(
+          body.prompt,
+          { maxTokens: body.maxTokens, temperature: body.temperature },
+          cfg.llamaUrl,
+          Math.min(Number(body.timeoutMs) || cfg.generationTimeoutMs, cfg.generationTimeoutMs),
+        )),
+      }),
     )
-    sendJson(req, res, cfg, 200, { text, durationMs: Date.now() - startedAt })
+    const metric = {
+      requestId,
+      role,
+      workflowMode,
+      model: cfg.modelName,
+      promptChars,
+      estimatedInputTokens,
+      outputTokens: result.outputTokens,
+      durationMs: result.durationMs || Date.now() - startedAt,
+      queueWaitMs: result.queueWaitMs,
+      tokensPerSecond: result.tokensPerSecond,
+    }
+    recordMetric(metric)
+    sendJson(req, res, cfg, 200, { text: result.text, ...metric })
   } catch (error) {
     console.error('[proxy] forwardToLlama failed:', cfg.llamaUrl, error.message)
-    sendJson(req, res, cfg, 502, { error: 'llama-server unreachable', detail: error.message })
+    recordMetric({ requestId, role, workflowMode, model: cfg.modelName, promptChars, estimatedInputTokens, durationMs: 0, outputTokens: 0, errorCode: error.message.includes('timeout') ? 'timeout' : 'llama_down' })
+    sendJson(req, res, cfg, 502, { error: 'llama-server unreachable', detail: error.message, requestId })
   }
 }
 
@@ -460,6 +602,19 @@ async function route(cfg, req, res) {
   }
   if (req.method === 'GET' && url === '/health/smoke') {
     await handleHealthSmoke(cfg, req, res)
+    logLine(req.method, url, res.statusCode, startedAt)
+    return
+  }
+  if (req.method === 'GET' && url === '/metrics') {
+    sendJson(req, res, cfg, 200, metricsSnapshot(cfg))
+    logLine(req.method, url, res.statusCode, startedAt)
+    return
+  }
+  if (req.method === 'GET' && url === '/models') {
+    sendJson(req, res, cfg, 200, {
+      models: [{ name: cfg.modelName, backend: cfg.backend, contextTokens: cfg.contextSizeTokens, kvCache: cfg.effectiveKvCacheQuantization }],
+      capabilities: ['generate', 'metrics', 'queue', 'rate-limit'],
+    })
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }

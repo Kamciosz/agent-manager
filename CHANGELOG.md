@@ -21,6 +21,10 @@
 - Added optional Supabase Auth/RLS/CRUD/audit smoke coverage for a configured test account.
 - Recorded successful deploy acceptance checks for dashboard task flow, AI messages, audit history, and RBAC.
 - Stopped automatic localhost proxy polling on public Pages to avoid console noise when local AI is not running.
+- Added task routing budgets (`instant`, `fast`, `standard`, `deep`) for manager prompts and workstation job payloads.
+- Added local proxy queue metrics, request IDs, token estimates, route metadata, rate limiting and `/metrics`/`/models` endpoints.
+- Added atomic Supabase workstation job leases with RPC claim, retry backoff, expired lease recovery and `dead_letter` status.
+- Added workstation heartbeat performance telemetry for tokens/s and recent failure rate.
 - Reduced dashboard work during filtering and Realtime bursts by debouncing renders and reusing delegated task-list handlers.
 - Fixed the initial dashboard header so the active `Polecenia` view no longer loads with a stale `Dashboard` title.
 - Documented a performance environment review and made hidden dashboard panels render lazily with delegated dynamic-list handlers.

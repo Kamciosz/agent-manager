@@ -79,23 +79,39 @@ export function isAvailable() {
 /**
  * Generuje tekst przez lokalne proxy AI.
  * @param {string} prompt
- * @param {{ maxTokens?: number, temperature?: number }} [opts]
+ * @param {{ maxTokens?: number, temperature?: number, timeoutMs?: number, workflowMode?: string, role?: string, requestId?: string }} [opts]
  * @returns {Promise<string>}
  * @throws {AiUnavailableError} gdy proxy lub llama-server nie odpowiadają
  */
 export async function generate(prompt, opts = {}) {
+  const result = await generateWithMetrics(prompt, opts)
+  return result.text
+}
+
+/**
+ * Generuje tekst i zwraca metryki runtime z proxy.
+ * @param {string} prompt
+ * @param {{ maxTokens?: number, temperature?: number, timeoutMs?: number, workflowMode?: string, role?: string, requestId?: string }} [opts]
+ * @returns {Promise<Object>}
+ */
+export async function generateWithMetrics(prompt, opts = {}) {
   if (!state.available) throw new AiUnavailableError()
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(), opts.timeoutMs || GENERATE_TIMEOUT_MS)
   try {
+    const requestId = opts.requestId || makeRequestId()
     const res = await fetch(`${PROXY_BASE_URL}${GENERATE_PATH}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        requestId,
         prompt,
         maxTokens: opts.maxTokens ?? 200,
         temperature: opts.temperature ?? 0.7,
+        timeoutMs: opts.timeoutMs || GENERATE_TIMEOUT_MS,
+        workflowMode: opts.workflowMode || 'standard',
+        role: opts.role || 'shared',
       }),
       signal: controller.signal,
     })
@@ -106,7 +122,7 @@ export async function generate(prompt, opts = {}) {
       throw new AiUnavailableError(`proxy HTTP ${res.status}`)
     }
     const data = await res.json()
-    return (data.text || '').trim()
+    return { ...data, requestId, text: (data.text || '').trim() }
   } catch (error) {
     if (error instanceof AiUnavailableError) throw error
     state.available = false
@@ -115,6 +131,15 @@ export async function generate(prompt, opts = {}) {
   } finally {
     clearTimeout(timeout)
   }
+}
+
+/**
+ * Buduje lokalny identyfikator requestu do korelacji logów.
+ * @returns {string}
+ */
+function makeRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+  return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 // ============================================================================

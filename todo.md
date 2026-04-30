@@ -502,3 +502,10 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 - **Nie rób:** Nie dodawaj osobnego backendu ani zdalnego terminala live
 - [x] Gotowe — dodano widok Monitor, live log oraz wpisy postępu jobów ze stacji roboczej.
 
+### 7.8 Produkcyjna kolejka i budżety runtime
+- **Co:** Wdrożyć bezpłatne P0/P1 z planów `opt.md` i `opt2.md`: routing budżetów, metryki proxy, atomowy claim jobów, retry/backoff i dead-letter
+- **Gdzie:** `ui/`, `local-ai-proxy/`, `supabase/migrations/`, dokumentacja runtime
+- **Gotowe gdy:** Supabase ma RPC claim z lease, stacja raportuje metryki i obsługuje `retrying`/`dead_letter`, proxy ma `/metrics`, a UI zna nowe statusy jobów
+- **Nie rób:** Nie wprowadzaj płatnego hostingu ani usługi wymagającej sekretów poza istniejącym Supabase/Pages/local runtime
+- [x] Gotowe — dodano routing `instant/fast/standard/deep`, lokalne metryki proxy, `claim_workstation_jobs`, lease jobów, jitter polling, backoff retry, status `dead_letter` i dokumentację endpointów.
+

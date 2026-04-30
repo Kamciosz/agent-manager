@@ -22,6 +22,7 @@ import {
   HERMES_LABYRINTH_PRESET,
   HERMES_LABYRINTH_TEMPLATE_ID,
   buildHermesLabyrinthContext,
+  classifyTask,
   isHermesLabyrinthTemplate,
   summarizeHermesLabyrinthContext,
 } from './labyrinth.js'
@@ -126,9 +127,13 @@ const WORKSTATION_COMMAND_LABELS = {
 
 const WORKSTATION_JOB_LABELS = {
   queued: 'W kolejce',
+  leased: 'Zarezerwowane',
   running: 'W toku',
+  retrying: 'Ponawianie',
   done: 'Gotowe',
   failed: 'Błąd',
+  expired: 'Wygasłe',
+  dead_letter: 'Nie do uratowania',
   cancelled: 'Anulowane',
 }
 
@@ -803,7 +808,7 @@ async function cancelTask(taskId) {
         error_text: 'Anulowane przez operatora.',
       })
       .eq('task_id', taskId)
-      .in('status', ['queued', 'running'])
+      .in('status', ['queued', 'leased', 'running', 'retrying'])
     if (jobsError) throw jobsError
 
     const { error } = await supabase
@@ -838,7 +843,7 @@ async function retryTask(task, options = {}) {
         finished_at: now,
       })
       .eq('task_id', task.id)
-      .in('status', ['queued', 'running'])
+      .in('status', ['queued', 'leased', 'running', 'retrying', 'dead_letter'])
     if (jobsError) throw jobsError
 
     const updatePayload = {
@@ -1848,7 +1853,7 @@ function renderAdvancedRuntimePanel(workstations) {
   setText('advanced-context-state', longContextCount ? `${longContextCount} long` : 'native')
 
   if (!workstations.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="13" class="px-6 py-8 text-center text-slate-500">Brak danych runtime.</td></tr>'
     return
   }
 
@@ -1866,11 +1871,27 @@ function renderAdvancedRuntimePanel(workstations) {
         <td class="px-6 py-3 text-slate-600">${escapeHtml(String(metadata.generationTimeoutMs || '—'))}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(metadata.optimizationMode || 'standard')}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(metadata.draftModelName || '—')}</td>
+        <td class="px-6 py-3 text-slate-600">${escapeHtml(workstationRuntimeMetrics(workstation))}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(`${metadata.offlineQueueDepth || 0} / batch ${metadata.messageBatchSize || 10}`)}</td>
         <td class="px-6 py-3 text-slate-600">${escapeHtml(workstationResourceSummary(workstation))}</td>
       </tr>
     `
   }).join('')
+}
+
+/**
+ * Formatuje metryki ostatnich generacji raportowane przez stację.
+ * @param {Object} workstation
+ * @returns {string}
+ */
+function workstationRuntimeMetrics(workstation) {
+  const metadata = workstation.metadata || {}
+  const p50 = Number(metadata.tokensPerSecondP50 || 0)
+  const p95 = Number(metadata.tokensPerSecondP95 || 0)
+  const failureRate = Number(metadata.failureRate24h || 0)
+  const samples = Number(metadata.metricsSampleSize || 0)
+  if (!samples) return '—'
+  return `p50 ${p50 || '—'} tok/s · p95 ${p95 || '—'} · err ${Math.round(failureRate * 100)}%`
 }
 
 function workstationResourceSummary(workstation) {
@@ -3824,18 +3845,22 @@ function renderReviewSummary() {
  * @returns {Object}
  */
 function collectTaskFormData() {
+  const title = document.getElementById('task-title').value.trim()
+  const description = document.getElementById('task-description').value.trim()
   const context = {
     links: document.getElementById('task-links').value.trim(),
     requirements: document.getElementById('task-requirements').value.trim(),
     avoid: document.getElementById('task-avoid').value.trim(),
   }
   const hasContext = Object.values(context).some(Boolean)
+  const routing = classifyTask({ ...context, title, description, template: wizard.template })
+  const routedContext = { ...context, routing }
   const finalContext = isHermesLabyrinthTemplate(wizard.template)
-    ? buildHermesLabyrinthContext(context)
-    : (hasContext ? context : null)
+    ? buildHermesLabyrinthContext({ ...routedContext, title, description, template: wizard.template })
+    : (hasContext || routing.route !== 'instant' ? routedContext : { routing })
   return {
-    title: document.getElementById('task-title').value.trim(),
-    description: document.getElementById('task-description').value.trim(),
+    title,
+    description,
     priority: document.getElementById('task-priority').value,
     repo: document.getElementById('task-repo').value.trim(),
     context: finalContext,

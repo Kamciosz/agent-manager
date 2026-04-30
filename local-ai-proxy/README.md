@@ -271,14 +271,20 @@ Tylko wtedy, gdy katalog jest czystym repo git i nie ma lokalnych zmian. Jeśli 
 ```
 GET  /health       →  { ok, proxy, llama, model, backend, advanced }
 GET  /health/smoke →  { ok, text, durationMs, model, backend }
+GET  /metrics      →  { activeRequests, queuedRequests, totalRequests, failedRequests, recent }
+GET  /models       →  { models, capabilities }
 POST /generate     →  body: { prompt, maxTokens?, temperature? }
-                      response: { text, durationMs }
+                      response: { text, requestId, workflowMode, durationMs, queueWaitMs, outputTokens, tokensPerSecond }
 OPTIONS *          →  204 + nagłówki CORS dla dozwolonego Origin
 ```
 
 Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci. Dodatkowo sprawdza nagłówek `Origin`: domyślnie wpuszcza oficjalne Pages i localhost, a origin Twojego forka dodajesz przez `--config`.
 
 `/health/smoke` wysyła do lokalnego modelu bardzo krótki prompt z oczekiwaną odpowiedzią `OK`. Służy do szybkiego sprawdzenia, czy proxy nie tylko działa, ale potrafi faktycznie wygenerować odpowiedź przez `llama-server`.
+
+`/generate` przechodzi przez lokalną kolejkę ograniczoną przez `parallelSlots`. Proxy zapisuje w pamięci procesu ostatnie metryki: `requestId`, tryb routingu (`workflowMode`), czas w kolejce, przybliżone tokeny wejścia/wyjścia i tok/s. To nie jest płatny monitoring ani zewnętrzny serwer; dane żyją lokalnie i znikają po restarcie procesu.
+
+Agent stacji pobiera joby przez Supabase RPC `claim_workstation_jobs`, które robi atomowy claim z `FOR UPDATE SKIP LOCKED`. Job przechodzi przez statusy `queued` → `leased` → `running` → `done`; przy błędzie trafia w `retrying` z backoffem albo `dead_letter`, gdy skończą się próby. Lease wygasa domyślnie po `900` sekundach i może zostać odzyskany przez tę samą stację po crashu procesu.
 
 ## Troubleshooting
 

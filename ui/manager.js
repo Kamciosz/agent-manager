@@ -19,6 +19,8 @@ import {
   buildHermesLabyrinthInstructions,
   buildHermesLabyrinthPromptBlock,
   isHermesLabyrinthTask,
+  taskRouteConfig,
+  taskRouting,
 } from './labyrinth.js'
 
 // ============================================================================
@@ -329,6 +331,8 @@ async function createWorkstationJob(task, instructions, target) {
   const workstation = target.workstation || null
   const workstationId = task.requested_workstation_id || workstation?.id
   const modelName = task.requested_model_name || workstation?.current_model_name || firstWorkstationModel(workstation)
+  const routing = taskRouting(task)
+  const budget = taskRouteConfig(task)
   try {
     if (!workstationId) throw new Error('Brak ID stacji roboczej dla jobu')
     const { error } = await supabaseClient
@@ -344,6 +348,8 @@ async function createWorkstationJob(task, instructions, target) {
         started_at: null,
         finished_at: null,
         error_text: null,
+        lease_owner: null,
+        lease_expires_at: null,
         cancel_requested_at: null,
         cancelled_by_user_id: null,
         payload: {
@@ -352,7 +358,15 @@ async function createWorkstationJob(task, instructions, target) {
           git_repo: task.git_repo || null,
           context: task.context || {},
           instructions,
-          routing: target.reason,
+          routing: { ...routing, target: target.reason },
+          generation: {
+            maxTokens: budget.maxTokens,
+            temperature: budget.temperature,
+            timeoutMs: budget.timeoutMs,
+            workflowMode: routing.route,
+            modelProfile: routing.modelProfile,
+            outputContract: budget.outputContract,
+          },
         },
       }, { onConflict: 'task_id,workstation_id' })
     if (error) throw error
@@ -545,9 +559,13 @@ async function generateInstructions(task) {
   if (!isAvailable()) return fallback
   try {
     const labyrinthBlock = buildHermesLabyrinthPromptBlock(task)
+    const routing = taskRouting(task)
+    const budget = taskRouteConfig(task)
     const prompt = [
       'Jesteś AI kierownikiem. Sformułuj konkretną instrukcję po polsku',
       'dla agenta wykonawczego, który ma zrealizować zadanie.',
+      `Tryb routingu: ${routing.route}. Powody: ${routing.reason.join(', ')}.`,
+      `Kontrakt odpowiedzi wykonawcy: ${budget.outputContract}`,
       labyrinthBlock,
       'Tytuł: ' + (task.title || ''),
       'Opis: ' + (task.description || ''),
@@ -557,7 +575,7 @@ async function generateInstructions(task) {
         ? 'Odpowiedz wyłącznie instrukcją z sekcjami: Mapa, Ścieżka, Dowody, Weryfikacja, Raport końcowy.'
         : 'Odpowiedz wyłącznie tekstem instrukcji, bez wstępu. Maksymalnie 5 punktów.',
     ].filter(Boolean).join('\n')
-    const text = await generate(prompt, { maxTokens: isHermesLabyrinthTask(task) ? 360 : 120, temperature: 0.5 })
+    const text = await generate(prompt, { maxTokens: Math.min(360, budget.maxTokens), temperature: budget.temperature, timeoutMs: Math.min(120000, budget.timeoutMs), workflowMode: routing.route, role: 'manager' })
     return text || fallback
   } catch (error) {
     console.warn('[manager.js] AI fallback (instructions):', error.message)

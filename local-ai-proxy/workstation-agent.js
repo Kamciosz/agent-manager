@@ -22,8 +22,10 @@ const SUPPORTED_KV_CACHE = ['auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1'
 
 const DEFAULTS = {
   POLL_MS: 8000,
+  POLL_JITTER_MS: 2000,
   HEARTBEAT_MS: 15000,
   MESSAGE_POLL_MS: 6000,
+  LEASE_SECONDS: 900,
   AUTH_RETRY_MS: [3000, 7000, 15000, 30000],
   GENERATION_TIMEOUT_MS: 600000,
   CONTEXT_TOKENS: 65536,
@@ -37,6 +39,7 @@ let shuttingDown = false
 let workstationId = null
 let authSession = null
 let scheduleStopAnnounced = false
+let recentJobMetrics = []
 
 function log(...args) {
   console.log('[workstation-agent]', ...args)
@@ -101,11 +104,38 @@ function loadConfig() {
     kvCacheQuantization,
     effectiveKvCacheQuantization: normalizeKvCache(raw.effectiveKvCacheQuantization || resolveKvCache(kvCacheQuantization, contextSizeTokens)),
     generationTimeoutMs: clampInt(raw.generationTimeoutMs, DEFAULTS.GENERATION_TIMEOUT_MS, 15000, 1800000),
+    pollMs: clampInt(raw.pollMs, DEFAULTS.POLL_MS, 3000, 60000),
+    pollJitterMs: clampInt(raw.pollJitterMs, DEFAULTS.POLL_JITTER_MS, 0, 30000),
+    leaseSeconds: clampInt(raw.leaseSeconds, DEFAULTS.LEASE_SECONDS, 60, 3600),
     autoUpdate: raw.autoUpdate === true,
     optimizationMode: raw.optimizationMode || 'standard',
     messageBatchSize: clampInt(raw.messageBatchSize, DEFAULTS.MESSAGE_BATCH_SIZE, 1, 50),
     offlineQueueMax: clampInt(raw.offlineQueueMax, DEFAULTS.OFFLINE_QUEUE_MAX, 50, 5000),
   }
+}
+
+function percentile(values, p) {
+  const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b)
+  if (!sorted.length) return null
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1))
+  return sorted[index]
+}
+
+function jobMetricsSummary() {
+  const speeds = recentJobMetrics.map((item) => item.tokensPerSecond).filter((value) => Number.isFinite(value))
+  const failures = recentJobMetrics.filter((item) => item.ok === false).length
+  return {
+    tokensPerSecondP50: percentile(speeds, 50),
+    tokensPerSecondP95: percentile(speeds, 95),
+    failureRate24h: recentJobMetrics.length ? Math.round((failures / recentJobMetrics.length) * 10000) / 10000 : 0,
+    sampleSize: recentJobMetrics.length,
+  }
+}
+
+function recordJobMetric(metric) {
+  recentJobMetrics.unshift({ ...metric, at: Date.now() })
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000
+  recentJobMetrics = recentJobMetrics.filter((item) => item.at >= cutoff).slice(0, 100)
 }
 
 function clampInt(value, fallback, min, max) {
@@ -408,6 +438,23 @@ async function restSelect(cfg, session, table, query, retry = true) {
   return response.json()
 }
 
+async function restRpc(cfg, session, fnName, payload, retry = true) {
+  const response = await fetch(`${cfg.supabaseUrl}/rest/v1/rpc/${fnName}`, {
+    method: 'POST',
+    headers: buildHeaders(session.access_token, cfg.supabaseAnonKey, {
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify(payload || {}),
+  })
+  if (response.status === 401 && retry) {
+    return restRpc(cfg, await refreshSession(cfg), fnName, payload, false)
+  }
+  if (!response.ok) {
+    throw new Error(`${fnName} rpc failed: HTTP ${response.status} ${await responseDetail(response)}`)
+  }
+  return response.json()
+}
+
 async function responseDetail(response) {
   try {
     const text = await response.text()
@@ -446,6 +493,7 @@ function scanModels(cfg) {
 function workstationPayload(cfg, userId, statusOverride) {
   const ownerUserId = cfg.stationOwnerUserId || userId
   const stationUserId = cfg.stationUserId || userId
+  const metrics = jobMetricsSummary()
   return {
     display_name: cfg.workstationName,
     hostname: os.hostname(),
@@ -483,6 +531,13 @@ function workstationPayload(cfg, userId, statusOverride) {
       optimizationMode: cfg.optimizationMode,
       messageBatchSize: cfg.messageBatchSize,
       offlineQueueDepth: offlineQueueDepth(),
+      pollMs: cfg.pollMs,
+      pollJitterMs: cfg.pollJitterMs,
+      leaseSeconds: cfg.leaseSeconds,
+      tokensPerSecondP50: metrics.tokensPerSecondP50,
+      tokensPerSecondP95: metrics.tokensPerSecondP95,
+      failureRate24h: metrics.failureRate24h,
+      metricsSampleSize: metrics.sampleSize,
       resources: resourceSnapshot(),
       authMode: cfg.stationUserId ? 'station-token' : 'legacy-operator-password',
       scheduleOutsideAction: cfg.scheduleOutsideAction,
@@ -517,6 +572,16 @@ async function heartbeat(cfg, session, statusOverride) {
 async function fetchQueuedJobs(cfg, session) {
   const limit = availableSlots(cfg)
   if (!workstationId || !cfg.acceptsJobs || !isWithinSchedule(cfg) || limit < 1) return []
+  try {
+    const rows = await restRpc(cfg, session, 'claim_workstation_jobs', {
+      p_workstation_id: workstationId,
+      p_limit: limit,
+      p_lease_seconds: cfg.leaseSeconds,
+    })
+    if (Array.isArray(rows)) return rows
+  } catch (error) {
+    log('RPC claim_workstation_jobs niedostepne, uzywam fallback select:', error.message)
+  }
   const rows = await restSelect(
     cfg,
     session,
@@ -539,13 +604,18 @@ async function fetchUnreadMessages(cfg, session) {
 function buildJobPrompt(job) {
   const payload = job.payload || {}
   const context = payload.context || {}
+  const routing = payload.routing || context.raw?.routing || {}
+  const route = String(routing.route || 'standard')
+  const contextLimit = route === 'instant' ? 0 : route === 'fast' ? 600 : route === 'standard' ? 1200 : 2400
   const metadata = [
     payload.git_repo ? `Repo: ${payload.git_repo}` : '',
-    context.raw ? `Kontekst JSON: ${JSON.stringify(context.raw).slice(0, 1800)}` : '',
+    contextLimit && context.raw ? `Kontekst JSON: ${JSON.stringify(context.raw).slice(0, contextLimit)}` : '',
   ].filter(Boolean).join('\n')
   return [
     'Jestes agentem AI na szkolnej stacji roboczej. Masz wykonac zadanie i zwrocic sam wynik pracy.',
     'Nie przepisuj w odpowiedzi naglowkow ani pol technicznych takich jak Tytul, Opis, Repo, Kontekst, routing lub payload.',
+    `Tryb zadania: ${route}. ${payload.generation?.workflowMode ? `Workflow: ${payload.generation.workflowMode}.` : ''}`,
+    payload.generation?.outputContract ? `Kontrakt odpowiedzi: ${payload.generation.outputContract}` : '',
     'Jesli zadanie jest prostym pytaniem albo obliczeniem, odpowiedz bezposrednio jednym zdaniem z wynikiem.',
     payload.instructions || 'Wykonaj zadanie mozliwie konkretnie.',
     `Zadanie: ${payload.title || ''}`,
@@ -558,11 +628,23 @@ function buildJobPrompt(job) {
   ].filter(Boolean).join('\n')
 }
 
-async function callLocalProxy(cfg, prompt) {
+async function callLocalProxy(cfg, prompt, generation = {}) {
   const response = await fetch(`http://127.0.0.1:${cfg.proxyPort}/generate`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, maxTokens: 600, temperature: 0.4 }),
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Agent-Role': generation.role || 'station',
+      'X-Workflow-Mode': generation.workflowMode || 'standard',
+    },
+    body: JSON.stringify({
+      requestId: generation.requestId,
+      prompt,
+      maxTokens: generation.maxTokens || 600,
+      temperature: generation.temperature ?? 0.4,
+      timeoutMs: generation.timeoutMs || cfg.generationTimeoutMs,
+      workflowMode: generation.workflowMode || 'standard',
+      role: generation.role || 'station',
+    }),
   })
   if (!response.ok) {
     throw new Error(`Local proxy HTTP ${response.status} ${await responseDetail(response)}`)
@@ -571,6 +653,12 @@ async function callLocalProxy(cfg, prompt) {
   return {
     text: (data.text || '').trim(),
     durationMs: data.durationMs || null,
+    requestId: data.requestId || generation.requestId || null,
+    outputTokens: data.outputTokens || null,
+    estimatedInputTokens: data.estimatedInputTokens || null,
+    tokensPerSecond: data.tokensPerSecond || null,
+    workflowMode: data.workflowMode || generation.workflowMode || null,
+    model: data.model || null,
   }
 }
 
@@ -674,9 +762,11 @@ async function claimQueuedJob(cfg, session, job) {
     cfg,
     session,
     'workstation_jobs',
-    `id=eq.${encodeURIComponent(job.id)}&status=eq.queued&cancel_requested_at=is.null`,
+    `id=eq.${encodeURIComponent(job.id)}&status=in.(queued,retrying,leased)&cancel_requested_at=is.null`,
     {
       status: 'running',
+      lease_owner: workstationId,
+      lease_expires_at: new Date(Date.now() + cfg.leaseSeconds * 1000).toISOString(),
       started_at: new Date().toISOString(),
       finished_at: null,
       error_text: null,
@@ -697,6 +787,31 @@ async function fetchJobStatus(cfg, session, jobId) {
   return rows?.[0] || null
 }
 
+function retryBackoffMs(job) {
+  const retryCount = Number(job.retry_count || 0)
+  return Math.min(5 * 60 * 1000, 5000 * Math.max(1, retryCount + 1))
+}
+
+async function markJobFailure(cfg, session, job, error) {
+  const retryCount = Number(job.retry_count || 0)
+  const maxAttempts = Number(job.max_attempts || 3)
+  const nextRetryCount = retryCount + 1
+  const canRetry = nextRetryCount < maxAttempts
+  const now = new Date().toISOString()
+  const nextStatus = canRetry ? 'retrying' : 'dead_letter'
+  await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
+    status: nextStatus,
+    retry_count: nextRetryCount,
+    lease_owner: null,
+    lease_expires_at: canRetry ? new Date(Date.now() + retryBackoffMs(job)).toISOString() : null,
+    error_text: error.message,
+    last_error_code: error.message.includes('timeout') ? 'timeout' : 'proxy_or_model_error',
+    last_error_at: now,
+    finished_at: canRetry ? null : now,
+  })
+  return { canRetry, nextStatus, nextRetryCount, maxAttempts }
+}
+
 function isCancelledJob(job) {
   return job?.status === 'cancelled' || Boolean(job?.cancel_requested_at)
 }
@@ -714,8 +829,14 @@ async function processJob(cfg, session, job) {
     await appendProgressMessage(cfg, session, job, `Start jobu. Sloty aktywne: ${activeJobs}/${cfg.parallelSlots}.`)
       .catch((error) => log('progress message failed:', error.message))
 
-    const result = await callLocalProxy(cfg, buildJobPrompt(job))
+    const generation = job.payload?.generation || {}
+    const result = await callLocalProxy(cfg, buildJobPrompt(job), {
+      ...generation,
+      requestId: `job:${job.id}:attempt:${Number(job.retry_count || 0) + 1}`,
+      role: 'station',
+    })
     const output = result.text
+    recordJobMetric({ ok: true, tokensPerSecond: result.tokensPerSecond || null })
     const latestJob = await fetchJobStatus(cfg, session, job.id).catch((statusError) => {
       log('fetchJobStatus failed:', statusError.message)
       return null
@@ -729,7 +850,18 @@ async function processJob(cfg, session, job) {
     await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
       status: 'done',
       result_summary: output.slice(0, 500),
-      result_payload: { text: output, durationMs: result.durationMs },
+      result_payload: {
+        text: output,
+        durationMs: result.durationMs,
+        requestId: result.requestId,
+        outputTokens: result.outputTokens,
+        estimatedInputTokens: result.estimatedInputTokens,
+        tokensPerSecond: result.tokensPerSecond,
+        workflowMode: result.workflowMode,
+        model: result.model || cfg.modelName,
+      },
+      lease_owner: null,
+      lease_expires_at: null,
       finished_at: new Date().toISOString(),
       error_text: null,
     })
@@ -753,21 +885,20 @@ async function processJob(cfg, session, job) {
       log('Job anulowany podczas obslugi bledu:', job.id)
       return
     }
-    await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
-      status: 'failed',
-      error_text: error.message,
-      finished_at: new Date().toISOString(),
-    })
+    recordJobMetric({ ok: false, tokensPerSecond: null })
+    const failure = await markJobFailure(cfg, session, job, error)
     await appendStationMessage(cfg, session, [{
       workstation_id: workstationId,
       task_id: job.task_id || null,
       sender_kind: 'workstation',
       sender_label: cfg.workstationName,
       message_type: 'error',
-      content: `Job nie powiodl sie: ${error.message}`,
+      content: failure.canRetry
+        ? `Job nie powiodl sie: ${error.message}. Proba ${failure.nextRetryCount}/${failure.maxAttempts}, wraca do kolejki z backoffem.`
+        : `Job trafil do dead-letter po ${failure.nextRetryCount}/${failure.maxAttempts} probach: ${error.message}`,
     }])
-    await updateTaskLifecycle(cfg, session, job.task_id, { status: 'failed', last_error: error.message })
-    log('Job nieudany:', job.id, error.message)
+    if (!failure.canRetry) await updateTaskLifecycle(cfg, session, job.task_id, { status: 'failed', last_error: error.message })
+    log('Job nieudany:', job.id, failure.nextStatus, error.message)
   } finally {
     activeJobs = Math.max(0, activeJobs - 1)
     await heartbeat(cfg, session)
@@ -1085,6 +1216,42 @@ async function shutdown(cfg, session) {
   }
 }
 
+function nextPollDelay(baseMs, jitterMs) {
+  return baseMs + Math.floor(Math.random() * Math.max(0, jitterMs || 0))
+}
+
+function startJobPollLoop(cfg) {
+  const tick = async () => {
+    if (availableSlots(cfg) >= 1 && !shuttingDown) {
+      try {
+        const jobs = await fetchQueuedJobs(cfg, authSession)
+        for (const job of jobs) {
+          processJob(cfg, authSession, job).catch((error) => log('processJob failed:', error.message))
+        }
+      } catch (error) {
+        log('pollJobs failed:', error.message)
+      }
+    }
+    if (!shuttingDown) setTimeout(tick, nextPollDelay(cfg.pollMs, cfg.pollJitterMs))
+  }
+  setTimeout(tick, nextPollDelay(cfg.pollMs, cfg.pollJitterMs))
+}
+
+function startMessagePollLoop(cfg) {
+  const tick = async () => {
+    if (!shuttingDown) {
+      try {
+        await processIncomingMessages(cfg, authSession)
+        await flushOfflineQueue(cfg, authSession)
+      } catch (error) {
+        log('pollMessages failed:', error.message)
+      }
+    }
+    if (!shuttingDown) setTimeout(tick, nextPollDelay(DEFAULTS.MESSAGE_POLL_MS, cfg.pollJitterMs))
+  }
+  setTimeout(tick, nextPollDelay(DEFAULTS.MESSAGE_POLL_MS, cfg.pollJitterMs))
+}
+
 async function main() {
   const cfg = loadConfig()
   ensureRequiredConfig(cfg)
@@ -1111,24 +1278,8 @@ async function main() {
     syncModels(cfg, authSession).catch((error) => log('syncModels failed:', error.message))
   }, DEFAULTS.HEARTBEAT_MS)
 
-  setInterval(async () => {
-    if (availableSlots(cfg) < 1 || shuttingDown) return
-    try {
-      const jobs = await fetchQueuedJobs(cfg, authSession)
-      for (const job of jobs) {
-        processJob(cfg, authSession, job).catch((error) => log('processJob failed:', error.message))
-      }
-    } catch (error) {
-      log('pollJobs failed:', error.message)
-    }
-  }, DEFAULTS.POLL_MS)
-
-  setInterval(() => {
-    if (shuttingDown) return
-    processIncomingMessages(cfg, authSession)
-      .then(() => flushOfflineQueue(cfg, authSession))
-      .catch((error) => log('pollMessages failed:', error.message))
-  }, DEFAULTS.MESSAGE_POLL_MS)
+  startJobPollLoop(cfg)
+  startMessagePollLoop(cfg)
 }
 
 function sleep(ms) {

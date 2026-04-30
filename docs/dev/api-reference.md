@@ -243,6 +243,8 @@ await supabase
 
 Ponowienie działa na tym samym rekordzie: UI zwiększa `retry_count`, czyści pola anulowania i ustawia `status = 'pending'`. AI kierownik subskrybuje też aktualizacje `tasks`, więc traktuje taki rekord jak powrót do kolejki.
 
+Aktywne joby stacji mogą mieć status: `queued`, `leased`, `running`, `retrying`, `done`, `failed`, `cancelled`, `expired`, `dead_letter`. Stacje nie pobierają jobów przez zwykły `select status=queued`; używają RPC `claim_workstation_jobs(p_workstation_id, p_limit, p_lease_seconds)`, które atomowo ustawia `leased`, `lease_owner` i `lease_expires_at` z `FOR UPDATE SKIP LOCKED`. Przy błędzie agent zapisuje `retrying` z backoffem albo `dead_letter`, gdy wyczerpie `max_attempts`.
+
 ### Usuń zadanie
 
 ```js
