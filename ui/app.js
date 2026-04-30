@@ -91,6 +91,8 @@ const RETRYABLE_TASK_STATUSES = [STATUS.FAILED, STATUS.CANCELLED]
 const EDITABLE_TASK_STATUSES = [STATUS.PENDING, STATUS.FAILED, STATUS.CANCELLED]
 
 const WORKSTATION_STALE_MS = 2 * 60 * 1000
+const TASK_FILTER_DEBOUNCE_MS = 120
+const REALTIME_REFRESH_DEBOUNCE_MS = 250
 
 const UI_STORAGE_KEYS = {
   taskViewMode: 'agent-manager-task-view-mode',
@@ -219,6 +221,14 @@ const state = {
   workstationsSubscription: null,
   enrollmentTokensSubscription: null,
   monitorLogSubscription: null,
+}
+
+const scheduledWork = {
+  taskFilterRender: null,
+  tasksRefresh: null,
+  workstationsRefresh: null,
+  enrollmentTokensRefresh: null,
+  monitorLogRefresh: null,
 }
 
 // ============================================================================
@@ -501,10 +511,13 @@ function bindNavigation() {
   document.querySelectorAll('.task-view-toggle').forEach((button) => {
     button.addEventListener('click', () => setTaskViewMode(button.dataset.mode))
   })
-  document.getElementById('tasks-filter-query')?.addEventListener('input', handleTaskFiltersChange)
+  document.getElementById('tasks-filter-query')?.addEventListener('input', handleTaskFiltersInput)
   document.getElementById('tasks-filter-status')?.addEventListener('change', handleTaskFiltersChange)
   document.getElementById('tasks-filter-priority')?.addEventListener('change', handleTaskFiltersChange)
   document.getElementById('btn-clear-task-filters')?.addEventListener('click', clearTaskFilters)
+  bindTaskListDelegation('tasks-table-body')
+  bindTaskListDelegation('tasks-table-body-full')
+  bindTaskListDelegation('tasks-cards')
   document.getElementById('btn-logout').addEventListener('click', handleLogout)
   document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
@@ -930,17 +943,45 @@ async function refreshTasks() {
 
 function renderFilteredTasks() {
   const filtered = getFilteredTasks()
-  renderTasksTable('tasks-table-body', filtered)
-  renderTasksTable('tasks-table-body-full', filtered)
-  renderTaskCards(filtered)
+  if (state.taskViewMode === TASK_VIEW_MODE.CARDS) {
+    renderTaskCards(filtered)
+  } else {
+    renderTasksTable('tasks-table-body', filtered)
+  }
+  if (isElementVisible('view-tasks')) renderTasksTable('tasks-table-body-full', filtered)
   renderTaskFilterSummary(filtered.length, state.tasks.length)
 }
 
+function handleTaskFiltersInput() {
+  state.taskFilters = readTaskFilters()
+  scheduleTaskFilterRender()
+}
+
 function handleTaskFiltersChange() {
-  state.taskFilters = {
+  state.taskFilters = readTaskFilters()
+  renderFilteredTasksNow()
+}
+
+function readTaskFilters() {
+  return {
     query: document.getElementById('tasks-filter-query')?.value.trim().toLowerCase() || '',
     status: document.getElementById('tasks-filter-status')?.value || '',
     priority: document.getElementById('tasks-filter-priority')?.value || '',
+  }
+}
+
+function scheduleTaskFilterRender() {
+  if (scheduledWork.taskFilterRender) clearTimeout(scheduledWork.taskFilterRender)
+  scheduledWork.taskFilterRender = setTimeout(() => {
+    scheduledWork.taskFilterRender = null
+    renderFilteredTasksNow()
+  }, TASK_FILTER_DEBOUNCE_MS)
+}
+
+function renderFilteredTasksNow() {
+  if (scheduledWork.taskFilterRender) {
+    clearTimeout(scheduledWork.taskFilterRender)
+    scheduledWork.taskFilterRender = null
   }
   renderFilteredTasks()
   applyTaskViewMode()
@@ -981,6 +1022,11 @@ function renderTaskFilterSummary(visibleCount, totalCount) {
   el.textContent = active
     ? `Pokazuję ${visibleCount} z ${totalCount} poleceń.`
     : `Pokazuję wszystkie polecenia (${totalCount}).`
+}
+
+function isElementVisible(id) {
+  const element = document.getElementById(id)
+  return Boolean(element && !element.classList.contains('hidden'))
 }
 
 // ============================================================================
@@ -1165,7 +1211,7 @@ function loadTaskViewMode() {
 function setTaskViewMode(mode) {
   state.taskViewMode = mode === TASK_VIEW_MODE.CARDS ? TASK_VIEW_MODE.CARDS : TASK_VIEW_MODE.LIST
   localStorage.setItem(UI_STORAGE_KEYS.taskViewMode, state.taskViewMode)
-  applyTaskViewMode()
+  renderFilteredTasksNow()
 }
 
 function applyTaskViewMode() {
@@ -2637,38 +2683,29 @@ function renderTasksTable(tbodyId, tasks) {
       </td>
     </tr>
   `).join('')
+}
 
-  // Klik na wiersz → otwórz Task Detail
-  tbody.querySelectorAll('.task-row').forEach((row) => {
-    row.addEventListener('click', (event) => {
-      if (event.target.closest('.task-edit, .task-delete, .task-cancel, .task-retry')) return
-      openTaskDetail(row.dataset.taskId)
-    })
-  })
-  tbody.querySelectorAll('.task-edit').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation()
-      handleEditTask(button.dataset.id)
-    })
-  })
-  tbody.querySelectorAll('.task-delete').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation()
-      handleDeleteTask(button.dataset.id)
-    })
-  })
-  tbody.querySelectorAll('.task-cancel').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation()
-      handleCancelTask(button.dataset.id)
-    })
-  })
-  tbody.querySelectorAll('.task-retry').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation()
-      handleRetryTask(button.dataset.id)
-    })
-  })
+function bindTaskListDelegation(containerId) {
+  const container = document.getElementById(containerId)
+  if (!container || container.dataset.taskDelegated === 'true') return
+  container.dataset.taskDelegated = 'true'
+  container.addEventListener('click', handleTaskListClick)
+}
+
+function handleTaskListClick(event) {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement
+  if (!target) return
+  const action = target.closest('.task-edit, .task-delete, .task-cancel, .task-retry')
+  if (action) {
+    event.stopPropagation()
+    if (action.classList.contains('task-edit')) handleEditTask(action.dataset.id)
+    else if (action.classList.contains('task-delete')) handleDeleteTask(action.dataset.id)
+    else if (action.classList.contains('task-cancel')) handleCancelTask(action.dataset.id)
+    else if (action.classList.contains('task-retry')) handleRetryTask(action.dataset.id)
+    return
+  }
+  const item = target.closest('.task-row, .task-card')
+  if (item?.dataset.taskId) openTaskDetail(item.dataset.taskId)
 }
 
 function taskActionsHtml(task) {
@@ -2741,9 +2778,6 @@ function renderTaskCards(tasks) {
       </div>
     </button>
   `).join('')
-  container.querySelectorAll('.task-card').forEach((card) => {
-    card.addEventListener('click', () => openTaskDetail(card.dataset.taskId))
-  })
 }
 
 /**
@@ -3126,7 +3160,7 @@ function subscribeToAllTasks() {
   state.allTasksSubscription = supabase
     .channel('tasks-dashboard')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-      refreshTasks()
+      scheduleRefresh('tasksRefresh', refreshTasks)
     })
     .subscribe((status) => updateConnectionIndicator(status))
 }
@@ -3140,13 +3174,13 @@ function subscribeToWorkstationsBoard() {
   state.workstationsSubscription = supabase
     .channel('workstations-board')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'workstations' }, () => {
-      refreshWorkstations()
+      scheduleRefresh('workstationsRefresh', refreshWorkstations)
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'workstation_models' }, () => {
-      refreshWorkstations()
+      scheduleRefresh('workstationsRefresh', refreshWorkstations)
     })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'workstation_jobs' }, () => {
-      refreshWorkstations()
+      scheduleRefresh('workstationsRefresh', refreshWorkstations)
     })
     .subscribe()
 }
@@ -3156,7 +3190,7 @@ function subscribeToEnrollmentTokens() {
   state.enrollmentTokensSubscription = supabase
     .channel('workstation-enrollment-tokens')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'workstation_enrollment_tokens' }, () => {
-      refreshEnrollmentTokens()
+      scheduleRefresh('enrollmentTokensRefresh', refreshEnrollmentTokens)
     })
     .subscribe()
 }
@@ -3170,12 +3204,30 @@ function subscribeToMonitorLog() {
   state.monitorLogSubscription = supabase
     .channel('monitor-log')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, () => {
-      refreshMonitorLog()
+      scheduleRefresh('monitorLogRefresh', refreshMonitorLog)
     })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'workstation_messages' }, () => {
-      refreshMonitorLog()
+      scheduleRefresh('monitorLogRefresh', refreshMonitorLog)
     })
     .subscribe()
+}
+
+function scheduleRefresh(key, callback) {
+  if (scheduledWork[key]) return
+  scheduledWork[key] = setTimeout(() => {
+    scheduledWork[key] = null
+    Promise.resolve(callback()).catch((error) => {
+      console.error('[app.js] scheduled refresh failed:', error)
+    })
+  }, REALTIME_REFRESH_DEBOUNCE_MS)
+}
+
+function clearScheduledWork() {
+  for (const key of Object.keys(scheduledWork)) {
+    if (!scheduledWork[key]) continue
+    clearTimeout(scheduledWork[key])
+    scheduledWork[key] = null
+  }
 }
 
 /**
@@ -3225,6 +3277,7 @@ function cleanupTaskSubscriptions() {
  * @returns {void}
  */
 function cleanupGlobalSubscriptions() {
+  clearScheduledWork()
   if (state.allTasksSubscription) {
     supabase.removeChannel(state.allTasksSubscription)
     state.allTasksSubscription = null
