@@ -22,4 +22,5 @@
 - Recorded successful deploy acceptance checks for dashboard task flow, AI messages, audit history, and RBAC.
 - Stopped automatic localhost proxy polling on public Pages to avoid console noise when local AI is not running.
 - Reduced dashboard work during filtering and Realtime bursts by debouncing renders and reusing delegated task-list handlers.
+- Fixed the initial dashboard header so the active `Polecenia` view no longer loads with a stale `Dashboard` title.
 - Kept validation on plain Node commands without npm, bundlers, or package installation.
