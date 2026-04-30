@@ -465,7 +465,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 - **Gdzie:** GitHub Pages + Supabase + lokalny `start.command`
 - **Gotowe gdy:** 6.2, 6.3, 6.4 przechodzą na deployu, a stacja robocza rejestruje heartbeat i wykonuje job
 - **Nie rób:** Nie oznaczaj jako gotowe bez ręcznego logowania i potwierdzenia wyników
-- [ ] Gotowe
+- [ ] Gotowe — część Pages/Supabase potwierdzona 2026-04-30: 6.2, 6.3 i 6.4 przeszły na deployu. `./start.sh --doctor --no-pull` na MacBooku operatora wykazał binarkę llama-server, model, sesję stacji i 256k context jako skonfigurowane, przy wolnym porcie 3001. Nie odhaczaj całości, dopóki osobna stacja sali nie zaraportuje heartbeat i nie wykona joba.
 
 ### 7.3 Deep research braków produktowych
 - **Co:** Uzupełnić braki widoczne po przejściu z MVP do alpha: usuwanie poleceń i wyjaśnienie pojęć/statusów w UI
