@@ -1,6 +1,8 @@
 # FORK_GUIDE — własna kopia Agent Manager
 
-Ten przewodnik prowadzi przez uruchomienie własnego forka: GitHub Pages jako UI i Supabase jako backend. Terminal nie jest potrzebny do samego deployu UI, ale migracje bazy trzeba zastosować jawnie w Supabase.
+Ten przewodnik jest tylko dla osoby, która zakłada własną kopię. Jeśli chcesz po prostu korzystać z gotowej aplikacji, wróć do [README.md](README.md).
+
+Większość kroków da się wykonać klikaniem w przeglądarce. Terminal jest potrzebny tylko w opcjonalnym wariancie technicznym dla migracji i funkcji Edge.
 
 ## Co dostajesz
 
@@ -24,7 +26,7 @@ Nie hostujesz własnego serwera. GitHub Actions publikuje pliki z `ui/`, a Supab
 3. Wybierz organizację, nazwę i region.
 4. Poczekaj, aż projekt będzie gotowy.
 
-## Krok 3 — zastosuj migracje SQL
+## Krok 3 — zastosuj migracje SQL bez terminala
 
 Workflow GitHub Pages **nie stosuje migracji bazy danych**. Zrób to ręcznie jedną z dwóch metod.
 
@@ -35,7 +37,7 @@ Metoda bez terminala:
 3. Wklej zawartość każdego pliku i kliknij **Run**.
 4. Jeśli plik jest już zastosowany, większość poleceń jest idempotentna (`if not exists`, `drop policy if exists`).
 
-Metoda dla osób technicznych:
+Opcjonalnie dla osób technicznych:
 
 1. Użyj Supabase CLI albo narzędzi MCP Supabase.
 2. Zastosuj migracje z [supabase/migrations](supabase/migrations).
@@ -72,6 +74,8 @@ supabase functions deploy redeem-workstation-enrollment --no-verify-jwt
 `SUPABASE_URL` i `SUPABASE_ANON_KEY` są dostępne dla Edge Functions z runtime Supabase; service-role key ustawiasz osobno, tylko jako sekret funkcji.
 `ALLOWED_APP_ORIGINS` to lista originów oddzielonych przecinkami, które mogą wywoływać tokenowe Edge Functions z przeglądarki. Domyślnie funkcje dopuszczają `https://kamciosz.github.io`, `http://localhost` i `http://127.0.0.1`, ale fork powinien dopisać własny adres GitHub Pages.
 `redeem-workstation-enrollment` ma wyłączone JWT verification, bo stacja nie ma jeszcze sesji użytkownika; sekretem wejściowym jest jednorazowy token instalacyjny.
+
+Jeśli nie chcesz używać terminala, poproś osobę techniczną o wykonanie tego kroku albo zrób tylko konfigurację UI i bazy, a stacje dołącz później.
 
 ## Krok 6 — dodaj GitHub Secrets
 

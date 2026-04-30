@@ -2,6 +2,8 @@
 
 Opcjonalny moduł, który pozwala uruchomić Agent Manager z **prawdziwym, lokalnym modelem językowym** (llama.cpp + GGUF) zamiast przeglądarkowego trybu operacyjnego ze stałymi tekstami. Wszystko działa offline, bez API i bez kosztów.
 
+Jeśli korzystasz tylko z aplikacji w przeglądarce albo nie jesteś osobą odpowiedzialną za stację roboczą, możesz ten plik pominąć.
+
 ```
 przeglądarka (GitHub Pages)
         │  HTTP /generate
@@ -17,7 +19,7 @@ plik .gguf w models/         ← model wybrany przy pierwszym starcie
 
 > Przeglądarki traktują `127.0.0.1` jako **secure context** (W3C), więc strona z HTTPS może wołać HTTP localhost bez ostrzeżeń o mixed content. Dlatego nie potrzeba tu certyfikatu TLS ani service workera.
 
-## Wymagania
+## Wymagania dla stacji roboczej
 
 - **macOS / Linux**: Node.js 20+ (zalecane 22 LTS), `bash`, `curl`, `unzip`. Apple Silicon → backend Metal, NVIDIA → CUDA, AMD → ROCm, w pozostałych przypadkach Vulkan/CPU.
 - **Windows 10/11**: `cmd.exe` + PowerShell (są domyślnie). Jeśli `node` nie istnieje w PATH, `launcher\start.ps1` pobierze portable Node.js do `local-ai-proxy\bin` bez instalatora i bez uprawnień administratora. NVIDIA → CUDA, w pozostałych Vulkan/CPU.

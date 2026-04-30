@@ -2,6 +2,8 @@
 
 Mapa całej dokumentacji projektu. Czytaj w kolejności odpowiadającej etapowi pracy.
 
+Jeśli chcesz tylko używać gotowej aplikacji, zacznij od [README.md](../README.md). [FORK_GUIDE.md](../FORK_GUIDE.md) jest dla osoby, która zakłada własną kopię, a sekcje `dev/` i `internal/` są techniczne.
+
 ## Koncepcja
 
 | Plik | Zawartość |
