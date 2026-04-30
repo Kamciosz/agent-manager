@@ -8,8 +8,9 @@
  *              `manager.js` i `executor.js` używają wtedy przeglądarkowego
  *              fallbacku z tekstami operacyjnymi.
  *
- *              Health-check ponawiany jest co 10 s aby UX wykrywał
- *              uruchomienie/zatrzymanie proxy bez przeładowania strony.
+ *              Na publicznym Pages health-check startuje dopiero po kliknięciu
+ *              badge lub z parametrem `?localAi=1`, żeby brak lokalnego proxy
+ *              nie generował błędów konsoli w zwykłym trybie online.
  */
 
 // ============================================================================
@@ -22,6 +23,7 @@ const GENERATE_PATH = '/generate'
 const HEALTH_TIMEOUT_MS = 1500
 const GENERATE_TIMEOUT_MS = 30000
 const RECHECK_INTERVAL_MS = 10000
+const LOCAL_AI_QUERY_PARAM = 'localAi'
 
 // ============================================================================
 // STAN MODUŁU
@@ -33,6 +35,7 @@ const state = {
   backend: '',
   advanced: null,
   recheckTimer: null,
+  probeEnabled: false,
 }
 
 // ============================================================================
@@ -59,9 +62,10 @@ class AiUnavailableError extends Error {
  * @returns {Promise<void>}
  */
 export async function initAiClient() {
-  await refreshHealth()
-  if (state.recheckTimer) clearInterval(state.recheckTimer)
-  state.recheckTimer = setInterval(refreshHealth, RECHECK_INTERVAL_MS)
+  state.probeEnabled = shouldProbeOnLoad()
+  bindBadgeProbe()
+  renderBadge()
+  if (state.probeEnabled) await checkHealthOnce()
 }
 
 /**
@@ -149,6 +153,41 @@ async function refreshHealth() {
   renderBadge()
 }
 
+/**
+ * Sprawdza proxy raz i utrzymuje polling tylko gdy proxy działa.
+ * @returns {Promise<void>}
+ */
+async function checkHealthOnce() {
+  await refreshHealth()
+  if (state.recheckTimer) clearInterval(state.recheckTimer)
+  state.recheckTimer = state.available ? setInterval(refreshHealth, RECHECK_INTERVAL_MS) : null
+}
+
+/**
+ * Czy można automatycznie sondować lokalny runtime przy starcie strony.
+ * @returns {boolean}
+ */
+function shouldProbeOnLoad() {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get(LOCAL_AI_QUERY_PARAM) === '1') return true
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return true
+  return false
+}
+
+/**
+ * Podpina ręczne sprawdzenie lokalnego AI do badge w headerze.
+ * @returns {void}
+ */
+function bindBadgeProbe() {
+  const badge = document.getElementById('ai-status-badge')
+  if (!badge || badge.dataset.bound === 'true') return
+  badge.dataset.bound = 'true'
+  badge.addEventListener('click', () => {
+    state.probeEnabled = true
+    checkHealthOnce()
+  })
+}
+
 // ============================================================================
 // UI BADGE
 // ============================================================================
@@ -161,13 +200,13 @@ function renderBadge() {
   const badge = document.getElementById('ai-status-badge')
   if (!badge) return
   if (state.available) {
-    badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700'
+    badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 cursor-pointer'
     badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>AI lokalny: ${escapeHtml(state.modelName)}`
     badge.title = advancedTitle()
   } else {
-    badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-700 border border-sky-200'
+    badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-700 border border-sky-200 cursor-pointer hover:bg-sky-200'
     badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>Panel online'
-    badge.title = 'Uruchom ./start.sh, aby podłączyć lokalny model do panelu'
+    badge.title = 'Kliknij, aby sprawdzić lokalny model po uruchomieniu ./start.sh'
   }
 }
 

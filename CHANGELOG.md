@@ -20,4 +20,5 @@
 - Added optional deployed Pages smoke checks to the no-npm acceptance script.
 - Added optional Supabase Auth/RLS/CRUD/audit smoke coverage for a configured test account.
 - Recorded successful deploy acceptance checks for dashboard task flow, AI messages, audit history, and RBAC.
+- Stopped automatic localhost proxy polling on public Pages to avoid console noise when local AI is not running.
 - Kept validation on plain Node commands without npm, bundlers, or package installation.

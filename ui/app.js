@@ -333,7 +333,7 @@ async function handleAuthenticated(user) {
   if (canManageEnrollmentTokens()) subscribeToEnrollmentTokens()
   subscribeToMonitorLog()
 
-  // Krok 3: sprawdź dostępność lokalnego AI proxy (badge w headerze)
+  // Krok 3: przygotuj badge lokalnego AI proxy
   initAiClient()
 
   // Krok 4: uruchom AI kierownika i agenta wykonawczego

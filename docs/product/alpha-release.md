@@ -58,3 +58,4 @@ Projekt może przejść z alpha do beta, gdy testy z `todo.md` 6.2, 6.3 i 6.4 s�
 - Task Detail pokazał 5 kroków timeline, 4 wiadomości AI, 4 wpisy audit logu i scalony `Run trace`.
 - Test RBAC z `window.supabase.from('tasks').select(...)` zwrócił tylko zadania bieżącego użytkownika w aktualnym zestawie danych.
 - Stary rekord `2 + 2` został anulowany i ponowiony z UI; zakończył się statusem `done`, `retry_count=1`, 5 wiadomościami i 5 wpisami historii.
+- Lokalny runtime nie jest sondowany automatycznie na publicznym Pages, więc brak uruchomionego proxy nie spamuje konsoli `ERR_CONNECTION_REFUSED`; badge `Panel online` można kliknąć po starcie `./start.sh`, a stały tryb opt-in działa przez `?localAi=1`.
