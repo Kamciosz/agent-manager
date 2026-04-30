@@ -11,7 +11,7 @@ Ten dokument zapisuje test w dwóch rolach: bardzo surowy tester oraz nietechnic
 | `config.json` zawierał hasło operatora w legacy flow | Uczeń z dostępem do pliku mógłby próbować wejść do panelu | Naprawione kierunkowo: nowy flow używa tokenu instalacyjnego i ograniczonej sesji stacji; legacy pokazuje ostrzeżenie migracyjne |
 | Brak jawnego RLS enable dla bazowych tabel w aktualnych migracjach | Polityki bez RLS nie bronią danych | Naprawione migracją jawnie włączającą RLS |
 | FORK_GUIDE obiecywał automatyczne migracje | Użytkownik kończył z pustą/niedziałającą bazą | Naprawione: deploy UI i migracje są rozdzielone |
-| Windows/macOS/Linux nie miały symetrycznych smoke testów | Poprawka jednej platformy mogła psuć drugą | Ograniczone: dodany unix smoke, Windows smoke już istnieje |
+| Windows/macOS/Linux i UI nie miały symetrycznych smoke testów | Poprawka jednej platformy albo panelu mogła psuć drugą | Ograniczone: dodany unix smoke, Windows smoke i static UI acceptance smoke |
 | Brak paczki instalacyjnej, repo wyglądało zbyt technicznie | Nietech użytkownik nie wie, co kliknąć | Ograniczone: workflow pakuje launchery do ZIP |
 | `app.js` nadal jest duży | Ryzyko regresji przy kolejnych zmianach UI | Częściowo: wydzielono `settings.js`; dalszy refaktor zostaje |
 
@@ -41,7 +41,7 @@ Ten dokument zapisuje test w dwóch rolach: bardzo surowy tester oraz nietechnic
 
 - [ ] GitHub Actions: deploy, static UI smoke, security scan, Windows smoke, unix smoke, package launchers przechodzą.
 - [ ] Supabase migrations zastosowane w testowym projekcie.
-- [ ] Bez sesji nie da się czytać `tasks`, `assignments`, `messages`, `agents`.
+- [ ] Bez sesji nie da się czytać `tasks`, `assignments`, `messages`, `agents`, `task_events`.
 - [ ] Użytkownik potrafi dodać polecenie bez znajomości JSON.
 - [ ] Stacja pokazuje się po uruchomieniu launchera i `--doctor` daje czytelny raport.
 - [ ] Paczka ZIP ma launcher na wierzchu i krótki `README-START.txt`.

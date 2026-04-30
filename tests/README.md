@@ -19,10 +19,13 @@ tests/
 
 ```bash
 node --test tests/*.test.js
+bash tests/acceptance/run.sh
 ```
 
 Testy używają wbudowanego `node:test`, więc nie wymagają `npm install`, `package.json` ani bundlera.
 
 ## Scenariusze akceptacyjne
 
-Szczegółowe scenariusze curl z asercjami: [docs/dev/testing.md](../docs/dev/testing.md)
+`tests/acceptance/run.sh` sprawdza brak `package.json`, składnię modułów UI, testy `node:test`, statyczne serwowanie `ui/` i krytyczne elementy Task Detail. Jeśli ustawione są `SUPABASE_URL` i `SUPABASE_ANON_KEY`, dodatkowo sprawdza, że anonimowy request REST nie widzi rekordów z tabel `tasks`, `assignments`, `messages`, `agents` i `task_events`.
+
+Szczegółowe scenariusze ręczne: [docs/dev/testing.md](../docs/dev/testing.md)
