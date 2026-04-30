@@ -51,7 +51,7 @@ Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa
 | Cel zmiany | Plik/katalog |
 |-----------|--------------|
 | Wygląd interfejsu | `ui/style.css` |
-| Logika UI, połączenie z Supabase | `ui/app.js` |
+| Logika UI, połączenie z Supabase | `ui/app.js`; renderowanie historii zmian: `ui/task-events.js` |
 | Schemat tabel w bazie danych | `supabase/migrations/` |
 | Polityki dostępu (kto widzi co) | `supabase/migrations/003_rls.sql` |
 | Konfiguracja deploy | `.github/workflows/deploy.yml` |

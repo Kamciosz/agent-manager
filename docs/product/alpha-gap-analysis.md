@@ -15,6 +15,7 @@ Status: aktualne po kolejnej rundzie stabilizacji alpha-plus
 | Anulowanie / ponowienie | Usunięcie porządkowało listę, ale nie dawało kontroli procesu | Dodano `Anuluj`, `Ponów` i `Ponów auto` z bezpiecznym lifecycle jobów stacji |
 | Filtrowanie listy | Przy większej liczbie poleceń tabela była za wolna operacyjnie | Dodano filtry po statusie, priorytecie i tekście dla listy oraz kafelków |
 | Historia zmian | Przy team-space brakowało odpowiedzi kto zmienił status albo edytował polecenie | Dodano tabelę `task_events`, trigger auditowy i panel `Historia zmian` w Task Detail |
+| Modularyzacja historii | `ui/app.js` rósł po dodaniu trace i historii zmian | Wydzielono renderowanie historii zmian do modułu `ui/task-events.js` |
 
 ## Nadal brakujące elementy przed beta
 
@@ -22,7 +23,7 @@ Status: aktualne po kolejnej rundzie stabilizacji alpha-plus
 |--------|-------------------|----------|
 | Izolacja danych | Decyzja: team-space zostaje albo przejście na widoczność per użytkownik/zespół | Obecne RLS jest zoptymalizowane pod alpha team-space, ale wymaga świadomej decyzji przed beta |
 | Testy E2E | Test logowania, tworzenia, usuwania, komunikacji ze stacją i statusów na deployu | Ręczna walidacja jest za słaba dla wydania beta |
-| Modularyzacja UI | Dalsze rozbicie `ui/app.js` po stabilizacji P0/P1 | Plik główny jest funkcjonalny, ale rośnie ryzyko regresji przy kolejnych zmianach |
+| Modularyzacja UI | Dalsze rozbicie `ui/app.js` po stabilizacji P0/P1 | Pierwszy fragment (`task-events.js`) jest wydzielony; większy refaktor nadal powinien iść małymi krokami po pełnych testach E2E |
 
 ## Znaczenie historii zmian
 

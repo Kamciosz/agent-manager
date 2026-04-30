@@ -33,6 +33,7 @@ check_js() {
   node --check --input-type=module < ui/manager.js
   node --check --input-type=module < ui/executor.js
   node --check --input-type=module < ui/settings.js
+  node --check --input-type=module < ui/task-events.js
   node --check --input-type=module < ui/labyrinth.js
   node --check local-ai-proxy/proxy.js local-ai-proxy/workstation-agent.js local-ai-proxy/runtime-schedule.js
 }

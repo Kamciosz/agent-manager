@@ -15,6 +15,7 @@ import { initManager, stopManager } from './manager.js'
 import { initExecutor, stopExecutor } from './executor.js'
 import { initAiClient } from './ai-client.js'
 import { applySettings, getRecentRepos, getSettings, rememberRepo, saveSettings } from './settings.js'
+import { runTraceAuditHtml, taskEventHtml } from './task-events.js'
 import {
   HERMES_LABYRINTH_GATES,
   HERMES_LABYRINTH_LABEL,
@@ -127,15 +128,6 @@ const WORKSTATION_JOB_LABELS = {
 const TASK_FEEDBACK_LABELS = {
   good: 'Dobry',
   bad: 'Zły',
-}
-
-const TASK_EVENT_LABELS = {
-  'task.created': 'Utworzono',
-  'task.edited': 'Edytowano',
-  'task.status_changed': 'Status',
-  'task.cancelled': 'Anulowano',
-  'task.retried': 'Ponowiono',
-  'task.deleted': 'Usunięto',
 }
 
 const RUNTIME_PRESETS = {
@@ -2360,7 +2352,7 @@ function renderRunTrace() {
 }
 
 function runTraceEventHtml(event, index) {
-  if (event.kind === 'audit') return runTraceAuditHtml(event.event, index)
+  if (event.kind === 'audit') return runTraceAuditHtml(event.event, index, { escapeHtml, formatDate })
   if (event.kind === 'job') return runTraceJobHtml(event.job, index)
   const message = event.message
   const isStation = event.kind === 'station'
@@ -2376,27 +2368,6 @@ function runTraceEventHtml(event, index) {
           <div class="text-xs text-slate-500">${formatDate(message.created_at)}</div>
         </div>
         <pre class="mt-2 whitespace-pre-wrap break-words text-sm text-slate-700 font-sans">${escapeHtml(truncateText(message.content || '', 800))}</pre>
-      </div>
-    </div>
-  `
-}
-
-/**
- * Renderuje zdarzenie audit logu we wspólnej osi Run trace.
- * @param {Object} event
- * @param {number} index
- * @returns {string}
- */
-function runTraceAuditHtml(event, index) {
-  return `
-    <div class="grid grid-cols-[72px_1fr] gap-3">
-      <div class="pt-3 text-right font-mono text-xs text-slate-400">${String(index + 1).padStart(2, '0')}</div>
-      <div class="rounded-lg border border-violet-200 bg-violet-50 p-3">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div class="font-semibold text-slate-900">Historia · ${escapeHtml(TASK_EVENT_LABELS[event.event_type] || event.event_type || 'zdarzenie')}</div>
-          <div class="text-xs text-slate-500">${formatDate(event.created_at)}</div>
-        </div>
-        <div class="mt-2 text-sm text-slate-700">${escapeHtml(event.summary || '')}</div>
       </div>
     </div>
   `
@@ -2527,7 +2498,7 @@ function renderTaskEvents(events) {
     renderRunTrace()
     return
   }
-  list.innerHTML = events.map((event) => taskEventHtml(event)).join('')
+  list.innerHTML = events.map((event) => taskEventHtml(event, { currentUserId: state.user?.id, escapeHtml, formatDate })).join('')
   renderRunTrace()
 }
 
@@ -2540,41 +2511,6 @@ function appendTaskEvent(event) {
   state.currentTaskEvents = [...state.currentTaskEvents, event]
     .sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime())
   renderTaskEvents(state.currentTaskEvents)
-}
-
-/**
- * Generuje HTML pojedynczego zdarzenia historii zmian.
- * @param {Object} event
- * @returns {string}
- */
-function taskEventHtml(event) {
-  const fields = Array.isArray(event.metadata?.changed_fields) ? event.metadata.changed_fields : []
-  const actor = taskEventActorLabel(event)
-  return `
-    <div class="rounded-lg border border-violet-100 bg-violet-50 px-4 py-3">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <div class="text-sm font-semibold text-slate-900">${escapeHtml(TASK_EVENT_LABELS[event.event_type] || event.event_type || 'Zdarzenie')}</div>
-        <div class="text-xs text-slate-500">${formatDate(event.created_at)}</div>
-      </div>
-      <div class="mt-1 text-sm text-slate-700">${escapeHtml(event.summary || '')}</div>
-      <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-        <span>${escapeHtml(actor)}</span>
-        ${fields.length ? `<span>· pola: ${escapeHtml(fields.join(', '))}</span>` : ''}
-      </div>
-    </div>
-  `
-}
-
-/**
- * Zwraca etykietę aktora zdarzenia historii zmian.
- * @param {Object} event
- * @returns {string}
- */
-function taskEventActorLabel(event) {
-  if (event.actor_user_id && state.user?.id && event.actor_user_id === state.user.id) return 'Ty'
-  if (event.actor_kind === 'station') return 'Stacja robocza'
-  if (event.actor_kind === 'user') return 'Użytkownik panelu'
-  return 'System'
 }
 
 function renderTaskConsole() {

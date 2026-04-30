@@ -15,4 +15,5 @@
 - Added task result feedback with `good`/`bad` ratings and a small manual regression dataset.
 - Added no-npm static UI smoke workflow for `ui/` changes.
 - Added no-npm acceptance smoke script with optional anonymous RLS checks.
+- Split Task Detail audit-history rendering into a small browser module.
 - Kept validation on plain Node commands without npm, bundlers, or package installation.
