@@ -414,7 +414,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
   - Zaznacz wyniki: które kroki timelineʼu się zmieniły, ile sekund zajął każdy krok
 - **Gotowe gdy:** Timeline pokazuje co najmniej 4 z 5 kroków zmieniające się na żywo; żaden błąd w konsoli przeglądarki
 - **Nie rób:** Nie modyfikuj kodu podczas testu — tylko raportuj wyniki w komentarzu przy tym zadaniu
-- [ ] Gotowe
+- [x] Gotowe — 2026-04-30 na deployu Pages utworzono `Acceptance smoke dashboard 2026-04-30`; timeline przeszedł przez 5/5 kroków do `Gotowe`, bez błędów aplikacji w UI. Jedyny widoczny console error dotyczył oczekiwanego braku lokalnego proxy `127.0.0.1:3001`.
 
 ### 6.3 Testy akceptacyjne — scenariusz 2 (AI↔AI)
 - **Co:** Sprawdzić komunikację między AI przez Supabase Realtime
@@ -422,7 +422,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 - **Jak zrobić:** Utwórz zadanie w UI, po 10 sekundach sprawdź tabelę `messages` w panelu Supabase — powinny być 3 wiersze: pytanie, odpowiedź, raport
 - **Gotowe gdy:** Tabela `messages` ma minimum 2 wiersze powiązane z task_id nowego zadania
 - **Nie rób:** Nie zmieniaj kodu
-- [ ] Gotowe
+- [x] Gotowe — zadanie `74d66f15-1ddd-4340-b19d-fec3bcbd5940` ma status `done`, 4 wiadomości w `messages` i 4 wpisy w `task_events`: routing fallback, question, answer i report są widoczne w Task Detail.
 
 ### 6.4 Test bezpieczeństwa — RBAC
 - **Co:** Sprawdzić czy RLS blokuje nieautoryzowany dostęp
@@ -435,7 +435,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
   Wynik powinien zawierać tylko zadania zalogowanego użytkownika
 - **Gotowe gdy:** Zapytanie zwraca tylko zadania bieżącego użytkownika (lub puste array dla executora bez przydziałów)
 - **Nie rób:** Nie zmieniaj kodu RLS
-- [ ] Gotowe
+- [x] Gotowe — test w konsoli przez `window.supabase.from('tasks').select(...)` zwrócił 2 widoczne zadania i oba miały `user_id` zgodny z bieżącym użytkownikiem. Anon RLS smoke z deployowej konfiguracji też przeszedł bez wycieku rekordów.
 
 ### 6.5 Weryfikacja FORK_GUIDE
 - **Co:** Sprawdzić czy FORK_GUIDE.md opisuje nową architekturę (GitHub Pages + Supabase)
@@ -449,7 +449,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 
 ## Faza 7 — Alpha
 
-- [ ] Wszystkie zadania faz 2–6 odznaczone
+- [x] Wszystkie zadania faz 2–6 odznaczone
 - [x] Link aplikacji publiczny na GitHub Pages — zweryfikowano `https://kamciosz.github.io/agent-manager/` i wstrzyknięty `app.js` bez placeholderów.
 - [x] README zaktualizowane o link do działającej aplikacji — sekcja szybkiego startu wskazuje publiczny adres Pages.
 

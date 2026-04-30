@@ -19,4 +19,5 @@
 - Restricted browser panel data access to explicit app roles instead of any non-workstation login.
 - Added optional deployed Pages smoke checks to the no-npm acceptance script.
 - Added optional Supabase Auth/RLS/CRUD/audit smoke coverage for a configured test account.
+- Recorded successful deploy acceptance checks for dashboard task flow, AI messages, audit history, and RBAC.
 - Kept validation on plain Node commands without npm, bundlers, or package installation.

@@ -42,7 +42,7 @@ Ten dokument zapisuje test w dwóch rolach: bardzo surowy tester oraz nietechnic
 
 - [ ] GitHub Actions: deploy, static UI smoke, security scan, Windows smoke, unix smoke, package launchers przechodzą.
 - [ ] Supabase migrations zastosowane w testowym projekcie.
-- [ ] Bez sesji ani jawnej roli panelu nie da się czytać `tasks`, `assignments`, `messages`, `agents`, `task_events`.
-- [ ] Użytkownik potrafi dodać polecenie bez znajomości JSON.
+- [x] Bez sesji ani jawnej roli panelu nie da się czytać `tasks`, `assignments`, `messages`, `agents`, `task_events`.
+- [x] Użytkownik potrafi dodać polecenie bez znajomości JSON.
 - [ ] Stacja pokazuje się po uruchomieniu launchera i `--doctor` daje czytelny raport.
 - [ ] Paczka ZIP ma launcher na wierzchu i krótki `README-START.txt`.

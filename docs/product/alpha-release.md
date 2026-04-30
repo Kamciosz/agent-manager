@@ -50,3 +50,11 @@ Architektura pozostaje prosta:
 ## Kryterium wyjścia z alpha
 
 Projekt może przejść z alpha do beta, gdy testy z `todo.md` 6.2, 6.3 i 6.4 są wykonane na deployu GitHub Pages, a ograniczenia team-space/RLS oraz ograniczenia darmowego planu Supabase są świadomie zaakceptowane albo zastąpione mocniejszą konfiguracją.
+
+## Weryfikacja deployu 2026-04-30
+
+- Konto panelu `kamciosz4you@gmail.com` zalogowało się na publicznym Pages i widziało dashboard `Połączono`.
+- Zadanie `Acceptance smoke dashboard 2026-04-30` utworzone przez UI zakończyło się statusem `done`.
+- Task Detail pokazał 5 kroków timeline, 4 wiadomości AI, 4 wpisy audit logu i scalony `Run trace`.
+- Test RBAC z `window.supabase.from('tasks').select(...)` zwrócił tylko zadania bieżącego użytkownika w aktualnym zestawie danych.
+- Stary rekord `2 + 2` został anulowany i ponowiony z UI; zakończył się statusem `done`, `retry_count=1`, 5 wiadomościami i 5 wpisami historii.
