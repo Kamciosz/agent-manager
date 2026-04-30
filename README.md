@@ -4,40 +4,13 @@ Status: **alpha**. Agent Manager to panel do dodawania poleceń dla AI, śledzen
 
 Najprościej: otwierasz aplikację, wpisujesz polecenie dla AI, a AI kierownik decyduje, czy wykona je przeglądarkowy agent, czy dostępna stacja robocza.
 
-## Co znajdziesz w głównym katalogu
-
-**Nie czytasz tej tabeli, jeśli używasz tylko aplikacji w przeglądarce.** Te pliki są dla operatora stacji roboczej (komputer, który ma uruchamiać AI lokalnie).
-
-### Twój system → kliknij dwa razy ten plik
-
-| Twój system | Uruchom stację | Zaktualizuj stację |
-|-------------|----------------|--------------------|
-| 🍎 macOS | dwuklik [start.command](start.command) | dwuklik [Aktualizuj.command](Aktualizuj.command) |
-| 🪟 Windows 10/11 | dwuklik [start.bat](start.bat) | dwuklik [Aktualizuj.bat](Aktualizuj.bat) |
-| 🐧 Linux (terminal) | `./start.sh` | `./update.sh` |
-
-To wszystko, co operator musi wiedzieć. Pozostałe pliki są tylko silnikiem — nie klikaj ich, nie usuwaj.
-
-### Pozostałe pliki w katalogu (do wglądu)
-
-| Plik / folder | Co to jest |
-|---------------|-----------|
-| [README.md](README.md) | Ten dokument. |
-| [FORK_GUIDE.md](FORK_GUIDE.md) | Instrukcja dla osoby, która zakłada własną kopię systemu. |
-| [CHANGELOG.md](CHANGELOG.md) | Lista zmian w kolejnych wersjach. |
-| [SECURITY.md](SECURITY.md) | Jak zgłosić problem bezpieczeństwa. |
-| [ui/](ui/) | Aplikacja webowa (to, co widzisz w przeglądarce). |
-| [local-ai-proxy/](local-ai-proxy/) | Lokalny program stacji roboczej. |
-| [supabase/](supabase/) | Konfiguracja bazy danych (instaluje właściciel forka). |
-| [docs/](docs/) | Pełna dokumentacja produktu, architektury i developera. |
-| [tests/](tests/), [infra/](infra/) | Testy i notatki techniczne. |
-| [launcher/](launcher/) | Silnik launchera dla Windows (używany automatycznie przez `start.bat`). |
+Jeśli chcesz tylko korzystać z gotowej aplikacji, czytaj przede wszystkim sekcję **Szybki start**. Jeśli instalujesz własną kopię albo lokalną stację roboczą, niżej są dodatkowe instrukcje.
 
 Wewnętrzne plany rozwoju są w [docs/internal/](docs/internal/) — nie musisz tam zaglądać, żeby używać aplikacji.
 
 ## Szybki start: używam aplikacji
 
-1. Otwórz swoją stronę GitHub Pages po deployu. Każdy fork ma własny adres, który znajdziesz w **Settings → Pages**.
+1. Otwórz adres swojej aplikacji. Jeśli robisz własną kopię, znajdziesz go w **Settings → Pages**.
 2. Zaloguj się kontem, któremu właściciel Supabase nadał rolę panelową (`operator`, `teacher`, `manager` albo `admin`).
 3. Kliknij **Dodaj polecenie**.
 4. Wpisz, co AI ma zrobić, albo wybierz szablon **Hermes Labyrinth** dla pracy przez mapę ról, bram i testów.
@@ -53,7 +26,7 @@ Szczegóły: [docs/product/hermes-labyrinth.md](docs/product/hermes-labyrinth.md
 
 ## Dodaj lokalną stację roboczą
 
-Stacja robocza to komputer, który uruchamia lokalny model GGUF przez llama.cpp i odbiera polecenia z aplikacji.
+Ta sekcja jest dla osoby, która uruchamia lokalny model GGUF na konkretnym komputerze. Jeśli korzystasz tylko z aplikacji w przeglądarce, możesz ją pominąć.
 
 1. Pobierz paczkę launchera z GitHub Actions albo sklonuj repo.
 2. Uruchom plik dla swojego systemu:
@@ -92,7 +65,7 @@ start.bat --update
 
 ## Dla właściciela forka
 
-Zobacz [FORK_GUIDE.md](FORK_GUIDE.md). W skrócie:
+Jeśli zakładasz własną kopię, najprościej zacznij od [FORK_GUIDE.md](FORK_GUIDE.md). W skrócie:
 
 1. Fork repozytorium.
 2. Utwórz projekt Supabase.
