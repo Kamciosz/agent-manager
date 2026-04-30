@@ -16,4 +16,5 @@
 - Added no-npm static UI smoke workflow for `ui/` changes.
 - Added no-npm acceptance smoke script with optional anonymous RLS checks.
 - Split Task Detail audit-history rendering into a small browser module.
+- Restricted browser panel data access to explicit app roles instead of any non-workstation login.
 - Kept validation on plain Node commands without npm, bundlers, or package installation.

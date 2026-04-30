@@ -136,25 +136,26 @@ Manualny test UI po tej rundzie:
 4. Dodaj polecenie z repo i jedną stacją.
 5. Sprawdź, czy formularz nie wymaga JSON i czy tooltipy `?` wyjaśniają pola.
 6. W **Stacje robocze** użyj konfiguratora i sprawdź, czy generuje instrukcję `--config`.
-7. Wybierz szablon **Hermes Labyrinth** i sprawdź, czy krok 2 pokazuje mapę bram oraz zapisuje workflow w kontekście zadania.
-8. Na MacBooku operatora uruchom `./start.sh --no-pull` i sprawdź w podsumowaniu, że `stationMode` to `operator`, a `station agent` jest pominięty.
-9. W **Stacje robocze** sprawdź, że MacBook operatora ma typ `operator`, nie pojawia się w planie sali i nie jest dostępny przy wyborze stacji dla polecenia.
-10. Ułóż salę `226` jako 4 x 6 i odśwież stronę; plan nadal pokazuje puste pola oraz podpisy w stylu `226_2_5`.
-11. Usuń siatkę sali `226`; rekordy stacji mają zostać, ale sala/pozycje powinny się wyczyścić i trafić do nieprzypisanych.
-12. W konfiguratorze stacji wybierz tryb `operator`, ustaw porty, timeout, `18:00-08:00`, `wait`, `finish-current`, dump i wygeneruj instrukcję; podgląd `config.json` ma zawierać te pola.
-13. W **Polecenia** przełącz widok z listy na kafelki i utwórz polecenie, wybierając stację kafelkiem.
-14. Użyj filtrów poleceń po statusie, priorytecie i tekście; ten sam wynik ma być widoczny w liście i kafelkach.
-15. Jako zwykły użytkownik utwórz 3 aktywne polecenia; czwarte powinno zostać odrzucone czytelnym komunikatem o limicie.
-16. Dla aktywnego polecenia kliknij `Anuluj`; status ma przejść na `Anulowane`, a aktywny `workstation_job` nie może później przepisać zadania na `Gotowe`.
-17. Dla polecenia `Błąd` albo `Anulowane` kliknij `Ponów`; licznik ponowień ma wzrosnąć, status wrócić na `Oczekuje`, a manager ma ponownie przydzielić wykonanie.
-18. Wyślij do stacji komendy `Odśwież`, `Wstrzymaj`, `Wznów` i `Aktualizuj` z tabeli stacji oraz z monitora; w logu stacji wynik powinien być podpisany jako `system`.
-19. Wyślij do stacji komendę `Smoke`; wynik ma pokazać odpowiedź `/health/smoke`, model, backend i czas generowania albo czytelny błąd połączenia.
-20. W konfiguratorze stacji wybierz preset, zmień `messageBatchSize` i `offlineQueueMax`, kliknij `Rekonfiguruj`; odpowiedź systemowa ma pokazać zastosowane pola, a następny heartbeat ma odświeżyć metadane.
-21. Odłącz stację od internetu/Supabase, wyślij wiadomość operacyjną i przywróć sieć; `offlineQueueDepth` ma wzrosnąć, a potem spaść po flushu.
-22. W szczegółach zadania sprawdź `Run trace` i `Historia zmian`; lista trace ma łączyć audit log, joby stacji, wiadomości AI i wiadomości runtime w kolejności czasu.
-23. Dla zadania po błędzie kliknij `Ponów auto`; `requested_workstation_id` i `requested_model_name` mają się wyczyścić, a manager ma ponownie dobrać stację.
-24. W konfiguratorze KV wybierz `iso3/iso3` albo `planar3/f16`; stock llama.cpp ma spaść do `q8_0/q8_0`, a kompatybilny build RotorQuant ma przyjąć osobne typy K/V.
-25. Utwórz proste polecenie `2 + 2`; odpowiedź stacji ma zawierać bezpośredni wynik, bez przepisywania pól `Tytuł`, `Opis`, `Repo` ani `Kontekst`.
+7. Zaloguj konto bez `app_metadata.role` i sprawdź, że UI wylogowuje je z komunikatem o braku roli panelu.
+8. Wybierz szablon **Hermes Labyrinth** i sprawdź, czy krok 2 pokazuje mapę bram oraz zapisuje workflow w kontekście zadania.
+9. Na MacBooku operatora uruchom `./start.sh --no-pull` i sprawdź w podsumowaniu, że `stationMode` to `operator`, a `station agent` jest pominięty.
+10. W **Stacje robocze** sprawdź, że MacBook operatora ma typ `operator`, nie pojawia się w planie sali i nie jest dostępny przy wyborze stacji dla polecenia.
+11. Ułóż salę `226` jako 4 x 6 i odśwież stronę; plan nadal pokazuje puste pola oraz podpisy w stylu `226_2_5`.
+12. Usuń siatkę sali `226`; rekordy stacji mają zostać, ale sala/pozycje powinny się wyczyścić i trafić do nieprzypisanych.
+13. W konfiguratorze stacji wybierz tryb `operator`, ustaw porty, timeout, `18:00-08:00`, `wait`, `finish-current`, dump i wygeneruj instrukcję; podgląd `config.json` ma zawierać te pola.
+14. W **Polecenia** przełącz widok z listy na kafelki i utwórz polecenie, wybierając stację kafelkiem.
+15. Użyj filtrów poleceń po statusie, priorytecie i tekście; ten sam wynik ma być widoczny w liście i kafelkach.
+16. Jako zwykły użytkownik utwórz 3 aktywne polecenia; czwarte powinno zostać odrzucone czytelnym komunikatem o limicie.
+17. Dla aktywnego polecenia kliknij `Anuluj`; status ma przejść na `Anulowane`, a aktywny `workstation_job` nie może później przepisać zadania na `Gotowe`.
+18. Dla polecenia `Błąd` albo `Anulowane` kliknij `Ponów`; licznik ponowień ma wzrosnąć, status wrócić na `Oczekuje`, a manager ma ponownie przydzielić wykonanie.
+19. Wyślij do stacji komendy `Odśwież`, `Wstrzymaj`, `Wznów` i `Aktualizuj` z tabeli stacji oraz z monitora; w logu stacji wynik powinien być podpisany jako `system`.
+20. Wyślij do stacji komendę `Smoke`; wynik ma pokazać odpowiedź `/health/smoke`, model, backend i czas generowania albo czytelny błąd połączenia.
+21. W konfiguratorze stacji wybierz preset, zmień `messageBatchSize` i `offlineQueueMax`, kliknij `Rekonfiguruj`; odpowiedź systemowa ma pokazać zastosowane pola, a następny heartbeat ma odświeżyć metadane.
+22. Odłącz stację od internetu/Supabase, wyślij wiadomość operacyjną i przywróć sieć; `offlineQueueDepth` ma wzrosnąć, a potem spaść po flushu.
+23. W szczegółach zadania sprawdź `Run trace` i `Historia zmian`; lista trace ma łączyć audit log, joby stacji, wiadomości AI i wiadomości runtime w kolejności czasu.
+24. Dla zadania po błędzie kliknij `Ponów auto`; `requested_workstation_id` i `requested_model_name` mają się wyczyścić, a manager ma ponownie dobrać stację.
+25. W konfiguratorze KV wybierz `iso3/iso3` albo `planar3/f16`; stock llama.cpp ma spaść do `q8_0/q8_0`, a kompatybilny build RotorQuant ma przyjąć osobne typy K/V.
+26. Utwórz proste polecenie `2 + 2`; odpowiedź stacji ma zawierać bezpośredni wynik, bez przepisywania pól `Tytuł`, `Opis`, `Repo` ani `Kontekst`.
 
 ---
 

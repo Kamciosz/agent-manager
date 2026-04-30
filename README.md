@@ -7,7 +7,7 @@ Najprościej: otwierasz aplikację, wpisujesz polecenie dla AI, a AI kierownik d
 ## Szybki start: używam aplikacji
 
 1. Otwórz aplikację: https://kamciosz.github.io/agent-manager/
-2. Zarejestruj konto emailem i hasłem.
+2. Zaloguj się kontem, któremu właściciel Supabase nadał rolę panelową (`operator`, `teacher`, `manager` albo `admin`).
 3. Kliknij **Dodaj polecenie**.
 4. Wpisz, co AI ma zrobić, albo wybierz szablon **Hermes Labyrinth** dla pracy przez mapę ról, bram i testów.
 5. Obserwuj status w czasie rzeczywistym w widoku **Monitor** albo w szczegółach polecenia.
@@ -75,6 +75,7 @@ Deploy GitHub Pages publikuje UI. Migracje bazy są jawne i nie są wykonywane p
 ## Bezpieczeństwo alpha
 
 - Publiczny `anon/publishable key` Supabase może być użyty w frontendzie, ale dane chroni RLS.
+- Konto przeglądarkowego panelu musi mieć jawne `app_metadata.role`: `admin`, `manager`, `operator`, `teacher`, `executor` albo `viewer`. Samo założenie konta nie daje dostępu do danych panelu.
 - Launchery nie mają już wpisanego domyślnego projektu Supabase. Każdy fork podaje własny URL i key.
 - Stacje używają jednorazowego tokenu instalacyjnego z dashboardu. Hasło operatora nie jest zapisywane lokalnie; po aktywacji stacja dostaje ograniczoną sesję techniczną.
 - Supabase service-role key jest potrzebny tylko w sekretach Edge Functions i nie może trafić do GitHub Pages, launcherów ani `config.json`.

@@ -46,12 +46,14 @@ git push → GitHub Actions uruchamia się automatycznie
 
 Schemat bazy danych (tabele, RLS, kanały) jest przechowywany jako pliki SQL w repozytorium, ale obecny workflow Pages go nie stosuje. Migracje wykonujemy osobno przez Supabase tools albo SQL editor, a potem commitujemy plik migracji jako zapis źródła prawdy.
 
-### Co robią nowi użytkownicy / agenci (zero konfiguracji)
+### Co robią nowi użytkownicy panelu
 
 1. Otwierają link aplikacji (GitHub Pages).
-2. Rejestrują się emailem i hasłem — Supabase Auth obsługuje to automatycznie.
-3. Manager przypisuje im rolę w UI.
-4. Gotowe — mogą korzystać z systemu.
+2. Logują się kontem Supabase Auth.
+3. Właściciel forka nadaje im jawną rolę panelu w `app_metadata.role`: `admin`, `manager`, `operator`, `teacher`, `executor` albo `viewer`.
+4. Po ponownym logowaniu RLS wpuszcza konto do współdzielonego team-space.
+
+Konto bez roli może się uwierzytelnić, ale nie czyta ani nie zmienia danych aplikacji. Stacje robocze nie używają haseł operatora; dostają rolę techniczną `workstation` przez token instalacyjny.
 
 Nikt poza właścicielem projektu nie widzi żadnego panelu Supabase ani nie dotyka żadnych kluczy API.
 
@@ -114,8 +116,8 @@ Free tier Supabase wystarcza dla MVP: 50 000 wiadomości real-time/mies., 500 MB
 ## Bezpieczeństwo
 
 - Całość przez HTTPS/WSS — ruch szyfrowany, certyfikat zarządzany przez Supabase.
-- Każdy użytkownik i agent loguje się przez Supabase Auth — konto email/hasło lub OAuth.
-- Row Level Security (RLS) w bazie — każdy widzi tylko dane swojego tenantu.
+- Użytkownicy panelu logują się przez Supabase Auth, ale dostęp do danych wymaga jawnej roli w `app_metadata.role`.
+- Row Level Security (RLS) w bazie — beta działa jako współdzielony team-space dla ról panelu; techniczne konta `workstation` mają osobne, ograniczone polityki.
 - Tokeny JWT generowane i weryfikowane przez Supabase — nie trzeba tego pisać.
 - Klucz API (`anon/publishable key`) jest przeznaczony do frontendu, ale nie commitujemy w launcherach domyślnego projektu Supabase. Własny fork podaje swój key przez GitHub Secrets albo lokalny `config.json`, a dostęp do danych kontroluje RLS.
 

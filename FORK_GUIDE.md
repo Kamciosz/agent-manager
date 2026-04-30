@@ -101,12 +101,21 @@ Deploy robi tylko dwie rzeczy:
 
 Nie dotyka schematu Supabase.
 
-## Krok 9 — pierwsze konto
+## Krok 9 — pierwsze konto i rola panelu
 
 1. Otwórz swoją aplikację Pages.
 2. Zarejestruj konto.
-3. W widoku **Stacje robocze** wygeneruj token instalacyjny.
-4. Dodaj pierwsze polecenie albo podłącz stację roboczą.
+3. W Supabase otwórz **Authentication → Users**, wybierz konto i w **Raw app meta data** ustaw rolę panelu, np.:
+
+```json
+{ "role": "operator" }
+```
+
+4. Wyloguj się i zaloguj ponownie w aplikacji Pages, żeby token JWT dostał nową rolę.
+5. W widoku **Stacje robocze** wygeneruj token instalacyjny.
+6. Dodaj pierwsze polecenie albo podłącz stację roboczą.
+
+Konta bez roli panelowej mogą się uwierzytelnić w Supabase, ale RLS nie pozwoli im czytać ani zmieniać danych aplikacji. To chroni panel, jeśli uczeń otworzy publiczny adres Pages i spróbuje samodzielnie utworzyć konto.
 
 ## Krok 10 — lokalna stacja robocza
 

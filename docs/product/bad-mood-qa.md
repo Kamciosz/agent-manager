@@ -10,6 +10,7 @@ Ten dokument zapisuje test w dwóch rolach: bardzo surowy tester oraz nietechnic
 | Lokalny proxy miał CORS `*` | Dowolna strona mogła próbować wołać lokalny LLM użytkownika | Naprawione: allowlista originów |
 | `config.json` zawierał hasło operatora w legacy flow | Uczeń z dostępem do pliku mógłby próbować wejść do panelu | Naprawione kierunkowo: nowy flow używa tokenu instalacyjnego i ograniczonej sesji stacji; legacy pokazuje ostrzeżenie migracyjne |
 | Brak jawnego RLS enable dla bazowych tabel w aktualnych migracjach | Polityki bez RLS nie bronią danych | Naprawione migracją jawnie włączającą RLS |
+| Samo zalogowanie mogło wyglądać jak dostęp panelowy | Uczeń mógł spróbować utworzyć konto na publicznym Pages | Naprawione: RLS uznaje tylko jawne role panelu w `app_metadata.role` |
 | FORK_GUIDE obiecywał automatyczne migracje | Użytkownik kończył z pustą/niedziałającą bazą | Naprawione: deploy UI i migracje są rozdzielone |
 | Windows/macOS/Linux i UI nie miały symetrycznych smoke testów | Poprawka jednej platformy albo panelu mogła psuć drugą | Ograniczone: dodany unix smoke, Windows smoke i static UI acceptance smoke |
 | Brak paczki instalacyjnej, repo wyglądało zbyt technicznie | Nietech użytkownik nie wie, co kliknąć | Ograniczone: workflow pakuje launchery do ZIP |
@@ -41,7 +42,7 @@ Ten dokument zapisuje test w dwóch rolach: bardzo surowy tester oraz nietechnic
 
 - [ ] GitHub Actions: deploy, static UI smoke, security scan, Windows smoke, unix smoke, package launchers przechodzą.
 - [ ] Supabase migrations zastosowane w testowym projekcie.
-- [ ] Bez sesji nie da się czytać `tasks`, `assignments`, `messages`, `agents`, `task_events`.
+- [ ] Bez sesji ani jawnej roli panelu nie da się czytać `tasks`, `assignments`, `messages`, `agents`, `task_events`.
 - [ ] Użytkownik potrafi dodać polecenie bez znajomości JSON.
 - [ ] Stacja pokazuje się po uruchomieniu launchera i `--doctor` daje czytelny raport.
 - [ ] Paczka ZIP ma launcher na wierzchu i krótki `README-START.txt`.

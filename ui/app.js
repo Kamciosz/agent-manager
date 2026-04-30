@@ -107,6 +107,9 @@ const WORKSTATION_KIND = {
   OPERATOR: 'operator',
 }
 
+const APP_USER_ROLES = ['admin', 'manager', 'operator', 'teacher', 'executor', 'viewer']
+const ENROLLMENT_MANAGER_ROLES = ['admin', 'manager', 'operator', 'teacher']
+
 const WORKSTATION_COMMAND_LABELS = {
   update: 'Aktualizuj',
   pause: 'Wstrzymaj',
@@ -306,6 +309,13 @@ function showAuthScreen() {
  */
 async function handleAuthenticated(user) {
   cleanupGlobalSubscriptions()
+  if (!isAuthorizedAppUser(user)) {
+    cleanupAppSession()
+    showAuthScreen()
+    showToast('Konto nie ma jeszcze roli panelu. Poproś operatora o nadanie roli teacher/operator w Supabase.', TOAST_TYPE.ERROR)
+    await supabase.auth.signOut()
+    return
+  }
   state.user = user
   document.getElementById('auth-screen').classList.add('hidden')
   document.getElementById('app-screen').classList.remove('hidden')
@@ -1224,7 +1234,15 @@ function classroomLayoutsFor(workstations) {
 }
 
 function canManageEnrollmentTokens() {
-  return state.user && state.user.app_metadata?.role !== 'workstation' && state.user.user_metadata?.role !== 'workstation'
+  return ENROLLMENT_MANAGER_ROLES.includes(userAppRole(state.user))
+}
+
+function userAppRole(user) {
+  return user?.app_metadata?.role || ''
+}
+
+function isAuthorizedAppUser(user) {
+  return APP_USER_ROLES.includes(userAppRole(user))
 }
 
 function renderEnrollmentPanelVisibility() {

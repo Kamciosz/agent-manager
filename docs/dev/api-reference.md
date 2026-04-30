@@ -131,28 +131,29 @@ Supabase Realtime pozwala AI-om komunikować się na żywo przez kanały. Każdy
 
 ## Logowanie i role
 
-Supabase Auth zarządza kontami użytkowników i agentów wykonawczych. Role są zapisane w metadanych konta.
+Supabase Auth zarządza kontami panelu i technicznymi sesjami stacji. Dostęp panelowy nie wynika z samego logowania: RLS przepuszcza tylko jawne role zapisane w `app_metadata.role`.
 
 | Rola | Kto ma | Co może |
 |------|--------|---------|
-| `manager` | Właściciel projektu | Wszystko: zadania, przydziały, profile, raporty |
-| `executor` | Agent wykonawczy / użytkownik-wykonawca | Tylko swoje przydziały i aktualizacje statusu |
-| `viewer` | Obserwator | Tylko odczyt zadań |
+| `admin`, `manager` | Właściciel projektu / administracja | Pełny panel team-space |
+| `operator`, `teacher` | Operator sali / nauczyciel | Panel, tokeny instalacyjne stacji i zarządzanie poleceniami |
+| `executor`, `viewer` | Konto ograniczone w przyszłych wariantach | Dostęp panelowy bez tokenów instalacyjnych stacji |
+| `workstation` | Techniczna sesja stacji | Tylko własna stacja, joby i wiadomości wymagane do wykonania poleceń |
 
-Role są przypisywane przez managera w UI — żadnego kodu, żadnego terminala.
+Role panelu nadaje właściciel forka w Supabase Authentication → Users → Raw app meta data. Konto bez roli nie czyta danych aplikacji.
 
 ---
 
 ## Bezpieczeństwo — Row Level Security (RLS)
 
-Każda tabela ma polityki RLS ustawione w panelu Supabase. Działają automatycznie — baza sama filtruje dane przy każdym zapytaniu.
+Każda tabela ma polityki RLS ustawione migracjami SQL. Działają automatycznie — baza sama filtruje dane przy każdym zapytaniu.
 
 | Tabela | Reguła |
 |--------|--------|
-| `tasks` | Manager widzi wszystkie; executor tylko swoje przydzielone; viewer tylko do odczytu |
-| `assignments` | Agent wykonawczy widzi tylko swoje przydziały |
-| `messages` | AI widzi tylko wiadomości do siebie lub od siebie |
-| `agents` | Manager może edytować; executor widzi listę |
+| `tasks`, `assignments`, `messages`, `agents` | Współdzielony team-space dla jawnych ról panelu; konta bez roli i `workstation` nie czytają tych danych |
+| `workstations`, `workstation_jobs`, `workstation_messages` | Panel widzi salę; stacja widzi i aktualizuje tylko własny zakres techniczny |
+| `workstation_enrollment_tokens` | Twórca tokenu panelowego widzi i unieważnia własne tokeny |
+| `task_events`, `task_feedback` | Dostęp tylko dla ról panelu, z ograniczeniami właściciela przy feedbacku |
 
 ## Konfiguracja połączenia
 
@@ -424,15 +425,16 @@ const { data: { user } } = await supabase.auth.getUser()
 
 ## Role i bezpieczeństwo (Row Level Security)
 
-Każdy użytkownik widzi tylko to co powinien — kontrolowane przez polityki RLS w bazie danych Supabase. Nie trzeba nic robić w kodzie aplikacji — Supabase automatycznie filtruje dane na podstawie zalogowanego użytkownika.
+RLS używa `app_metadata.role`. W becie panel jest współdzielonym team-space dla jawnych ról panelu; samo utworzenie konta nie daje dostępu do danych. Techniczne konta stacji mają rolę `workstation` i oddzielne polityki.
 
 | Rola | Co widzi |
 |------|---------|
-| `manager` | Wszystkie zadania, wszyscy agenci, pełne raporty |
-| `executor` | Tylko swoje przydziały i zadania do których jest przypisany |
-| `viewer` | Zadania tylko do odczytu (bez możliwości edycji) |
+| `admin`, `manager`, `operator`, `teacher` | Współdzielony panel, polecenia, stacje i tokeny instalacyjne zgodnie z UI |
+| `executor`, `viewer` | Dostęp panelowy bez zarządzania tokenami instalacyjnymi stacji |
+| `workstation` | Tylko własna stacja, przypisane joby i wiadomości techniczne |
+| brak roli | Brak dostępu do danych aplikacji mimo poprawnego logowania |
 
-Role są przypisywane przez managera w UI — nie przez kod.
+Role panelu nadaje właściciel forka w Supabase Authentication → Users → Raw app meta data, np. `{ "role": "operator" }`.
 
 
 ---
