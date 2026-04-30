@@ -35,12 +35,23 @@ try {
   process.exit(1)
 }
 
+/**
+ * Pobiera wymaganą zmienną środowiskową.
+ * @param {string} name
+ * @returns {string}
+ */
 function requiredEnv(name) {
   const value = process.env[name]
   if (!value) throw new Error(`${name} is required`)
   return value
 }
 
+/**
+ * Loguje testowe konto Supabase przez Auth REST API.
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<Object>}
+ */
 async function signIn(email, password) {
   const data = await request('/auth/v1/token?grant_type=password', {
     method: 'POST',
@@ -50,6 +61,11 @@ async function signIn(email, password) {
   return data
 }
 
+/**
+ * Sprawdza, czy konto testowe ma jawną rolę panelu.
+ * @param {Object} user
+ * @returns {void}
+ */
 function assertAppRole(user) {
   const role = user?.app_metadata?.role || ''
   if (!APP_USER_ROLES.includes(role)) {
@@ -57,6 +73,11 @@ function assertAppRole(user) {
   }
 }
 
+/**
+ * Tworzy zadanie testowe przez REST API jako zalogowany użytkownik.
+ * @param {Object} session
+ * @returns {Promise<Object>}
+ */
 async function createSmokeTask(session) {
   const title = `Acceptance smoke ${new Date().toISOString()}`
   const rows = await request('/rest/v1/tasks?select=id,title,status,user_id,created_at', {
@@ -78,6 +99,12 @@ async function createSmokeTask(session) {
   return task
 }
 
+/**
+ * Czeka aż trigger auditowy zapisze zdarzenie utworzenia zadania.
+ * @param {string} token
+ * @param {string} taskId
+ * @returns {Promise<void>}
+ */
 async function waitForTaskCreatedEvent(token, taskId) {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
     const events = await request(`/rest/v1/task_events?task_id=eq.${encodeURIComponent(taskId)}&select=event_type,summary,created_at&order=created_at.asc`, { token })
@@ -87,6 +114,12 @@ async function waitForTaskCreatedEvent(token, taskId) {
   throw new Error(`task.created audit event was not visible for task ${taskId}`)
 }
 
+/**
+ * Usuwa zadanie testowe przez REST API.
+ * @param {string} token
+ * @param {string} taskId
+ * @returns {Promise<void>}
+ */
 async function deleteTask(token, taskId) {
   await request(`/rest/v1/tasks?id=eq.${encodeURIComponent(taskId)}`, {
     method: 'DELETE',
@@ -94,11 +127,23 @@ async function deleteTask(token, taskId) {
   })
 }
 
+/**
+ * Potwierdza, że zadanie testowe nie jest już widoczne po usunięciu.
+ * @param {string} token
+ * @param {string} taskId
+ * @returns {Promise<void>}
+ */
 async function assertTaskDeleted(token, taskId) {
   const rows = await request(`/rest/v1/tasks?id=eq.${encodeURIComponent(taskId)}&select=id`, { token })
   if (rows.length !== 0) throw new Error(`Task ${taskId} is still visible after delete`)
 }
 
+/**
+ * Próbuje posprzątać zadanie testowe po nieudanym przebiegu.
+ * @param {string} taskId
+ * @param {string} token
+ * @returns {Promise<void>}
+ */
 async function cleanupTask(taskId, token) {
   await fetch(`${config.supabaseUrl}/rest/v1/tasks?id=eq.${encodeURIComponent(taskId)}`, {
     method: 'DELETE',
@@ -109,6 +154,12 @@ async function cleanupTask(taskId, token) {
   })
 }
 
+/**
+ * Wykonuje żądanie do Supabase Auth/REST API.
+ * @param {string} path
+ * @param {Object} [options]
+ * @returns {Promise<any>}
+ */
 async function request(path, options = {}) {
   const response = await fetch(`${config.supabaseUrl}${path}`, {
     method: options.method || 'GET',
@@ -126,6 +177,11 @@ async function request(path, options = {}) {
   return data
 }
 
+/**
+ * Czeka podaną liczbę milisekund.
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
