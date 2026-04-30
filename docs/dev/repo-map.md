@@ -8,7 +8,7 @@ Gdzie co leży i co zmieniać.
 
 Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa zewnętrzna. W repozytorium żyje tylko:
 
-- **interfejs webowy** (pliki HTML/JS/CSS) — budowany i hostowany przez GitHub Pages
+- **interfejs webowy** (statyczne HTML/JS) — publikowany przez GitHub Pages bez bundlera
 - **schemat bazy danych** (pliki SQL) — wersjonowany w repo i stosowany przez Supabase tools / ręczną migrację
 - **dokumentacja** — wszystko w `docs/`
 
@@ -23,14 +23,16 @@ Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa
 ├── ui/                     — interfejs webowy (GitHub Pages)
 │   ├── index.html          — strona główna / dashboard
 │   ├── app.js              — logika aplikacji (połączenie z Supabase)
-│   └── style.css           — wygląd
+│   ├── ai-client.js        — lokalny proxy AI / fallback
+│   ├── manager.js          — przeglądarkowy kierownik AI
+│   ├── executor.js         — przeglądarkowy executor
+│   ├── settings.js         — preferencje UI
+│   ├── task-events.js      — renderowanie historii zmian zadania
+│   └── labyrinth.js        — preset Hermes Labyrinth
 │
 ├── supabase/               — konfiguracja backendu
-│   ├── migrations/         — pliki SQL ze schematem bazy danych
-│   │   ├── 001_tasks.sql   — tabela zadań
-│   │   ├── 002_agents.sql  — tabela agentów i profili
-│   │   └── 003_rls.sql     — polityki bezpieczeństwa (RLS)
-│   └── migrations/         — migracje SQL stosowane poza workflow Pages
+│   ├── migrations/         — migracje SQL stosowane poza workflow Pages
+│   └── functions/          — Edge Functions dla tokenów instalacyjnych stacji
 │
 ├── .github/
 │   └── workflows/
@@ -50,10 +52,10 @@ Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa
 
 | Cel zmiany | Plik/katalog |
 |-----------|--------------|
-| Wygląd interfejsu | `ui/style.css` |
-| Logika UI, połączenie z Supabase | `ui/app.js`; renderowanie historii zmian: `ui/task-events.js` |
+| Wygląd interfejsu | `ui/index.html` i klasy Tailwind CDN |
+| Logika UI, połączenie z Supabase | `ui/app.js` oraz małe moduły w `ui/*.js` |
 | Schemat tabel w bazie danych | `supabase/migrations/` |
-| Polityki dostępu (kto widzi co) | `supabase/migrations/003_rls.sql` |
+| Polityki dostępu (kto widzi co) | najnowsze migracje w `supabase/migrations/` |
 | Konfiguracja deploy | `.github/workflows/deploy.yml` |
 | Dokumentacja | `docs/` |
 
@@ -68,8 +70,6 @@ Migracje SQL z `supabase/migrations/` nie są wykonywane przez workflow Pages.
 Stosuj je przez Supabase tools albo panel SQL przed wdrożeniem funkcji zależnych od nowego schematu.
 
 Szczegółowy setup: [FORK_GUIDE.md](../../FORK_GUIDE.md)
-| Infrastruktura (nginx, TLS) | `infra/` |
-| Testy | `tests/` |
 
 ## Świadome decyzje architektoniczne
 

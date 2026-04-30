@@ -67,6 +67,29 @@ check_static_ui() {
   grep -q 'id="task-events-list"' /tmp/agent-manager-acceptance.html
 }
 
+check_deployed_pages() {
+  if [[ -z "${PAGES_URL:-}" ]]; then
+    log 'skipping deployed Pages check because PAGES_URL is not set'
+    return
+  fi
+  local base_url="${PAGES_URL%/}"
+  local html_file="/tmp/agent-manager-pages.html"
+  local app_file="/tmp/agent-manager-pages-app.js"
+
+  log "checking deployed Pages at $base_url"
+  curl -fsS "$base_url/" >"$html_file"
+  curl -fsS "$base_url/app.js" >"$app_file"
+  curl -fsS "$base_url/task-events.js" >/dev/null
+  grep -q 'Agent Manager' "$html_file"
+  grep -q "const SUPABASE_URL = 'https://" "$app_file"
+  grep -q "const SUPABASE_ANON_KEY = '" "$app_file"
+  grep -q 'APP_USER_ROLES' "$app_file"
+  if grep -q '__SUPABASE_URL__\|__SUPABASE_ANON_KEY__' "$app_file"; then
+    echo 'Deployed app.js still contains Supabase placeholders.' >&2
+    exit 1
+  fi
+}
+
 check_anon_table() {
   local table="$1"
   local body_file="/tmp/agent-manager-anon-$table.json"
@@ -102,5 +125,6 @@ check_zero_npm
 check_js
 check_node_tests
 check_static_ui
+check_deployed_pages
 check_supabase_anon_rls
 log 'acceptance smoke passed'

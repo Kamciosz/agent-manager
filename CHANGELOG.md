@@ -17,4 +17,5 @@
 - Added no-npm acceptance smoke script with optional anonymous RLS checks.
 - Split Task Detail audit-history rendering into a small browser module.
 - Restricted browser panel data access to explicit app roles instead of any non-workstation login.
+- Added optional deployed Pages smoke checks to the no-npm acceptance script.
 - Kept validation on plain Node commands without npm, bundlers, or package installation.

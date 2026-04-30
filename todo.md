@@ -443,15 +443,15 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 - **Jak zrobić:** Przeczytaj FORK_GUIDE. Jeśli mówi o Node.js, Docker lub lokalnym serwerze — zaktualizuj go tak żeby opisywał: fork repo → dodaj Supabase secrets → push → gotowe
 - **Gotowe gdy:** FORK_GUIDE opisuje setup w maksymalnie 8 krokach, wszystkie odnoszą się do GitHub Pages + Supabase (zero Node.js)
 - **Nie rób:** Nie zmieniaj plików UI
-- [x] Gotowe — FORK_GUIDE.md już zawiera 8-krokowy setup w pełni opisujący GitHub Pages + Supabase, bez Node.js/Docker. Weryfikacja: zero referencji do `npm`, `node`, `docker` w pliku.
+- [x] Gotowe — FORK_GUIDE.md zawiera 8 kroków wdrożenia GitHub Pages + Supabase, a konto panelu i stacja są opisane jako działania po deployu.
 
 ---
 
 ## Faza 7 — Alpha
 
 - [ ] Wszystkie zadania faz 2–6 odznaczone
-- [ ] Link aplikacji publiczny na GitHub Pages
-- [ ] README zaktualizowane o link do działającej aplikacji
+- [x] Link aplikacji publiczny na GitHub Pages — zweryfikowano `https://kamciosz.github.io/agent-manager/` i wstrzyknięty `app.js` bez placeholderów.
+- [x] README zaktualizowane o link do działającej aplikacji — sekcja szybkiego startu wskazuje publiczny adres Pages.
 
 ### 7.1 Alpha hardening runtime i UI
 - **Co:** Utwardzić projekt po MVP: subskrypcje Realtime, lokalny runtime, stacje robocze i dokumentację wydania alpha

@@ -425,7 +425,7 @@ async function handleRegister(email, password) {
     if (!supabase) throw supabaseConfigurationError()
     const { error } = await supabase.auth.signUp({ email, password })
     if (error) throw error
-    showToast('Sprawdź email, aby potwierdzić konto', TOAST_TYPE.SUCCESS)
+    showToast('Konto utworzone. Poproś operatora o nadanie roli panelu.', TOAST_TYPE.SUCCESS)
   } catch (error) {
     console.error('[app.js] handleRegister failed:', error)
     errorEl.textContent = error.message || 'Błąd rejestracji'

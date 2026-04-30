@@ -101,7 +101,7 @@ Deploy robi tylko dwie rzeczy:
 
 Nie dotyka schematu Supabase.
 
-## Krok 9 — pierwsze konto i rola panelu
+## Po deployu — pierwsze konto i rola panelu
 
 1. Otwórz swoją aplikację Pages.
 2. Zarejestruj konto.
@@ -117,7 +117,7 @@ Nie dotyka schematu Supabase.
 
 Konta bez roli panelowej mogą się uwierzytelnić w Supabase, ale RLS nie pozwoli im czytać ani zmieniać danych aplikacji. To chroni panel, jeśli uczeń otworzy publiczny adres Pages i spróbuje samodzielnie utworzyć konto.
 
-## Krok 10 — lokalna stacja robocza
+## Po deployu — lokalna stacja robocza
 
 Na komputerze, który ma uruchamiać lokalny model GGUF:
 
