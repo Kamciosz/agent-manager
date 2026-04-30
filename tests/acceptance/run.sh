@@ -121,10 +121,20 @@ check_supabase_anon_rls() {
   check_anon_table task_events
 }
 
+check_supabase_auth_smoke() {
+  if [[ -z "${SUPABASE_URL:-}" || -z "${SUPABASE_ANON_KEY:-}" || -z "${SUPABASE_TEST_EMAIL:-}" || -z "${SUPABASE_TEST_PASSWORD:-}" ]]; then
+    log 'skipping Supabase auth smoke because test account env is not set'
+    return
+  fi
+  log 'checking Supabase Auth/RLS/CRUD with test account'
+  node tests/acceptance/supabase-smoke.mjs
+}
+
 check_zero_npm
 check_js
 check_node_tests
 check_static_ui
 check_deployed_pages
 check_supabase_anon_rls
+check_supabase_auth_smoke
 log 'acceptance smoke passed'

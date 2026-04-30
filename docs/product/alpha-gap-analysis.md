@@ -17,13 +17,14 @@ Status: aktualne po kolejnej rundzie stabilizacji alpha-plus
 | Historia zmian | Przy team-space brakowało odpowiedzi kto zmienił status albo edytował polecenie | Dodano tabelę `task_events`, trigger auditowy i panel `Historia zmian` w Task Detail |
 | Modularyzacja historii | `ui/app.js` rósł po dodaniu trace i historii zmian | Wydzielono renderowanie historii zmian do modułu `ui/task-events.js` |
 | Izolacja panelu | Publiczne Pages z otwartą rejestracją mogło mylić uwierzytelnienie z autoryzacją | Team-space zostaje, ale tylko dla jawnych ról panelu; konto bez roli nie czyta danych przez RLS |
+| Brak automatycznego testu Auth/CRUD | Ręczne testy panelu były jedyną ścieżką sprawdzenia RLS na koncie panelowym | Dodano opcjonalny no-npm Supabase smoke z kontem testowym i audit logiem |
 
 ## Nadal brakujące elementy przed beta
 
 | Obszar | Co jest potrzebne | Dlaczego |
 |--------|-------------------|----------|
 | Izolacja danych | Pełne workspace/classroom tenancy w przyszłej wersji | Beta utrzymuje team-space dla ról panelu; osobne przestrzenie klas to większa zmiana modelu danych |
-| Testy E2E | Test logowania, tworzenia, usuwania, komunikacji ze stacją i statusów na deployu | Ręczna walidacja jest za słaba dla wydania beta |
+| Testy E2E | Pełny browser test komunikacji AI/stacji na deployu | Jest już opcjonalny smoke Auth/CRUD/audit bez npm; pełny test UI/stacji nadal wymaga prawdziwej sesji i stacji |
 | Modularyzacja UI | Dalsze rozbicie `ui/app.js` po stabilizacji P0/P1 | Pierwszy fragment (`task-events.js`) jest wydzielony; większy refaktor nadal powinien iść małymi krokami po pełnych testach E2E |
 
 ## Znaczenie historii zmian

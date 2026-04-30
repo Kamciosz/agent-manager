@@ -114,6 +114,7 @@ node --check local-ai-proxy/proxy.js local-ai-proxy/workstation-agent.js local-a
 node --test tests/*.test.js
 bash tests/acceptance/run.sh
 PAGES_URL=https://kamciosz.github.io/agent-manager bash tests/acceptance/run.sh
+SUPABASE_URL=... SUPABASE_ANON_KEY=... SUPABASE_TEST_EMAIL=... SUPABASE_TEST_PASSWORD=... bash tests/acceptance/run.sh
 ./start.sh --doctor
 git diff --check
 ```
@@ -123,7 +124,7 @@ Po pushu muszą przejść workflow:
 | Workflow | Co sprawdza |
 |----------|-------------|
 | `Deploy to GitHub Pages` | Wstrzyknięcie Supabase secrets i publikację `ui/` |
-| `Static UI smoke` | `tests/acceptance/run.sh`: składnię modułów, testy `node:test`, brak `package.json`, statyczne serwowanie `ui/`, opcjonalny Pages smoke przez `PAGES_URL` i opcjonalny anon RLS przez sekrety Supabase |
+| `Static UI smoke` | `tests/acceptance/run.sh`: składnię modułów, testy `node:test`, brak `package.json`, statyczne serwowanie `ui/`, opcjonalny Pages smoke przez `PAGES_URL`, opcjonalny anon RLS oraz opcjonalny CRUD/audit smoke przez konto `SUPABASE_TEST_EMAIL` |
 | `Security scan` | Brak śledzonego `local-ai-proxy/config.json` i oczywistych sekretów |
 | `Windows launcher smoke` | `node --test`, parser PowerShell, `start.ps1 --help`, `start.bat --help`, `start.ps1 --doctor` |
 | `macOS and Linux launcher smoke` | `bash -n`, `node --check`, `node --test`, `start.sh --help`, `start.sh --doctor` |
