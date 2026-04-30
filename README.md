@@ -1,16 +1,23 @@
 # Agent Manager
 
-Status: **alpha**. Agent Manager to panel do dodawania poleceń dla AI, śledzenia wykonania i podłączania lokalnych stacji roboczych z modelem GGUF.
+Status: **alpha**. To jest robocza instrukcja i panel do dodawania poleceń dla AI.
 
 Najprościej: otwierasz aplikację, wpisujesz polecenie dla AI, a AI kierownik decyduje, czy wykona je przeglądarkowy agent, czy dostępna stacja robocza.
 
-Jeśli chcesz tylko korzystać z gotowej aplikacji, czytaj przede wszystkim sekcję **Szybki start**. Jeśli instalujesz własną kopię albo lokalną stację roboczą, niżej są dodatkowe instrukcje.
+Do korzystania w przeglądarce nie potrzebujesz żadnego modelu. Model GGUF jest potrzebny tylko wtedy, gdy chcesz uruchomić lokalną stację roboczą na własnym komputerze.
+
+W tym repo są dwa tryby:
+
+- **tylko przeglądarka** — zwykłe używanie aplikacji, bez modelu i bez launchera,
+- **lokalna stacja** — opcjonalnie uruchamiasz model GGUF na swoim komputerze.
+
+Jeśli chcesz tylko korzystać z gotowej aplikacji, czytaj przede wszystkim sekcję **Jak używać w przeglądarce**. Jeśli instalujesz własną kopię albo lokalną stację roboczą, niżej są dodatkowe instrukcje.
 
 Wewnętrzne plany rozwoju są w [docs/internal/](docs/internal/) — nie musisz tam zaglądać, żeby używać aplikacji.
 
-## Szybki start: używam aplikacji
+## Jak używać w przeglądarce
 
-1. Otwórz adres swojej aplikacji. Jeśli robisz własną kopię, znajdziesz go w **Settings → Pages**.
+1. Otwórz aplikację w przeglądarce. Jeśli robisz własną kopię, użyj adresu z **Settings → Pages**.
 2. Zaloguj się kontem, któremu właściciel Supabase nadał rolę panelową (`operator`, `teacher`, `manager` albo `admin`).
 3. Kliknij **Dodaj polecenie**.
 4. Wpisz, co AI ma zrobić, albo wybierz szablon **Hermes Labyrinth** dla pracy przez mapę ról, bram i testów.
@@ -24,9 +31,9 @@ Szablon **Hermes Labyrinth** prowadzi polecenie przez etapy: rozpoznanie, mapa, 
 
 Szczegóły: [docs/product/hermes-labyrinth.md](docs/product/hermes-labyrinth.md).
 
-## Dodaj lokalną stację roboczą
+## Opcjonalnie: lokalna stacja robocza
 
-Ta sekcja jest dla osoby, która uruchamia lokalny model GGUF na konkretnym komputerze. Jeśli korzystasz tylko z aplikacji w przeglądarce, możesz ją pominąć.
+Ta sekcja jest tylko dla osoby, która uruchamia lokalny model GGUF na konkretnym komputerze. Jeśli korzystasz tylko z aplikacji w przeglądarce, możesz ją pominąć.
 
 1. Pobierz paczkę launchera z GitHub Actions albo sklonuj repo.
 2. Uruchom plik dla swojego systemu:
