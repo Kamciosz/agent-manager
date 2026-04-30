@@ -1,6 +1,6 @@
 # Todo — Agent Manager
 
-Dokumentacja produktowa w [docs/](docs/index.md).
+Dokumentacja produktowa w [docs/](../index.md).
 
 ---
 
@@ -15,7 +15,7 @@ Dokumentacja produktowa w [docs/](docs/index.md).
 **Supabase anon key:** wstrzykiwany przez GitHub Actions jako `${{ secrets.SUPABASE_ANON_KEY }}`
 
 **Tabele Supabase (już istnieją w bazie):** `tasks`, `assignments`, `agents`, `messages`
-Pełny schemat pól i RLS: [docs/dev/api-reference.md](docs/dev/api-reference.md)
+Pełny schemat pól i RLS: [docs/dev/api-reference.md](../dev/api-reference.md)
 
 ---
 
@@ -229,21 +229,21 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 
 ### 2.4 Zaprojektuj schemat tabeli `tasks`
 - **Co:** Opisać pola tabeli tasks (bez kodu SQL)
-- **Gdzie:** [docs/dev/api-reference.md](docs/dev/api-reference.md) — sekcja "Tabela tasks"
+- **Gdzie:** [docs/dev/api-reference.md](../dev/api-reference.md) — sekcja "Tabela tasks"
 - **Gotowe gdy:** Tabela w docs zawiera wszystkie pola z typami i opisami, zgodna z MVP-01
 - **Nie rób:** Nie twórz plików SQL, nie zmieniaj innych sekcji pliku
 - [x] Gotowe
 
 ### 2.5 Zaprojektuj schemat tabeli `assignments`
 - **Co:** Opisać pola tabeli assignments
-- **Gdzie:** [docs/dev/api-reference.md](docs/dev/api-reference.md) — sekcja "Tabela assignments"
+- **Gdzie:** [docs/dev/api-reference.md](../dev/api-reference.md) — sekcja "Tabela assignments"
 - **Gotowe gdy:** Tabela w docs zawiera wszystkie pola, odzwierciedla logikę AI kierownik → Agent wykonawczy
 - **Nie rób:** Nie zmieniaj sekcji tasks ani innych tabel
 - [x] Gotowe
 
 ### 2.6 Zaprojektuj polityki RLS
 - **Co:** Opisać słownie reguły dostępu dla każdej roli
-- **Gdzie:** [docs/dev/api-reference.md](docs/dev/api-reference.md) — sekcja "Bezpieczeństwo RLS"
+- **Gdzie:** [docs/dev/api-reference.md](../dev/api-reference.md) — sekcja "Bezpieczeństwo RLS"
 - **Gotowe gdy:** Każda rola (manager/executor/viewer) ma opisane uprawnienia do każdej tabeli
 - **Nie rób:** Nie pisz kodu SQL
 - [x] Gotowe
@@ -407,7 +407,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 
 ### 6.2 Testy akceptacyjne — scenariusz 1
 - **Co:** Przeprowadzić test pełnego przepływu zadania
-- **Gdzie:** Test manualny w przeglądarce po deploy — zgodnie z [docs/dev/testing.md](docs/dev/testing.md) Scenariusz 1
+- **Gdzie:** Test manualny w przeglądarce po deploy — zgodnie z [docs/dev/testing.md](../dev/testing.md) Scenariusz 1
 - **Jak zrobić:** 
   - Zaloguj się, kliknij "Dodaj polecenie", wypełnij formularz, wyślij
   - Otwórz Task Detail i obserwuj timeline przez 10 sekund
@@ -439,7 +439,7 @@ Wszystkie zadania tej fazy zakończone. Dokumentacja spójna i aktualna.
 
 ### 6.5 Weryfikacja FORK_GUIDE
 - **Co:** Sprawdzić czy FORK_GUIDE.md opisuje nową architekturę (GitHub Pages + Supabase)
-- **Gdzie:** [FORK_GUIDE.md](FORK_GUIDE.md)
+- **Gdzie:** [FORK_GUIDE.md](../../FORK_GUIDE.md)
 - **Jak zrobić:** Przeczytaj FORK_GUIDE. Jeśli mówi o Node.js, Docker lub lokalnym serwerze — zaktualizuj go tak żeby opisywał: fork repo → dodaj Supabase secrets → push → gotowe
 - **Gotowe gdy:** FORK_GUIDE opisuje setup w maksymalnie 8 krokach, wszystkie odnoszą się do GitHub Pages + Supabase (zero Node.js)
 - **Nie rób:** Nie zmieniaj plików UI

@@ -45,4 +45,6 @@ Mapa całej dokumentacji projektu. Czytaj w kolejności odpowiadającej etapowi 
 |------|-----------|
 | [../README.md](../README.md) | Opis projektu + jak zacząć (dla użytkownika i właściciela) |
 | [../FORK_GUIDE.md](../FORK_GUIDE.md) | Jak forknąć i uruchomić własną kopię (10 minut, klikanie) |
-| [../todo.md](../todo.md) | Lista zadań i kamieni milowych |
+| [internal/todo.md](internal/todo.md) | Lista zadań i kamieni milowych (wewnętrzne) |
+| [internal/opt.md](internal/opt.md) | Plan optymalizacji — wave 1 (wewnętrzne) |
+| [internal/opt2.md](internal/opt2.md) | Plan optymalizacji — wave 2 (wewnętrzne) |

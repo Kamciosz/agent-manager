@@ -7,7 +7,7 @@
  *
  *              Działa w przeglądarce, bez zewnętrznego API. Symulacja oparta na
  *              regułach z opóźnieniami (800 ms / 1200 ms / 500 ms) zgodnie ze
- *              specyfikacją MVP w todo.md.
+ *              specyfikacją MVP w docs/internal/todo.md.
  *
  *              Jeśli lokalne proxy AI (ui/ai-client.js) jest dostępne,
  *              kluczowe teksty (instrukcje, odpowiedzi) generuje prawdziwy

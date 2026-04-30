@@ -18,7 +18,10 @@ Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa
 / (katalog główny)
 ├── README.md               — opis projektu i szybki start
 ├── FORK_GUIDE.md           — jak uruchomić własną kopię (10 minut)
-├── todo.md                 — kamienie milowe i lista zadań
+├── CHANGELOG.md            — historia zmian
+├── SECURITY.md             — zasady zgłaszania podatności
+├── start.{sh,command,bat,ps1} — launchery stacji roboczej
+├── Aktualizuj.{command,bat}, update.{sh,ps1} — aktualizacja launchera
 │
 ├── ui/                     — interfejs webowy (GitHub Pages)
 │   ├── index.html          — strona główna / dashboard

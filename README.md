@@ -4,6 +4,46 @@ Status: **alpha**. Agent Manager to panel do dodawania poleceń dla AI, śledzen
 
 Najprościej: otwierasz aplikację, wpisujesz polecenie dla AI, a AI kierownik decyduje, czy wykona je przeglądarkowy agent, czy dostępna stacja robocza.
 
+## Co znajdziesz w głównym katalogu
+
+Jeśli pierwszy raz otwierasz folder z plikami, oto ściąga — co czym jest i w co kliknąć.
+
+### Pliki do klikania (uruchamianie i aktualizacja stacji)
+
+| Plik | System | Co robi |
+|------|--------|---------|
+| [start.command](start.command) | macOS | Dwuklik w Finderze → uruchamia stację roboczą. |
+| [start.bat](start.bat) | Windows | Dwuklik w Eksploratorze → uruchamia stację roboczą. |
+| [start.sh](start.sh) | Linux / macOS (Terminal) | `./start.sh` w terminalu → uruchamia stację. |
+| [start.ps1](start.ps1) | Windows PowerShell | Wersja PowerShell launchera (alternatywa dla `.bat`). |
+| [Aktualizuj.command](Aktualizuj.command) | macOS | Dwuklik → pobiera najnowszą wersję programu. |
+| [Aktualizuj.bat](Aktualizuj.bat) | Windows | Dwuklik → pobiera najnowszą wersję programu. |
+| [update.sh](update.sh) / [update.ps1](update.ps1) | Linux / Windows | Ten sam update wywoływany z terminala. |
+
+Nie potrzebujesz żadnego z tych plików, jeśli korzystasz tylko z aplikacji w przeglądarce.
+
+### Dokumenty do czytania
+
+| Plik | Dla kogo |
+|------|----------|
+| [README.md](README.md) | Ten plik — start tutaj. |
+| [FORK_GUIDE.md](FORK_GUIDE.md) | Właściciel forka — jak postawić własną kopię. |
+| [CHANGELOG.md](CHANGELOG.md) | Co się zmieniło w kolejnych wersjach. |
+| [SECURITY.md](SECURITY.md) | Jak zgłosić problem bezpieczeństwa. |
+
+### Foldery
+
+| Folder | Co zawiera |
+|--------|-----------|
+| [ui/](ui/) | Aplikacja, którą widzisz w przeglądarce. |
+| [local-ai-proxy/](local-ai-proxy/) | Lokalny program stacji roboczej (uruchamiany przez `start.*`). |
+| [supabase/](supabase/) | Migracje bazy danych i Edge Functions (instaluje właściciel forka). |
+| [docs/](docs/) | Pełna dokumentacja produktu, architektury i developera. |
+| [tests/](tests/) | Testy akceptacyjne. |
+| [infra/](infra/) | Notatki o infrastrukturze. |
+
+Wewnętrzne plany rozwoju i lista zadań są w [docs/internal/](docs/internal/) — nie musisz tam zaglądać, żeby używać aplikacji.
+
 ## Szybki start: używam aplikacji
 
 1. Otwórz aplikację: https://kamciosz.github.io/agent-manager/
