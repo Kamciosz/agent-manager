@@ -275,6 +275,8 @@ GET  /metrics      →  { activeRequests, queuedRequests, totalRequests, failedR
 GET  /models       →  { models, capabilities }
 POST /generate     →  body: { prompt, maxTokens?, temperature? }
                       response: { text, requestId, workflowMode, durationMs, queueWaitMs, outputTokens, tokensPerSecond }
+POST /v1/chat/completions → OpenAI-compatible (bez streamingu); body: { model?, messages, max_tokens?, temperature? }
+POST /cancel/:requestId   → 200 { ok:true } gdy aktywny request został przerwany przez AbortController
 OPTIONS *          →  204 + nagłówki CORS dla dozwolonego Origin
 ```
 
@@ -284,7 +286,9 @@ Proxy nasłuchuje wyłącznie na `127.0.0.1` — nie jest dostępne z sieci. Dod
 
 `/generate` przechodzi przez lokalną kolejkę ograniczoną przez `parallelSlots`. Proxy zapisuje w pamięci procesu ostatnie metryki: `requestId`, tryb routingu (`workflowMode`), czas w kolejce, przybliżone tokeny wejścia/wyjścia i tok/s. To nie jest płatny monitoring ani zewnętrzny serwer; dane żyją lokalnie i znikają po restarcie procesu.
 
-Agent stacji pobiera joby przez Supabase RPC `claim_workstation_jobs`, które robi atomowy claim z `FOR UPDATE SKIP LOCKED`. Job przechodzi przez statusy `queued` → `leased` → `running` → `done`; przy błędzie trafia w `retrying` z backoffem albo `dead_letter`, gdy skończą się próby. Lease wygasa domyślnie po `900` sekundach i może zostać odzyskany przez tę samą stację po crashu procesu.
+Agent stacji pobiera joby przez Supabase RPC `claim_workstation_jobs`, które robi atomowy claim z `FOR UPDATE SKIP LOCKED`. Job przechodzi przez statusy `queued` → `leased` → `running` → `done`; przy błędzie trafia w `retrying` z backoffem albo `dead_letter`, gdy skończą się próby. Lease wygasa domyślnie po `900` sekundach i może zostać odzyskany przez tę samą stację po crashu procesu. Przed każdym claimem stacja woła `release_expired_workstation_jobs`, więc joby porzucone przez padłą stację automatycznie wracają do kolejki (lub do `dead_letter` po przekroczeniu `max_attempts`).
+
+Każdy `POST /generate` i `POST /v1/chat/completions` rejestruje się w mapie aktywnych requestów po `requestId`; `POST /cancel/<id>` przerywa go przez `AbortController` i zwraca 499 do oryginalnego klienta. Pełne metryki request-po-request lądują w `local-ai-proxy/logs/proxy-requests.jsonl`; plik rotuje się automatycznie po przekroczeniu 5 MB do `proxy-requests.jsonl.<timestamp>.bak` w tym samym katalogu.
 
 ## Troubleshooting
 

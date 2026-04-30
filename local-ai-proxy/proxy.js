@@ -9,8 +9,8 @@
  *                GET  /health/smoke → krótka generacja kontrolna modelu
  *                GET  /metrics   → metryki queue/duration/tokens/s
  *                GET  /models    → aktualny model i capabilities gatewaya
- *                POST /generate  → { prompt, maxTokens?, temperature? } → { text }
- *                OPTIONS *       → CORS preflight dla dozwolonych originów
+ *                POST /generate  → { prompt, maxTokens?, temperature? } → { text } *                POST /v1/chat/completions → OpenAI-compatible (bez streamingu)
+ *                POST /cancel/:requestId → anuluje aktywny request *                OPTIONS *       → CORS preflight dla dozwolonych originów
  *
  *              Konfiguracja: `local-ai-proxy/config.json`. Plik tworzy
  *              automatycznie `start.sh` / `start.bat` po wybraniu modelu.
@@ -56,6 +56,31 @@ const gatewayState = {
   totalOutputTokens: 0,
   recent: [],
   rateLimit: new Map(),
+  inflight: new Map(),
+}
+
+const LOG_DIR = path.join(__dirname, 'logs')
+const LOG_PATH = path.join(LOG_DIR, 'proxy-requests.jsonl')
+const LOG_MAX_BYTES = 5 * 1024 * 1024
+
+/**
+ * Dopisuje wpis JSONL do logu requestów z prostą rotacją po rozmiarze.
+ * @param {Object} entry
+ * @returns {void}
+ */
+function appendJsonl(entry) {
+  try {
+    if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true })
+    try {
+      const stat = fs.statSync(LOG_PATH)
+      if (stat.size > LOG_MAX_BYTES) {
+        fs.renameSync(LOG_PATH, `${LOG_PATH}.${Date.now()}.bak`)
+      }
+    } catch {}
+    fs.appendFileSync(LOG_PATH, JSON.stringify(entry) + '\n')
+  } catch (error) {
+    console.warn('[proxy] log append failed:', error.message)
+  }
 }
 
 function parseJsonFile(filePath) {
@@ -267,7 +292,7 @@ function readBody(req) {
  * @param {number} timeoutMs
  * @returns {Promise<Object>}
  */
-async function forwardToLlama(prompt, opts, llamaUrl, timeoutMs = DEFAULTS.TIMEOUT_MS) {
+async function forwardToLlama(prompt, opts, llamaUrl, timeoutMs = DEFAULTS.TIMEOUT_MS, externalController = null) {
   const payload = JSON.stringify({
     prompt,
     n_predict: opts.maxTokens ?? DEFAULTS.MAX_TOKENS,
@@ -275,7 +300,7 @@ async function forwardToLlama(prompt, opts, llamaUrl, timeoutMs = DEFAULTS.TIMEO
     stream: false,
   })
 
-  const controller = new AbortController()
+  const controller = externalController || new AbortController()
   let timedOut = false
   const timeout = setTimeout(() => {
     timedOut = true
@@ -514,6 +539,8 @@ async function handleGenerate(cfg, req, res) {
   const role = String(body.role || req.headers['x-agent-role'] || 'shared')
   const promptChars = body.prompt.length
   const estimatedInputTokens = estimateTokens(body.prompt)
+  const controller = new AbortController()
+  gatewayState.inflight.set(requestId, controller)
   try {
     const startedAt = Date.now()
     const result = await enqueueGeneration(
@@ -525,6 +552,7 @@ async function handleGenerate(cfg, req, res) {
           { maxTokens: body.maxTokens, temperature: body.temperature },
           cfg.llamaUrl,
           Math.min(Number(body.timeoutMs) || cfg.generationTimeoutMs, cfg.generationTimeoutMs),
+          controller,
         )),
       }),
     )
@@ -541,11 +569,88 @@ async function handleGenerate(cfg, req, res) {
       tokensPerSecond: result.tokensPerSecond,
     }
     recordMetric(metric)
+    appendJsonl({ kind: 'generate', at: new Date().toISOString(), ...metric })
     sendJson(req, res, cfg, 200, { text: result.text, ...metric })
   } catch (error) {
+    const cancelled = error?.name === 'AbortError' && !String(error.message || '').includes('timeout')
+    const errorCode = cancelled ? 'cancelled' : (error.message.includes('timeout') ? 'timeout' : 'llama_down')
     console.error('[proxy] forwardToLlama failed:', cfg.llamaUrl, error.message)
-    recordMetric({ requestId, role, workflowMode, model: cfg.modelName, promptChars, estimatedInputTokens, durationMs: 0, outputTokens: 0, errorCode: error.message.includes('timeout') ? 'timeout' : 'llama_down' })
-    sendJson(req, res, cfg, 502, { error: 'llama-server unreachable', detail: error.message, requestId })
+    const metric = { requestId, role, workflowMode, model: cfg.modelName, promptChars, estimatedInputTokens, durationMs: 0, outputTokens: 0, errorCode }
+    recordMetric(metric)
+    appendJsonl({ kind: 'generate', at: new Date().toISOString(), ...metric, errorMessage: error.message })
+    sendJson(req, res, cfg, cancelled ? 499 : 502, { error: cancelled ? 'cancelled' : 'llama-server unreachable', detail: error.message, requestId })
+  } finally {
+    gatewayState.inflight.delete(requestId)
+  }
+}
+
+/**
+ * Anuluje aktywny request po requestId.
+ * @param {string} requestId
+ * @returns {boolean}
+ */
+function cancelInflight(requestId) {
+  const controller = gatewayState.inflight.get(requestId)
+  if (!controller) return false
+  try {
+    controller.abort()
+  } catch {}
+  gatewayState.inflight.delete(requestId)
+  return true
+}
+
+/**
+ * Obsługuje OpenAI-compatible POST /v1/chat/completions (bez streamingu).
+ * @param {Object} cfg
+ * @param {import('node:http').IncomingMessage} req
+ * @param {import('node:http').ServerResponse} res
+ * @returns {Promise<void>}
+ */
+async function handleChatCompletions(cfg, req, res) {
+  let body
+  try {
+    body = JSON.parse(await readBody(req))
+  } catch (error) {
+    sendJson(req, res, cfg, 400, { error: { message: 'Invalid JSON body', type: 'invalid_request_error' } })
+    return
+  }
+  const messages = Array.isArray(body?.messages) ? body.messages : []
+  if (!messages.length) {
+    sendJson(req, res, cfg, 400, { error: { message: 'Missing messages', type: 'invalid_request_error' } })
+    return
+  }
+  if (!consumeRateLimit(req, cfg)) {
+    sendJson(req, res, cfg, 429, { error: { message: 'Rate limit exceeded', type: 'rate_limit_exceeded' } })
+    return
+  }
+  const prompt = messages.map((m) => `${String(m?.role || 'user').toUpperCase()}: ${String(m?.content || '').trim()}`).join('\n\n') + '\n\nASSISTANT:'
+  const requestId = String(body.user || req.headers['x-request-id'] || randomUUID())
+  const controller = new AbortController()
+  gatewayState.inflight.set(requestId, controller)
+  try {
+    const result = await enqueueGeneration(cfg, async () => forwardToLlama(
+      prompt,
+      { maxTokens: body.max_tokens, temperature: body.temperature },
+      cfg.llamaUrl,
+      Math.min(Number(body.timeoutMs) || cfg.generationTimeoutMs, cfg.generationTimeoutMs),
+      controller,
+    ))
+    const metric = { requestId, role: 'shared', workflowMode: 'openai-compat', model: cfg.modelName, promptChars: prompt.length, estimatedInputTokens: estimateTokens(prompt), outputTokens: result.outputTokens, durationMs: result.durationMs, tokensPerSecond: result.tokensPerSecond }
+    recordMetric(metric)
+    appendJsonl({ kind: 'chat.completions', at: new Date().toISOString(), ...metric })
+    sendJson(req, res, cfg, 200, {
+      id: `chatcmpl-${requestId}`,
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: cfg.modelName,
+      choices: [{ index: 0, message: { role: 'assistant', content: result.text }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: estimateTokens(prompt), completion_tokens: result.outputTokens, total_tokens: estimateTokens(prompt) + result.outputTokens },
+    })
+  } catch (error) {
+    const cancelled = error?.name === 'AbortError' && !String(error.message || '').includes('timeout')
+    sendJson(req, res, cfg, cancelled ? 499 : 502, { error: { message: error.message, type: cancelled ? 'cancelled' : 'upstream_error' } })
+  } finally {
+    gatewayState.inflight.delete(requestId)
   }
 }
 
@@ -613,13 +718,25 @@ async function route(cfg, req, res) {
   if (req.method === 'GET' && url === '/models') {
     sendJson(req, res, cfg, 200, {
       models: [{ name: cfg.modelName, backend: cfg.backend, contextTokens: cfg.contextSizeTokens, kvCache: cfg.effectiveKvCacheQuantization }],
-      capabilities: ['generate', 'metrics', 'queue', 'rate-limit'],
+      capabilities: ['generate', 'metrics', 'queue', 'rate-limit', 'cancel', 'openai-chat'],
     })
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }
   if (req.method === 'POST' && url === '/generate') {
     await handleGenerate(cfg, req, res)
+    logLine(req.method, url, res.statusCode, startedAt)
+    return
+  }
+  if (req.method === 'POST' && url === '/v1/chat/completions') {
+    await handleChatCompletions(cfg, req, res)
+    logLine(req.method, url, res.statusCode, startedAt)
+    return
+  }
+  if (req.method === 'POST' && url.startsWith('/cancel/')) {
+    const requestId = decodeURIComponent(url.slice('/cancel/'.length))
+    const ok = cancelInflight(requestId)
+    sendJson(req, res, cfg, ok ? 200 : 404, { ok, requestId })
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }

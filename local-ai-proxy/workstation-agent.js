@@ -573,6 +573,11 @@ async function fetchQueuedJobs(cfg, session) {
   const limit = availableSlots(cfg)
   if (!workstationId || !cfg.acceptsJobs || !isWithinSchedule(cfg) || limit < 1) return []
   try {
+    await restRpc(cfg, session, 'release_expired_workstation_jobs', { p_workstation_id: workstationId })
+  } catch (error) {
+    log('RPC release_expired_workstation_jobs niedostepne:', error.message)
+  }
+  try {
     const rows = await restRpc(cfg, session, 'claim_workstation_jobs', {
       p_workstation_id: workstationId,
       p_limit: limit,

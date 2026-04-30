@@ -335,6 +335,8 @@ async function createWorkstationJob(task, instructions, target) {
   const budget = taskRouteConfig(task)
   try {
     if (!workstationId) throw new Error('Brak ID stacji roboczej dla jobu')
+    const attempt = Number(task.retry_count || 0)
+    const idempotencyKey = `task:${task.id}:workstation:${workstationId}:attempt:${attempt}`
     const { error } = await supabaseClient
       .from('workstation_jobs')
       .upsert({
@@ -343,7 +345,8 @@ async function createWorkstationJob(task, instructions, target) {
         requested_by_user_id: task.user_id || null,
         model_name: modelName || null,
         status: 'queued',
-        retry_count: Number(task.retry_count || 0),
+        retry_count: attempt,
+        idempotency_key: idempotencyKey,
         max_attempts: Number(task.max_attempts || 3),
         started_at: null,
         finished_at: null,

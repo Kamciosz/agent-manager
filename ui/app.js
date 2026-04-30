@@ -218,6 +218,9 @@ const state = {
   editingAgentId: null,
   agents: [],
   tasks: [],
+  tasksPageSize: 50,
+  tasksHasMore: false,
+  tasksLoadingMore: false,
   workstations: [],
   enrollmentTokens: [],
   allTasksSubscription: null,
@@ -541,6 +544,7 @@ function bindNavigation() {
   document.getElementById('tasks-filter-status')?.addEventListener('change', handleTaskFiltersChange)
   document.getElementById('tasks-filter-priority')?.addEventListener('change', handleTaskFiltersChange)
   document.getElementById('btn-clear-task-filters')?.addEventListener('click', clearTaskFilters)
+  document.getElementById('btn-tasks-load-more')?.addEventListener('click', loadMoreTasks)
   bindTaskListDelegation('tasks-table-body')
   bindTaskListDelegation('tasks-table-body-full')
   bindTaskListDelegation('tasks-cards')
@@ -636,16 +640,19 @@ async function createTask({ title, description, priority, repo, context, templat
 }
 
 /**
- * Pobiera 50 ostatnich zadań.
+ * Pobiera stronę zadań z paginacją.
+ * @param {{limit?:number, offset?:number}} [opts]
  * @returns {Promise<Array>}
  */
-async function getTasks() {
+async function getTasks(opts = {}) {
+  const limit = Number(opts.limit) > 0 ? Number(opts.limit) : 50
+  const offset = Number(opts.offset) >= 0 ? Number(opts.offset) : 0
   try {
     const { data, error } = await supabase
       .from('tasks')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(50)
+      .range(offset, offset + limit - 1)
     if (error) throw error
     return data || []
   } catch (error) {
@@ -962,14 +969,52 @@ async function getMessagesForTask(taskId) {
  * @returns {Promise<void>}
  */
 async function refreshTasks() {
-  const tasks = await getTasks()
+  const tasks = await getTasks({ limit: state.tasksPageSize, offset: 0 })
   state.tasks = tasks || []
+  state.tasksHasMore = (tasks || []).length >= state.tasksPageSize
   if (TASK_LIST_VIEWS.includes(state.currentView)) {
     renderFilteredTasks()
     applyTaskViewMode()
   }
   renderStats(tasks)
+  renderTasksPagination()
   if (state.currentView === VIEW.MONITOR) renderMonitorPanel()
+}
+
+/**
+ * Aktualizuje przycisk "Załaduj starsze" oraz licznik stronnicowania.
+ * @returns {void}
+ */
+function renderTasksPagination() {
+  const summary = document.getElementById('tasks-pagination-summary')
+  const button = document.getElementById('btn-tasks-load-more')
+  if (!summary || !button) return
+  summary.textContent = `Załadowano ${state.tasks.length} zadań`
+  button.classList.toggle('hidden', !state.tasksHasMore)
+  button.disabled = state.tasksLoadingMore
+  button.textContent = state.tasksLoadingMore ? 'Wczytywanie…' : 'Załaduj starsze'
+}
+
+/**
+ * Doczytuje kolejną stronę starszych zadań.
+ * @returns {Promise<void>}
+ */
+async function loadMoreTasks() {
+  if (state.tasksLoadingMore || !state.tasksHasMore) return
+  state.tasksLoadingMore = true
+  renderTasksPagination()
+  try {
+    const next = await getTasks({ limit: state.tasksPageSize, offset: state.tasks.length })
+    if (next.length) {
+      const seen = new Set(state.tasks.map((t) => t.id))
+      for (const t of next) if (!seen.has(t.id)) state.tasks.push(t)
+    }
+    state.tasksHasMore = next.length >= state.tasksPageSize
+    renderFilteredTasks()
+  } finally {
+    state.tasksLoadingMore = false
+    renderTasksPagination()
+  }
 }
 
 function renderFilteredTasks() {

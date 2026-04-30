@@ -25,6 +25,10 @@
 - Added local proxy queue metrics, request IDs, token estimates, route metadata, rate limiting and `/metrics`/`/models` endpoints.
 - Added atomic Supabase workstation job leases with RPC claim, retry backoff, expired lease recovery and `dead_letter` status.
 - Added workstation heartbeat performance telemetry for tokens/s and recent failure rate.
+- Added idempotency keys for workstation job upserts to prevent duplicate claims across retries.
+- Added local proxy `POST /cancel/:requestId`, `POST /v1/chat/completions` (OpenAI-compatible, non-streaming) and rotating JSONL request log under `local-ai-proxy/logs/`.
+- Added `release_expired_workstation_jobs` Postgres function and station-side sweeper call before each claim, so dead leases automatically return to the queue or move to `dead_letter`.
+- Added paginated task list with a "Załaduj starsze" control instead of a hard 50-row cap.
 - Reduced dashboard work during filtering and Realtime bursts by debouncing renders and reusing delegated task-list handlers.
 - Fixed the initial dashboard header so the active `Polecenia` view no longer loads with a stale `Dashboard` title.
 - Documented a performance environment review and made hidden dashboard panels render lazily with delegated dynamic-list handlers.
