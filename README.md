@@ -62,7 +62,7 @@ Stacja robocza to komputer, który uruchamia lokalny model GGUF przez llama.cpp 
 |--------|-------------------|--------------|-------------|
 | Windows 10/11 | dwuklik [start.bat](start.bat) | dwuklik [Aktualizuj.bat](Aktualizuj.bat) | `start.bat --doctor --no-pause` |
 | macOS | dwuklik [start.command](start.command) | dwuklik [Aktualizuj.command](Aktualizuj.command) | `./start.sh --doctor` |
-| Linux | `./start.sh` | `./Aktualizuj.command` | `./start.sh --doctor` |
+| Linux | `./start.sh` | `./update.sh` | `./start.sh --doctor` |
 
 3. W dashboardzie wygeneruj token instalacyjny w widoku **Stacje robocze** i wklej go przy pierwszym starcie. Launcher nie pyta o hasło operatora. Na Windowsie sam pobierze portable Node.js, jeśli nie ma go w PATH.
 4. Zostaw okno launchera otwarte, kiedy komputer ma wykonywać polecenia.
@@ -75,7 +75,8 @@ Ważne: `local-ai-proxy/config.json` jest lokalny i nie powinien trafić do gita
 Najprościej użyj:
 
 - Windows: [Aktualizuj.bat](Aktualizuj.bat)
-- macOS/Linux: [Aktualizuj.command](Aktualizuj.command)
+- macOS: [Aktualizuj.command](Aktualizuj.command)
+- Linux: `./update.sh`
 
 To uruchamia bezpieczny update launchera. W repo git robi `git pull --ff-only`, a w instalacji z ZIP-a pobiera najnowszy kod z GitHuba i zachowuje lokalne `config.json`, modele, binarki oraz logi. Jeśli repo ma lokalne zmiany, update zostanie pominięty z komunikatem zamiast nadpisywać pliki.
 

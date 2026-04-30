@@ -88,7 +88,8 @@ Aplikacja sprawdza dostępność co 30 s — możesz włączać i wyłączać `s
 No-code aktualizacja:
 
 - Windows: dwuklik [`../Aktualizuj.bat`](../Aktualizuj.bat)
-- macOS/Linux: dwuklik [`../Aktualizuj.command`](../Aktualizuj.command)
+- macOS: dwuklik [`../Aktualizuj.command`](../Aktualizuj.command)
+- Linux: `./update.sh`
 
 Oba pliki uruchamiają bezpieczny aktualizator. W repo git robią `git pull --ff-only`, a w instalacji z ZIP-a pobierają najnowszy kod z GitHuba i zachowują `local-ai-proxy/config.json`, modele, binarki oraz logi. Jeśli repo ma lokalne zmiany, update zostanie pominięty i pokaże komunikat.
 

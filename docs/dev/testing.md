@@ -127,7 +127,7 @@ Po pushu muszą przejść workflow:
 | `Deploy to GitHub Pages` | Wstrzyknięcie Supabase secrets i publikację `ui/` |
 | `Static UI smoke` | `tests/acceptance/run.sh`: składnię modułów, testy `node:test`, brak `package.json`, statyczne serwowanie `ui/`, opcjonalny Pages smoke przez `PAGES_URL`, opcjonalny anon RLS oraz opcjonalny CRUD/audit smoke przez konto `SUPABASE_TEST_EMAIL` |
 | `Security scan` | Brak śledzonego `local-ai-proxy/config.json` i oczywistych sekretów |
-| `Windows launcher smoke` | `node --test`, parser PowerShell, `start.ps1 --help`, `start.bat --help`, `start.ps1 --doctor` |
+| `Windows launcher smoke` | `node --test`, parser PowerShell, `launcher/start.ps1 --help`, `start.bat --help`, `launcher/start.ps1 --doctor` |
 | `macOS and Linux launcher smoke` | `bash -n`, `node --check`, `node --test`, `start.sh --help`, `start.sh --doctor` |
 | `Package launchers` | ZIP-y `AgentManager-Windows`, `AgentManager-macOS`, `AgentManager-Linux` |
 

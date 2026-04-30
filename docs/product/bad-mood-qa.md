@@ -26,7 +26,7 @@ Ten dokument zapisuje test w dwóch rolach: bardzo surowy tester oraz nietechnic
 | Wybór stacji | Nie wiem, czy można wybrać kilka | Naprawione: domyślnie „Automatycznie” albo jedna stacja |
 | Repozytorium opcjonalne | Nie wiem, jaki format wpisać | Ograniczone: placeholder, tooltip i ostatnie sugestie |
 | Nie widzę języka ani koloru | Nie wiem, gdzie zmienić UI | Naprawione: dodany widok Ustawienia |
-| Aktualizacja przez terminal | Nie wiem, jaka flaga | Naprawione: `Aktualizuj.bat` i `Aktualizuj.command` |
+| Aktualizacja przez terminal | Nie wiem, jaka flaga | Naprawione: `Aktualizuj.bat`, `Aktualizuj.command` i `./update.sh` |
 | Okno launchera się zamyka | Nie wiem, co się stało | Ograniczone wcześniejszym `--doctor`, logami i wrapperem BAT |
 
 ## Co zostało świadomie odłożone

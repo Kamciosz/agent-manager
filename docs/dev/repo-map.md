@@ -20,8 +20,9 @@ Agent Manager nie ma własnego kodu serwerowego. Backend to Supabase — usługa
 ├── FORK_GUIDE.md           — jak uruchomić własną kopię (10 minut)
 ├── CHANGELOG.md            — historia zmian
 ├── SECURITY.md             — zasady zgłaszania podatności
-├── start.{sh,command,bat,ps1} — launchery stacji roboczej
-├── Aktualizuj.{command,bat}, update.{sh,ps1} — aktualizacja launchera
+├── start.{sh,command,bat}   — launchery stacji roboczej
+├── Aktualizuj.{command,bat}, update.sh — aktualizacja launchera
+├── launcher/                — silnik Windows launchera (`start.ps1`, `update.ps1`)
 │
 ├── ui/                     — interfejs webowy (GitHub Pages)
 │   ├── index.html          — strona główna / dashboard
