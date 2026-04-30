@@ -103,10 +103,14 @@ Przed pushem uruchom lokalnie:
 
 ```bash
 bash -n start.sh
-node --check ui/app.js ui/ai-client.js ui/manager.js ui/executor.js ui/settings.js
-node --check ui/labyrinth.js
+node --check --input-type=module < ui/app.js
+node --check --input-type=module < ui/ai-client.js
+node --check --input-type=module < ui/manager.js
+node --check --input-type=module < ui/executor.js
+node --check --input-type=module < ui/settings.js
+node --check --input-type=module < ui/labyrinth.js
 node --check local-ai-proxy/proxy.js local-ai-proxy/workstation-agent.js local-ai-proxy/runtime-schedule.js
-npm test
+node --test tests/*.test.js
 ./start.sh --doctor
 git diff --check
 ```
@@ -117,8 +121,8 @@ Po pushu muszą przejść workflow:
 |----------|-------------|
 | `Deploy to GitHub Pages` | Wstrzyknięcie Supabase secrets i publikację `ui/` |
 | `Security scan` | Brak śledzonego `local-ai-proxy/config.json` i oczywistych sekretów |
-| `Windows launcher smoke` | `npm test`, parser PowerShell, `start.ps1 --help`, `start.bat --help`, `start.ps1 --doctor` |
-| `macOS and Linux launcher smoke` | `bash -n`, `node --check`, `npm test`, `start.sh --help`, `start.sh --doctor` |
+| `Windows launcher smoke` | `node --test`, parser PowerShell, `start.ps1 --help`, `start.bat --help`, `start.ps1 --doctor` |
+| `macOS and Linux launcher smoke` | `bash -n`, `node --check`, `node --test`, `start.sh --help`, `start.sh --doctor` |
 | `Package launchers` | ZIP-y `AgentManager-Windows`, `AgentManager-macOS`, `AgentManager-Linux` |
 
 Manualny test UI po tej rundzie:

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agent Manager — polecenia dla AI</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f172a'/%3E%3Cpath d='M9 22h14M10 10h12v8H10z' fill='none' stroke='%23f8fafc' stroke-width='2'/%3E%3Cpath d='M13 14h.01M19 14h.01' stroke='%2338bdf8' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
   <script>
     (() => {
       const theme = localStorage.getItem('agent-manager-theme') || 'system'
@@ -454,6 +455,23 @@
           </div>
 
           <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6 mb-6">
+            <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4">
+              <div>
+                <h3 class="text-lg font-semibold text-slate-900">Ocena wyniku</h3>
+                <p id="task-feedback-state" class="text-sm text-slate-500 mt-1">Brak oceny dla tego zadania.</p>
+              </div>
+              <div class="flex gap-2">
+                <button id="btn-task-feedback-good" class="rounded-lg border border-emerald-200 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50">Dobry</button>
+                <button id="btn-task-feedback-bad" class="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Zły</button>
+              </div>
+            </div>
+            <textarea id="task-feedback-comment" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" placeholder="Krótka notatka dla późniejszej regresji"></textarea>
+            <div class="mt-3 flex justify-end">
+              <button id="btn-save-task-feedback" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">Zapisz ocenę</button>
+            </div>
+          </div>
+
+          <div class="bg-white/95 rounded-xl surface-card border border-white/80 p-6 mb-6">
             <div class="flex items-center justify-between gap-4 mb-4">
               <div>
                 <h3 class="text-lg font-semibold text-slate-900">Komunikacja ze stacją</h3>
@@ -805,6 +823,7 @@
                 <input id="station-config-offline-queue" type="number" min="50" max="5000" value="500" class="mt-3 w-full px-3 py-2 border border-slate-300 rounded-lg" />
               </label>
             </div>
+            <div id="station-config-validation" class="hidden mt-5 space-y-2"></div>
             <pre id="station-config-output" class="hidden mt-5 bg-slate-900 text-slate-100 text-xs rounded-lg p-4 overflow-auto whitespace-pre-wrap"></pre>
           </div>
         </section>

@@ -39,6 +39,22 @@ Przechowuje wszystkie zadania zgłoszone przez użytkowników.
 
 Nowa migracja P0 ogranicza zwykłego użytkownika do 3 aktywnych zadań (`pending`, `analyzing`, `in_progress`). Role `admin`, `manager`, `operator` i `teacher` są traktowane jako operatorzy i nie mają tego limitu.
 
+### Tabela `task_feedback` — oceny wyników
+
+Przechowuje ręczną ocenę wyniku pojedynczego zadania. To lekki odpowiednik ewaluacji z narzędzi trace/eval: operator może oznaczyć wynik jako dobry albo zły i dopisać krótką notatkę do późniejszej regresji.
+
+| Pole | Typ | Opis |
+|------|-----|------|
+| `id` | UUID | Unikalny identyfikator |
+| `task_id` | UUID | Powiązane zadanie; usuwane kaskadowo razem z zadaniem |
+| `user_id` | UUID | Użytkownik, który wystawił ocenę |
+| `rating` | tekst | `good` albo `bad` |
+| `comment` | tekst | Opcjonalna notatka jakościowa |
+| `created_at` | timestamp | Data pierwszej oceny |
+| `updated_at` | timestamp | Data ostatniej zmiany oceny |
+
+Na parę `task_id + user_id` przypada jedna ocena. RLS pozwala użytkownikom aplikacji czytać feedback i zarządzać własnym wpisem; techniczne konta stacji nie mają dostępu do tej tabeli.
+
 ### Tabela `assignments` — przydziały
 
 Przechowuje informacje o tym który agent wykonawczy dostał które zadanie.
@@ -206,6 +222,21 @@ W obecnym modelu alpha zalogowany użytkownik zespołu może usunąć zadanie. R
 | `messages` | usuwane kaskadowo |
 | `workstation_jobs` | zostają, ale `task_id` jest ustawiane na `null` |
 | `workstation_messages` | zostają, ale `task_id` jest ustawiane na `null` |
+
+### Oceń wynik zadania
+
+```js
+await supabase
+  .from('task_feedback')
+  .upsert({
+    task_id: taskId,
+    user_id: user.id,
+    rating: 'good',
+    comment: 'Wynik spełnia oczekiwania smoke testu.'
+  }, { onConflict: 'task_id,user_id' })
+```
+
+Prosty dataset regresyjny dla ręcznych porównań znajduje się w `tests/data/regression-prompts.json`.
 
 ---
 

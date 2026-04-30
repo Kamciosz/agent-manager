@@ -123,6 +123,11 @@ const WORKSTATION_JOB_LABELS = {
   cancelled: 'Anulowane',
 }
 
+const TASK_FEEDBACK_LABELS = {
+  good: 'Dobry',
+  bad: 'Zły',
+}
+
 const RUNTIME_PRESETS = {
   classroomCpu: {
     label: 'Sala CPU',
@@ -186,6 +191,8 @@ const state = {
   currentTaskAiMessages: [],
   currentTaskWorkstationMessages: [],
   currentTaskJobs: [],
+  currentTaskFeedback: null,
+  selectedTaskFeedbackRating: null,
   editingWorkstationId: null,
   selectedMonitorWorkstationId: null,
   taskViewMode: loadTaskViewMode(),
@@ -488,6 +495,10 @@ function bindNavigation() {
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
   document.getElementById('btn-generate-station-config').addEventListener('click', renderStationConfigInstruction)
   document.getElementById('station-config-preset')?.addEventListener('change', applyStationConfigPreset)
+  document.querySelectorAll('[id^="station-config-"]').forEach((control) => {
+    control.addEventListener('input', handleStationConfigInputChange)
+    control.addEventListener('change', handleStationConfigInputChange)
+  })
   document.getElementById('station-config-mode')?.addEventListener('change', syncStationConfigMode)
   document.getElementById('form-classroom-grid')?.addEventListener('submit', handleApplyClassroomGrid)
   document.getElementById('btn-delete-classroom-grid')?.addEventListener('click', handleDeleteClassroomGrid)
@@ -515,6 +526,9 @@ function bindNavigation() {
     if (!state.currentTaskId) return
     handleRetryTask(state.currentTaskId, { clearWorkstation: true })
   })
+  document.getElementById('btn-task-feedback-good')?.addEventListener('click', () => selectTaskFeedbackRating('good'))
+  document.getElementById('btn-task-feedback-bad')?.addEventListener('click', () => selectTaskFeedbackRating('bad'))
+  document.getElementById('btn-save-task-feedback')?.addEventListener('click', handleSaveTaskFeedback)
 }
 
 // ============================================================================
@@ -611,6 +625,70 @@ async function deleteTask(id) {
     showToast('Błąd usuwania zadania.', TOAST_TYPE.ERROR)
     return false
   }
+}
+
+async function getTaskFeedback(taskId) {
+  if (!state.user?.id) return null
+  try {
+    const { data, error } = await supabase
+      .from('task_feedback')
+      .select('*')
+      .eq('task_id', taskId)
+      .eq('user_id', state.user.id)
+      .maybeSingle()
+    if (error) throw error
+    return data || null
+  } catch (error) {
+    console.error('[app.js] getTaskFeedback failed:', error)
+    return null
+  }
+}
+
+async function saveTaskFeedback(taskId, rating, comment) {
+  if (!state.user?.id || !TASK_FEEDBACK_LABELS[rating]) return null
+  try {
+    const { data, error } = await supabase
+      .from('task_feedback')
+      .upsert({
+        task_id: taskId,
+        user_id: state.user.id,
+        rating,
+        comment: comment.trim() || null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'task_id,user_id' })
+      .select('*')
+      .single()
+    if (error) throw error
+    return data
+  } catch (error) {
+    console.error('[app.js] saveTaskFeedback failed:', error)
+    showToast('Nie udało się zapisać oceny wyniku.', TOAST_TYPE.ERROR)
+    return null
+  }
+}
+
+function selectTaskFeedbackRating(rating) {
+  state.selectedTaskFeedbackRating = TASK_FEEDBACK_LABELS[rating] ? rating : null
+  renderTaskFeedback({
+    ...(state.currentTaskFeedback || {}),
+    rating: state.selectedTaskFeedbackRating,
+    comment: document.getElementById('task-feedback-comment')?.value || state.currentTaskFeedback?.comment || '',
+  })
+}
+
+async function handleSaveTaskFeedback() {
+  if (!state.currentTaskId) return
+  const rating = state.selectedTaskFeedbackRating
+  if (!rating) {
+    showToast('Wybierz ocenę: Dobry albo Zły.', TOAST_TYPE.INFO)
+    return
+  }
+  const comment = document.getElementById('task-feedback-comment')?.value || ''
+  const feedback = await saveTaskFeedback(state.currentTaskId, rating, comment)
+  if (!feedback) return
+  state.currentTaskFeedback = feedback
+  renderTaskFeedback(feedback)
+  showToast('Ocena wyniku zapisana.', TOAST_TYPE.SUCCESS)
 }
 
 async function cancelTask(taskId) {
@@ -2539,6 +2617,8 @@ async function openTaskDetail(taskId) {
   state.currentTaskAiMessages = []
   state.currentTaskWorkstationMessages = []
   state.currentTaskJobs = []
+  state.currentTaskFeedback = null
+  state.selectedTaskFeedbackRating = null
   navigateTo(VIEW.TASK_DETAIL)
   cleanupTaskSubscriptions()
 
@@ -2549,6 +2629,11 @@ async function openTaskDetail(taskId) {
   }
   renderTaskDetail(task)
   renderTimeline(task.status)
+
+  const feedback = await getTaskFeedback(taskId)
+  state.currentTaskFeedback = feedback
+  state.selectedTaskFeedbackRating = feedback?.rating || null
+  renderTaskFeedback(feedback)
 
   const messages = await getMessagesForTask(taskId)
   state.currentTaskAiMessages = messages
@@ -2621,6 +2706,27 @@ function renderTaskDetail(task) {
   document.getElementById('btn-task-send-workstation-message').dataset.workstationId = task.requested_workstation_id || ''
   const badge = document.getElementById('detail-status-badge')
   badge.outerHTML = `<span id="detail-status-badge">${statusBadge(task.status)}</span>`
+}
+
+function renderTaskFeedback(feedback) {
+  const stateEl = document.getElementById('task-feedback-state')
+  const commentEl = document.getElementById('task-feedback-comment')
+  const goodButton = document.getElementById('btn-task-feedback-good')
+  const badButton = document.getElementById('btn-task-feedback-bad')
+  if (!stateEl || !commentEl || !goodButton || !badButton) return
+  const rating = feedback?.rating || state.selectedTaskFeedbackRating
+  state.selectedTaskFeedbackRating = rating || null
+  stateEl.textContent = rating ? `Aktualna ocena: ${TASK_FEEDBACK_LABELS[rating]}` : 'Brak oceny dla tego zadania.'
+  commentEl.value = feedback?.comment || ''
+  setTaskFeedbackButtonState(goodButton, rating === 'good')
+  setTaskFeedbackButtonState(badButton, rating === 'bad')
+}
+
+function setTaskFeedbackButtonState(button, selected) {
+  button.classList.toggle('ring-2', selected)
+  button.classList.toggle('ring-offset-2', selected)
+  button.classList.toggle('ring-slate-900', selected)
+  button.setAttribute('aria-pressed', selected ? 'true' : 'false')
 }
 
 /**
@@ -3074,9 +3180,51 @@ function stationConfigPatch(configPreview) {
   return patch
 }
 
+function handleStationConfigInputChange() {
+  const output = document.getElementById('station-config-output')
+  if (output && !output.classList.contains('hidden')) {
+    renderStationConfigInstruction()
+    return
+  }
+  renderStationConfigValidation(collectStationConfigPreview())
+}
+
+function stationConfigValidationItems(configPreview) {
+  const items = []
+  const contextSize = Number(configPreview.contextSizeTokens || 0)
+  const batchSize = Number(configPreview.messageBatchSize || 0)
+  const queueMax = Number(configPreview.offlineQueueMax || 0)
+  if (configPreview.proxyPort === configPreview.llamaPort) items.push({ level: 'error', text: 'Port proxy i port llama muszą być różne.' })
+  if (configPreview.scheduleEnabled && (!configPreview.scheduleStart || !configPreview.scheduleEnd)) items.push({ level: 'error', text: 'Włączony harmonogram wymaga godziny startu i końca.' })
+  if (configPreview.sdEnabled && !configPreview.draftModelPath) items.push({ level: 'error', text: 'SD wymaga ścieżki do draft modelu GGUF.' })
+  if (!configPreview.sdEnabled && configPreview.draftModelPath) items.push({ level: 'info', text: 'Draft model jest wpisany, ale SD jest wyłączone.' })
+  if (contextSize >= 262144) items.push({ level: 'warn', text: '256k wymaga bardzo dużo RAM/VRAM i modelu z realnym długim kontekstem.' })
+  if (contextSize >= 131072 && Number(configPreview.parallelSlots || 1) > 1) items.push({ level: 'warn', text: 'Długi kontekst i więcej niż jeden slot mogą łatwo przepełnić pamięć.' })
+  if (/planar|iso|turbo/.test(configPreview.kvCacheQuantization || '')) items.push({ level: 'info', text: 'Planar/Iso/Turbo działa tylko z kompatybilnym buildem RotorQuant; stock llama.cpp spadnie do q8_0.' })
+  if (queueMax < batchSize) items.push({ level: 'warn', text: 'Offline queue jest mniejszy niż batch wiadomości; część logów może być szybko obcinana.' })
+  if (configPreview.stationMode === WORKSTATION_KIND.OPERATOR) items.push({ level: 'info', text: 'Tryb operator nie startuje agenta stacji i nie przyjmuje jobów z sali.' })
+  return items.length ? items : [{ level: 'ok', text: 'Konfiguracja wygląda spójnie dla bieżącego presetu.' }]
+}
+
+function renderStationConfigValidation(configPreview) {
+  const container = document.getElementById('station-config-validation')
+  if (!container) return
+  const styles = {
+    error: 'border-red-200 bg-red-50 text-red-800',
+    warn: 'border-amber-200 bg-amber-50 text-amber-800',
+    info: 'border-blue-200 bg-blue-50 text-blue-800',
+    ok: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  }
+  container.innerHTML = stationConfigValidationItems(configPreview).map((item) => `
+    <div class="rounded-lg border px-3 py-2 text-sm ${styles[item.level] || styles.info}">${escapeHtml(item.text)}</div>
+  `).join('')
+  container.classList.remove('hidden')
+}
+
 function renderStationConfigInstruction() {
   const output = document.getElementById('station-config-output')
   const configPreview = collectStationConfigPreview()
+  renderStationConfigValidation(configPreview)
   const context = configPreview.contextMode === 'native' ? 'native' : String(configPreview.contextSizeTokens)
   const scheduleLine = configPreview.scheduleEnabled ? `Harmonogram: ${configPreview.scheduleStart}-${configPreview.scheduleEnd}` : 'Harmonogram: wyłączony'
   output.textContent = [

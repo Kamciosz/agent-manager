@@ -32,13 +32,13 @@ Walidacja wykonana w tej rundzie: statyczny review kodu, `node --check`, `bash -
 
 | Priorytet | Brak | Dlaczego ważne | Proponowana poprawka |
 |---|---|---|---|
-| P0 | Brak prawdziwego widoku trace/run dla pojedynczego zadania | LangSmith i Flowise wygrywają tym, że każdy run ma czytelną oś zdarzeń, input/output, koszty/czasy | Dodać kartę `Run trace` w Task Detail: manager decision, workstation job, prompt preview, result/error, czas trwania |
-| P0 | Brak anulowania i ponawiania | Usunięcie zadania to porządek, nie kontrola procesu | Dodać status `cancelled` i akcje `Anuluj`, `Ponów`, `Ponów na innej stacji` |
-| P1 | Brak zapisanych presetów konfiguracji stacji | Sale szkolne zwykle potrzebują powtarzalnego profilu runtime | Dodać presety: `Operator Mac`, `Sala CPU`, `Sala GPU`, `Długi kontekst`, `RotorQuant` |
-| P1 | Brak walidacji wygenerowanego configu w UI | Operator może wygenerować sprzeczne wartości, zanim trafi do launchera | Dodać panel walidacji: porty, harmonogram, SD bez draft modelu, 256k warning |
-| P1 | Dokumentacja API jest częściowo starsza niż obecny schemat | Nowy tester może mylić `repo` z `git_repo` albo team-space z per-user RLS | Odświeżyć `docs/dev/api-reference.md` do aktualnych tabel i RLS |
-| P2 | Brak ocen jakości wyników | Dify/Flowise/LangSmith mają ewaluacje; tutaj brak feedbacku `dobry/zły` | Dodać ocenę wyniku zadania i prosty dataset regresyjny |
-| P2 | Brak widoku zasobów runtime | Open WebUI mocno eksponuje modele/providerów; tu brakuje RAM/VRAM/CPU telemetry | Dodać opcjonalne metadata: RAM, GPU, token/s, czas generowania |
+| P0 | Run trace pojedynczego zadania | Wdrożone | Task Detail pokazuje joby stacji, wiadomości AI i wiadomości runtime na jednej osi |
+| P0 | Anulowanie i ponawianie | Wdrożone | Dodano `cancelled`, `Anuluj`, `Ponów` i `Ponów auto` z ponownym doborem stacji |
+| P1 | Presety konfiguracji stacji | Wdrożone | `Operator Mac`, `Sala CPU`, `Sala GPU`, `Długi kontekst`, `RotorQuant` |
+| P1 | Walidacja wygenerowanego configu w UI | Wdrożone | Panel sprawdza porty, harmonogram, SD bez draft modelu, 256k i konflikty pamięci |
+| P1 | Aktualność dokumentacji API | Ulepszone | Dodano opis `task_feedback`; pełny opis wszystkich tabel stacji pozostaje do dalszego porządkowania |
+| P2 | Oceny jakości wyników | Wdrożone | Task Detail zapisuje `Dobry/Zły` i notatkę do `task_feedback`; dataset jest w `tests/data/regression-prompts.json` |
+| P2 | Widok zasobów runtime | Wdrożone | Heartbeat raportuje RAM/load/RSS, a dashboard pokazuje zasoby i kolejkę offline |
 
 ## Co miło zaskoczyło
 
@@ -60,7 +60,7 @@ Walidacja wykonana w tej rundzie: statyczny review kodu, `node --check`, `bash -
 
 ## Decyzja testera po tej rundzie
 
-Produkt jest alpha-plus: działa jako panel szkolno-operatorski z lokalnymi stacjami, ale przed beta potrzebuje lepszego `Run trace`, anulowania/ponawiania i presetów konfiguracji. Największa przewaga forka to połączenie GitHub Pages + Supabase + lokalne szkolne stacje bez haseł operatora. Największe ryzyko to rosnąca złożoność `ui/app.js` oraz brak automatycznych E2E.
+Produkt jest alpha-plus blisko beta: działa jako panel szkolno-operatorski z lokalnymi stacjami, ma trace, anulowanie/ponawianie, presety, smoke runtime i oceny wyników. Największa przewaga forka to połączenie GitHub Pages + Supabase + lokalne szkolne stacje bez haseł operatora. Największe ryzyko to rosnąca złożoność `ui/app.js` oraz brak automatycznych E2E.
 
 ## Usprawnienie wdrożone z review
 
