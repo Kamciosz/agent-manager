@@ -41,6 +41,8 @@ const AGENT = {
   MANAGER: 'manager',
 }
 
+const PROJECT_MANAGER_PROFILE = 'kierownik projektu'
+
 const ASSIGNMENT_STATUS = {
   ASSIGNED: 'assigned',
   IN_PROGRESS: 'in_progress',
@@ -205,6 +207,7 @@ async function handleNewTask(task) {
     console.log('[manager.js] Zadanie już przejęte przez inną kartę:', task.id)
     return
   }
+  await ensureProjectManagerAssignment(task)
 
   // Krok 2: po kolejnych 1200 ms — utwórz przydział lub job dla stacji
   await sleep(DELAY.ASSIGN)
@@ -298,6 +301,9 @@ async function updateTaskStatus(taskId, newStatus) {
     if (newStatus !== STATUS.CANCELLED) query = query.neq('status', STATUS.CANCELLED)
     const { error } = await query
     if (error) throw error
+    if ([STATUS.DONE, STATUS.FAILED, STATUS.CANCELLED].includes(newStatus)) {
+      await completeProjectManagerAssignment(taskId)
+    }
   } catch (error) {
     console.error('[manager.js] updateTaskStatus failed:', error)
   }
@@ -316,21 +322,63 @@ async function isTaskCancelled(taskId) {
     console.error('[manager.js] isTaskCancelled failed:', error)
     return false
   }
+}
 
-  async function getTaskById(taskId) {
-    try {
-      const { data, error } = await supabaseClient
-        .from('tasks')
-        .select('*')
-        .eq('id', taskId)
-        .maybeSingle()
-      if (error) throw error
-      return data || null
-    } catch (error) {
-      console.error('[manager.js] getTaskById failed:', error)
-      return null
-    }
+async function getTaskById(taskId) {
+  try {
+    const { data, error } = await supabaseClient
+      .from('tasks')
+      .select('*')
+      .eq('id', taskId)
+      .maybeSingle()
+    if (error) throw error
+    return data || null
+  } catch (error) {
+    console.error('[manager.js] getTaskById failed:', error)
+    return null
   }
+}
+
+async function ensureProjectManagerAssignment(task) {
+  if (!task?.id) return false
+  try {
+    const { error } = await supabaseClient
+      .from('assignments')
+      .upsert({
+        task_id: task.id,
+        agent_id: AGENT.MANAGER,
+        instructions: projectManagerInstructions(task),
+        profile: PROJECT_MANAGER_PROFILE,
+        status: ASSIGNMENT_STATUS.IN_PROGRESS,
+      }, { onConflict: 'task_id,agent_id' })
+    if (error) throw error
+    return true
+  } catch (error) {
+    console.error('[manager.js] ensureProjectManagerAssignment failed:', error)
+    return false
+  }
+}
+
+async function completeProjectManagerAssignment(taskId) {
+  if (!taskId) return
+  try {
+    const { error } = await supabaseClient
+      .from('assignments')
+      .update({ status: ASSIGNMENT_STATUS.DONE })
+      .eq('task_id', taskId)
+      .eq('agent_id', AGENT.MANAGER)
+    if (error) throw error
+  } catch (error) {
+    console.error('[manager.js] completeProjectManagerAssignment failed:', error)
+  }
+}
+
+function projectManagerInstructions(task) {
+  return [
+    'Kierownik projektu koordynuje wykonanie polecenia, dobiera wykonawcę, pilnuje stacji roboczych i zamknięcia statusu.',
+    `Polecenie: ${task.title || ''}`,
+    task.description ? `Szczegóły: ${task.description}` : '',
+  ].filter(Boolean).join('\n')
 }
 
 /**

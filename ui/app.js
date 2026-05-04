@@ -555,6 +555,7 @@ function bindNavigation() {
   document.getElementById('btn-open-help').addEventListener('click', openHelpModal)
   document.getElementById('btn-save-settings').addEventListener('click', handleSaveSettings)
   document.getElementById('btn-generate-station-config').addEventListener('click', renderStationConfigInstruction)
+  document.getElementById('btn-update-all-workstations')?.addEventListener('click', () => sendBulkWorkstationCommand('update'))
   document.getElementById('station-config-preset')?.addEventListener('change', applyStationConfigPreset)
   document.querySelectorAll('[id^="station-config-"]').forEach((control) => {
     control.addEventListener('input', handleStationConfigInputChange)
@@ -1697,7 +1698,7 @@ function workstationCommandButtons(workstation) {
   `).join('')
 }
 
-async function sendWorkstationCommand(workstationId, command) {
+async function sendWorkstationCommand(workstationId, command, options = {}) {
   const workstation = findWorkstation(workstationId)
   if (!workstation || !WORKSTATION_COMMAND_LABELS[command]) return
   if (command === 'shutdown' && !confirm('Wyłączyć proces stacji zdalnie?')) return
@@ -1711,7 +1712,30 @@ async function sendWorkstationCommand(workstationId, command) {
     patch: configPreview ? stationConfigPatch(configPreview) : undefined,
   })
   const ok = await sendWorkstationMessage({ workstationId, taskId: null, content, messageType: 'command' })
-  if (ok) showToast(`Wysłano komendę: ${WORKSTATION_COMMAND_LABELS[command]}.`, TOAST_TYPE.SUCCESS)
+  if (ok && !options.silent) showToast(`Wysłano komendę: ${WORKSTATION_COMMAND_LABELS[command]}.`, TOAST_TYPE.SUCCESS)
+  return ok
+}
+
+function workstationsForBulkCommand(command) {
+  if (!WORKSTATION_COMMAND_LABELS[command]) return []
+  return classroomWorkstations(state.workstations)
+    .filter((workstation) => workstation.accepts_jobs !== false)
+    .filter((workstation) => ['online', 'busy'].includes(workstation.status))
+    .filter((workstation) => !isStaleWorkstation(workstation))
+}
+
+async function sendBulkWorkstationCommand(command) {
+  const workstations = workstationsForBulkCommand(command)
+  if (!workstations.length) {
+    showToast('Brak aktywnych stacji do aktualizacji.', TOAST_TYPE.INFO)
+    return
+  }
+  const label = WORKSTATION_COMMAND_LABELS[command]
+  if (!confirm(`Wysłać komendę "${label}" do ${workstations.length} aktywnych stacji?`)) return
+  const results = await Promise.all(workstations.map((workstation) => sendWorkstationCommand(workstation.id, command, { silent: true })))
+  const sent = results.filter(Boolean).length
+  if (sent) showToast(`Wysłano "${label}" do ${sent}/${workstations.length} stacji.`, TOAST_TYPE.SUCCESS)
+  if (sent !== workstations.length) showToast('Część stacji nie przyjęła komendy. Sprawdź log monitora.', TOAST_TYPE.ERROR)
 }
 
 /**
