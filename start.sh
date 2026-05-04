@@ -1213,6 +1213,60 @@ find_free_port() {
   echo ""
 }
 
+canonical_path() {
+  local target="$1" dir base
+  dir="$(dirname "$target")"
+  base="$(basename "$target")"
+  if [ -d "$dir" ]; then
+    (cd "$dir" && printf '%s/%s\n' "$(pwd -P)" "$base")
+  else
+    printf '%s\n' "$target"
+  fi
+}
+
+llama_server_model_path() {
+  local port="$1"
+  curl -fs --max-time 2 "http://127.0.0.1:$port/props" 2>/dev/null | node -e '
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => { raw += chunk; });
+process.stdin.on("end", () => {
+  try { console.log(JSON.parse(raw).model_path || ""); }
+  catch { process.exit(1); }
+});
+' 2>/dev/null || true
+}
+
+existing_llama_matches_model() {
+  local port="$1" expected="$2" loaded expected_real loaded_real
+  loaded="$(llama_server_model_path "$port")"
+  [ -n "$loaded" ] || return 1
+  expected_real="$(canonical_path "$expected")"
+  loaded_real="$(canonical_path "$loaded")"
+  [ "$expected_real" = "$loaded_real" ]
+}
+
+ensure_reused_llama_matches_config() {
+  local model_path="$1" alt loaded
+  [ "$REUSE_LLAMA" = "1" ] || return 0
+  if existing_llama_matches_model "$LLAMA_PORT" "$model_path"; then
+    log "Istniejący llama-server pasuje do modelu z config.json."
+    return 0
+  fi
+  loaded="$(llama_server_model_path "$LLAMA_PORT")"
+  warn "Na porcie $LLAMA_PORT działa llama-server z innym modelem: ${loaded:-nieznany}."
+  warn "Nie reużywam go, bo stacja musi wykonywać joby na modelu z config.json: $(basename "$model_path")."
+  alt="$(find_free_port 8090)"
+  if [ -z "$alt" ]; then
+    err "Nie znalazłem wolnego portu w zakresie 8090-8139 dla właściwego modelu."
+    exit 1
+  fi
+  LLAMA_PORT="$alt"
+  REUSE_LLAMA=0
+  sync_runtime_config_json
+  log "Właściwy llama-server uruchomię na alternatywnym porcie: $LLAMA_PORT"
+}
+
 # Decyzja co zrobić z portem 8080 (llama). Modyfikuje globalne LLAMA_PORT
 # i ustawia REUSE_LLAMA=1 jeśli reużywamy istniejącego serwera.
 resolve_llama_port() {
@@ -1412,6 +1466,20 @@ wait_for_health() {
   return 1
 }
 
+check_proxy_smoke() {
+  local url="http://127.0.0.1:$PROXY_PORT/health/smoke?timeoutMs=120000"
+  log "Sprawdzam, czy model generuje odpowiedź kontrolną (max 120s)…"
+  if curl -fs --max-time 130 "$url" >/dev/null 2>&1; then
+    log "Model odpowiedział na smoke test. Stacja może przyjmować joby."
+    return 0
+  fi
+  err "Proxy działa, ale llama-server nie wygenerował odpowiedzi kontrolnej."
+  err "Nie uruchamiam agenta stacji, żeby nie wysyłać jobów do dead-letter."
+  print_log_tail "llama-server log tail" "$LOGS_DIR/llama-server.log" 40
+  print_log_tail "proxy log tail" "$LOGS_DIR/proxy.log" 40
+  return 1
+}
+
 wait_for_runtime_processes() {
   local pids=() labels=() index pid label
   if [ "$REUSE_LLAMA" != "1" ] && [ -f "$LOGS_DIR/llama.pid" ]; then
@@ -1579,6 +1647,7 @@ ensure_config "$GPU_DETECTED"
 
 MODEL_PATH="$(read_config_value modelPath)"
 [ -z "$MODEL_PATH" ] && { err "Brak modelPath w config.json"; exit 1; }
+ensure_reused_llama_matches_config "$MODEL_PATH"
 
 wait_for_schedule_window
 
@@ -1599,6 +1668,7 @@ wait_for_health "http://127.0.0.1:$PROXY_PORT/health" "proxy" 15 || exit 1
 if is_operator_runtime; then
   log "Tryb operatora: uruchomiono lokalny proxy AI bez agenta stacji roboczej."
 else
+  check_proxy_smoke || exit 1
   start_workstation_agent
 fi
 

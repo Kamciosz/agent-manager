@@ -483,12 +483,15 @@ async function handleHealth(cfg, req, res) {
 
 async function handleHealthSmoke(cfg, req, res) {
   const startedAt = Date.now()
+  const requestUrl = new URL(req.url || '/', 'http://127.0.0.1')
+  const requestedTimeoutMs = Number(requestUrl.searchParams.get('timeoutMs')) || Math.min(cfg.generationTimeoutMs, 120000)
+  const timeoutMs = Math.min(Math.max(requestedTimeoutMs, 15000), cfg.generationTimeoutMs, 1800000)
   try {
     const result = await forwardToLlama(
       'Odpowiedz dokładnie jednym słowem: OK',
       { maxTokens: 8, temperature: 0 },
       cfg.llamaUrl,
-      Math.min(cfg.generationTimeoutMs, 30000),
+      timeoutMs,
     )
     sendJson(req, res, cfg, 200, {
       ok: true,
@@ -496,6 +499,7 @@ async function handleHealthSmoke(cfg, req, res) {
       llama: 'generated',
       model: cfg.modelName,
       text: result.text,
+      timeoutMs,
       durationMs: result.durationMs || Date.now() - startedAt,
     })
   } catch (error) {
@@ -505,6 +509,7 @@ async function handleHealthSmoke(cfg, req, res) {
       llama: 'smoke-failed',
       model: cfg.modelName,
       detail: error.message,
+      timeoutMs,
       durationMs: Date.now() - startedAt,
     })
   }
@@ -704,22 +709,24 @@ async function route(cfg, req, res) {
   }
 
   const url = req.url || '/'
-  if (req.method === 'GET' && url === '/health') {
+  const requestUrl = new URL(url, 'http://127.0.0.1')
+  const pathname = requestUrl.pathname
+  if (req.method === 'GET' && pathname === '/health') {
     await handleHealth(cfg, req, res)
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }
-  if (req.method === 'GET' && url === '/health/smoke') {
+  if (req.method === 'GET' && pathname === '/health/smoke') {
     await handleHealthSmoke(cfg, req, res)
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }
-  if (req.method === 'GET' && url === '/metrics') {
+  if (req.method === 'GET' && pathname === '/metrics') {
     sendJson(req, res, cfg, 200, metricsSnapshot(cfg))
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }
-  if (req.method === 'GET' && url === '/models') {
+  if (req.method === 'GET' && pathname === '/models') {
     sendJson(req, res, cfg, 200, {
       models: [{ name: cfg.modelName, backend: cfg.backend, contextTokens: cfg.contextSizeTokens, kvCache: cfg.effectiveKvCacheQuantization }],
       capabilities: ['generate', 'metrics', 'queue', 'rate-limit', 'cancel', 'openai-chat'],
@@ -727,18 +734,18 @@ async function route(cfg, req, res) {
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }
-  if (req.method === 'POST' && url === '/generate') {
+  if (req.method === 'POST' && pathname === '/generate') {
     await handleGenerate(cfg, req, res)
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }
-  if (req.method === 'POST' && url === '/v1/chat/completions') {
+  if (req.method === 'POST' && pathname === '/v1/chat/completions') {
     await handleChatCompletions(cfg, req, res)
     logLine(req.method, url, res.statusCode, startedAt)
     return
   }
-  if (req.method === 'POST' && url.startsWith('/cancel/')) {
-    const requestId = decodeURIComponent(url.slice('/cancel/'.length))
+  if (req.method === 'POST' && pathname.startsWith('/cancel/')) {
+    const requestId = decodeURIComponent(pathname.slice('/cancel/'.length))
     const ok = cancelInflight(requestId)
     sendJson(req, res, cfg, ok ? 200 : 404, { ok, requestId })
     logLine(req.method, url, res.statusCode, startedAt)

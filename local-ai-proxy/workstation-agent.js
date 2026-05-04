@@ -26,6 +26,7 @@ const DEFAULTS = {
   HEARTBEAT_MS: 15000,
   MESSAGE_POLL_MS: 6000,
   LEASE_SECONDS: 900,
+  RUNTIME_BACKOFF_MS: 2 * 60 * 1000,
   AUTH_RETRY_MS: [3000, 7000, 15000, 30000],
   GENERATION_TIMEOUT_MS: 600000,
   CONTEXT_TOKENS: 65536,
@@ -40,6 +41,8 @@ let workstationId = null
 let authSession = null
 let scheduleStopAnnounced = false
 let recentJobMetrics = []
+let runtimeBackoffUntil = 0
+let runtimeBackoffReason = ''
 
 function log(...args) {
   console.log('[workstation-agent]', ...args)
@@ -183,11 +186,37 @@ function ensureRequiredConfig(cfg) {
 function currentStatus(cfg) {
   if (!cfg.acceptsJobs) return 'offline'
   if (!isWithinSchedule(cfg)) return 'offline'
+  if (isRuntimeBackoffActive()) return 'offline'
   return activeJobs >= cfg.parallelSlots ? 'busy' : 'online'
 }
 
 function availableSlots(cfg) {
+  if (isRuntimeBackoffActive()) return 0
   return Math.max(0, cfg.parallelSlots - activeJobs)
+}
+
+function isRuntimeBackoffActive() {
+  if (runtimeBackoffUntil > Date.now()) return true
+  if (runtimeBackoffUntil) clearRuntimeBackoff()
+  return false
+}
+
+function setRuntimeBackoff(reason, durationMs = DEFAULTS.RUNTIME_BACKOFF_MS) {
+  runtimeBackoffUntil = Date.now() + durationMs
+  runtimeBackoffReason = String(reason || 'runtime unavailable').slice(0, 500)
+}
+
+function clearRuntimeBackoff() {
+  runtimeBackoffUntil = 0
+  runtimeBackoffReason = ''
+}
+
+function isRuntimeUnavailableError(error) {
+  const message = String(error?.message || '')
+  return message.includes('llama-server unreachable')
+    || message.includes('llama-server timeout')
+    || message.includes('Local proxy HTTP 502')
+    || message.includes('proxy HTTP 502')
 }
 
 function resourceSnapshot() {
@@ -538,6 +567,8 @@ function workstationPayload(cfg, userId, statusOverride) {
       tokensPerSecondP95: metrics.tokensPerSecondP95,
       failureRate24h: metrics.failureRate24h,
       metricsSampleSize: metrics.sampleSize,
+      runtimeBackoffUntil: runtimeBackoffUntil ? new Date(runtimeBackoffUntil).toISOString() : null,
+      runtimeBackoffReason: runtimeBackoffReason || null,
       resources: resourceSnapshot(),
       authMode: cfg.stationUserId ? 'station-token' : 'legacy-operator-password',
       scheduleOutsideAction: cfg.scheduleOutsideAction,
@@ -819,6 +850,22 @@ async function markJobFailure(cfg, session, job, error) {
   return { canRetry, nextStatus, nextRetryCount, maxAttempts }
 }
 
+async function releaseJobForRuntimeFailure(cfg, session, job, error) {
+  const now = new Date().toISOString()
+  const retryAt = new Date(Date.now() + DEFAULTS.RUNTIME_BACKOFF_MS).toISOString()
+  setRuntimeBackoff(error.message)
+  await restPatch(cfg, session, 'workstation_jobs', `id=eq.${encodeURIComponent(job.id)}`, {
+    status: 'retrying',
+    lease_owner: null,
+    lease_expires_at: retryAt,
+    error_text: error.message,
+    last_error_code: 'runtime_unavailable',
+    last_error_at: now,
+    finished_at: null,
+  })
+  return { retryAt }
+}
+
 function isCancelledJob(job) {
   return job?.status === 'cancelled' || Boolean(job?.cancel_requested_at)
 }
@@ -842,6 +889,7 @@ async function processJob(cfg, session, job) {
       requestId: `job:${job.id}:attempt:${Number(job.retry_count || 0) + 1}`,
       role: 'station',
     })
+    clearRuntimeBackoff()
     const output = result.text
     recordJobMetric({ ok: true, tokensPerSecond: result.tokensPerSecond || null })
     const latestJob = await fetchJobStatus(cfg, session, job.id).catch((statusError) => {
@@ -893,6 +941,20 @@ async function processJob(cfg, session, job) {
       return
     }
     recordJobMetric({ ok: false, tokensPerSecond: null })
+    if (isRuntimeUnavailableError(error)) {
+      const release = await releaseJobForRuntimeFailure(cfg, session, job, error)
+      await appendStationMessage(cfg, session, [{
+        workstation_id: workstationId,
+        task_id: job.task_id || null,
+        sender_kind: 'workstation',
+        sender_label: cfg.workstationName,
+        message_type: 'error',
+        content: `Runtime stacji jest niedostepny: ${error.message}. Job wraca do kolejki bez spalania proby; stacja nie bedzie przyjmowac nowych jobow do ${release.retryAt}.`,
+      }])
+      await heartbeat(cfg, session, 'offline').catch((heartbeatError) => log('heartbeat offline failed:', heartbeatError.message))
+      log('Runtime niedostepny, job oddany bez spalania proby:', job.id, error.message)
+      return
+    }
     const failure = await markJobFailure(cfg, session, job, error)
     await appendStationMessage(cfg, session, [{
       workstation_id: workstationId,

@@ -891,6 +891,47 @@ function Find-FreePort([int] $StartPort) {
   return 0
 }
 
+function Get-LlamaServerModelPath([int] $Port) {
+  try {
+    $props = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/props" -TimeoutSec 2
+    return [string] $props.model_path
+  } catch { return '' }
+}
+
+function Get-NormalizedPath([string] $PathValue) {
+  if ([string]::IsNullOrWhiteSpace($PathValue)) { return '' }
+  try {
+    if (Test-Path -LiteralPath $PathValue) {
+      return (Get-Item -LiteralPath $PathValue).FullName
+    }
+    return [IO.Path]::GetFullPath($PathValue)
+  } catch { return $PathValue }
+}
+
+function Test-ReusedLlamaMatchesModel([string] $ModelPath) {
+  $loaded = Get-LlamaServerModelPath $script:LlamaPort
+  if ([string]::IsNullOrWhiteSpace($loaded)) { return $false }
+  return [string]::Equals((Get-NormalizedPath $loaded), (Get-NormalizedPath $ModelPath), [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Ensure-ReusedLlamaMatchesConfig([string] $ModelPath) {
+  if (-not $script:ReuseLlama) { return }
+  if (Test-ReusedLlamaMatchesModel $ModelPath) {
+    Write-StartLog 'Existing llama-server matches config.json model.'
+    return
+  }
+  $loaded = Get-LlamaServerModelPath $script:LlamaPort
+  if ([string]::IsNullOrWhiteSpace($loaded)) { $loaded = 'unknown' }
+  Write-StartWarn "llama-server on port $script:LlamaPort has a different model: $loaded"
+  Write-StartWarn "Not reusing it; station jobs must run on config.json model: $([IO.Path]::GetFileName($ModelPath))"
+  $alt = Find-FreePort 8090
+  if (-not $alt) { throw 'No free llama-server port found in 8090-8139 for the configured model.' }
+  $script:LlamaPort = $alt
+  $script:ReuseLlama = $false
+  Sync-RuntimeConfig
+  Write-StartLog "Configured model will start on alternate llama-server port $script:LlamaPort"
+}
+
 $ReuseLlama = $false
 function Resolve-LlamaPort {
   $state = Get-PortState $script:LlamaPort
@@ -1126,6 +1167,23 @@ function Wait-Health([string] $Url, [string] $Name, [int] $MaxSeconds) {
   throw "$Name did not become healthy in ${MaxSeconds}s. Check logs in $LogsDir."
 }
 
+function Test-ProxySmoke {
+  $url = "http://127.0.0.1:$script:ProxyPort/health/smoke?timeoutMs=120000"
+  Write-StartLog 'Checking model smoke generation before starting workstation-agent (max 120s).'
+  try {
+    Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 130 | Out-Null
+    Write-StartLog 'Model smoke generation passed. Workstation-agent can accept jobs.'
+    return
+  } catch {
+    Write-StartErr 'Proxy is up, but llama-server did not generate a smoke response.'
+    Write-StartWarn 'workstation-agent will not start, so jobs are not sent to dead-letter because of local runtime failure.'
+    Write-ProcessLogTail 'llama-server stdout tail' (Join-Path $LogsDir 'llama-server.log') 40
+    Write-ProcessLogTail 'llama-server stderr tail' (Join-Path $LogsDir 'llama-server.err.log') 40
+    Write-ProcessLogTail 'proxy stdout tail' (Join-Path $LogsDir 'proxy.log') 40
+    throw 'Model smoke generation failed. Lower context/model size or check llama-server logs.'
+  }
+}
+
 function Stop-StartedProcesses {
   foreach ($entry in $script:StartedProcesses) {
     try {
@@ -1324,6 +1382,7 @@ try {
   $cfg = Read-Config
   $modelPath = Get-ConfigString $cfg 'modelPath'
   if (-not $modelPath) { throw 'Missing modelPath in config.json.' }
+  Ensure-ReusedLlamaMatchesConfig $modelPath
 
   if ($ReuseLlama) {
     Write-StartLog "Reusing llama-server on port $LlamaPort."
@@ -1339,6 +1398,7 @@ try {
   if (Test-OperatorRuntime) {
     Write-StartLog 'Operator mode: local AI proxy started without workstation-agent.'
   } else {
+    Test-ProxySmoke
     [void] (Start-WorkstationAgent)
   }
   Wait-ManagedProcesses
