@@ -11,12 +11,13 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { execFile } = require('node:child_process')
+const { execFile, execFileSync } = require('node:child_process')
 const { getScheduleState, normalizeSchedule } = require('./runtime-schedule')
 
 const CONFIG_PATH = path.join(__dirname, 'config.json')
 const LOGS_DIR = path.join(__dirname, 'logs')
 const OFFLINE_QUEUE_PATH = path.join(LOGS_DIR, 'workstation-offline-queue.json')
+const ROOT_DIR = path.resolve(__dirname, '..')
 
 const SUPPORTED_KV_CACHE = ['auto', 'f32', 'f16', 'bf16', 'q8_0', 'q4_0', 'q4_1', 'iq4_nl', 'q5_0', 'q5_1', 'planar3', 'iso3', 'planar4', 'iso4', 'turbo3', 'turbo4']
 
@@ -34,6 +35,35 @@ const DEFAULTS = {
   MESSAGE_BATCH_SIZE: 10,
   OFFLINE_QUEUE_MAX: 500,
 }
+
+const REPO_CONTEXT_MAX_CHARS = {
+  instant: 0,
+  fast: 9000,
+  standard: 22000,
+  deep: 38000,
+}
+
+const REPO_CONTEXT_MAX_FILES = {
+  instant: 0,
+  fast: 5,
+  standard: 10,
+  deep: 16,
+}
+
+const REPO_CONTEXT_FILE_CHARS = 6000
+const REPO_CONTEXT_DEFAULT_FILES = [
+  'README.md',
+  'ui/labyrinth.js',
+  'ui/manager.js',
+  'ui/app.js',
+  'local-ai-proxy/workstation-agent.js',
+  'local-ai-proxy/proxy.js',
+  'start.sh',
+  'launcher/start.ps1',
+  'supabase/setup_from_zero.sql',
+]
+const REPO_CONTEXT_IGNORED_PARTS = new Set(['.git', 'node_modules', 'bin', 'models', 'logs', 'dist', 'build', '.next'])
+const REPO_CONTEXT_TEXT_EXTENSIONS = new Set(['.js', '.mjs', '.json', '.md', '.html', '.css', '.sh', '.ps1', '.sql', '.yml', '.yaml', '.txt'])
 
 let activeJobs = 0
 let shuttingDown = false
@@ -637,18 +667,175 @@ async function fetchUnreadMessages(cfg, session) {
   )
 }
 
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+}
+
+function isCodeRepairPayload(payload = {}) {
+  const text = normalizeSearchText([
+    payload.title,
+    payload.description,
+    payload.instructions,
+    payload.git_repo,
+  ].filter(Boolean).join('\n'))
+  return /napraw|fix|bug|debug|awari|regresj|blad|nie dziala/.test(text)
+    || /program|aplikacj|launcher|luncher|kod|repo|github|supabase|migrac|ui|frontend|backend|test/.test(text)
+}
+
+function shouldIncludeRepositoryContext(payload, route) {
+  if (route === 'instant' && !isCodeRepairPayload(payload)) return false
+  return Boolean(payload.git_repo) || isCodeRepairPayload(payload) || route === 'standard' || route === 'deep'
+}
+
+function gitOutput(args, maxChars = 4000) {
+  try {
+    return execFileSync('git', args, {
+      cwd: ROOT_DIR,
+      encoding: 'utf8',
+      timeout: 3000,
+      maxBuffer: 1024 * 1024,
+    }).trim().slice(0, maxChars)
+  } catch {
+    return ''
+  }
+}
+
+function isIgnoredRepoPath(relativePath) {
+  const normalized = relativePath.replace(/\\/g, '/')
+  const lower = normalized.toLowerCase()
+  if (!normalized || lower === 'local-ai-proxy/config.json') return true
+  if (/(^|\/)\.env($|\.)/.test(lower)) return true
+  if (/\.(gguf|bin|exe|dll|dylib|so|zip|tar|gz|7z|png|jpe?g|gif|webp|pdf|sqlite|db|pem|key|crt)$/i.test(lower)) return true
+  return normalized.split('/').some((part) => REPO_CONTEXT_IGNORED_PARTS.has(part))
+}
+
+function isTextRepoPath(relativePath) {
+  if (isIgnoredRepoPath(relativePath)) return false
+  const extension = path.extname(relativePath).toLowerCase()
+  return REPO_CONTEXT_TEXT_EXTENSIONS.has(extension)
+}
+
+function listFallbackRepoFiles(directory = ROOT_DIR, prefix = '') {
+  let entries = []
+  try {
+    entries = fs.readdirSync(directory, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const files = []
+  for (const entry of entries) {
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name
+    if (isIgnoredRepoPath(relativePath)) continue
+    const fullPath = path.join(directory, entry.name)
+    if (entry.isDirectory()) files.push(...listFallbackRepoFiles(fullPath, relativePath))
+    else if (entry.isFile()) files.push(relativePath)
+    if (files.length > 500) break
+  }
+  return files
+}
+
+function listRepoFiles() {
+  const gitFiles = gitOutput(['ls-files'], 200000)
+  const files = gitFiles ? gitFiles.split(/\r?\n/) : listFallbackRepoFiles()
+  return Array.from(new Set(files.map((item) => item.trim()).filter(isTextRepoPath))).sort()
+}
+
+function repoFileScore(relativePath, payload) {
+  const lowerPath = normalizeSearchText(relativePath)
+  const text = normalizeSearchText([payload.title, payload.description, payload.instructions].filter(Boolean).join('\n'))
+  let score = REPO_CONTEXT_DEFAULT_FILES.includes(relativePath) ? 100 : 0
+  if (/launcher|luncher|start|update/.test(text) && /(^start\.sh$|launcher\/|workstation-agent\.js|proxy\.js)/.test(lowerPath)) score += 80
+  if (/stacj|workstation|agent|runtime|proxy|model/.test(text) && /local-ai-proxy|workstation|manager/.test(lowerPath)) score += 70
+  if (/manager|kierownik|routing|przydzial|assignment|kolejk|job/.test(text) && /ui\/(manager|labyrinth|app)\.js|workstation-agent\.js/.test(lowerPath)) score += 70
+  if (/supabase|migrac|rls|baza|status|artifact|artefakt/.test(text) && /supabase|manager|workstation-agent/.test(lowerPath)) score += 70
+  if (/ui|frontend|widok|przycisk|panel/.test(text) && /ui\/(app|index|labyrinth)\./.test(lowerPath)) score += 60
+  for (const token of text.split(/[^a-z0-9_-]+/).filter((part) => part.length > 3).slice(0, 20)) {
+    if (lowerPath.includes(token)) score += 8
+  }
+  return score
+}
+
+function selectRepoContextFiles(payload, route) {
+  const files = listRepoFiles()
+  const maxFiles = REPO_CONTEXT_MAX_FILES[route] || REPO_CONTEXT_MAX_FILES.standard
+  return files
+    .map((relativePath) => ({ relativePath, score: repoFileScore(relativePath, payload) }))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || left.relativePath.localeCompare(right.relativePath))
+    .slice(0, maxFiles)
+    .map((item) => item.relativePath)
+}
+
+function readRepoFileSnippet(relativePath, maxChars) {
+  const fullPath = path.join(ROOT_DIR, relativePath)
+  try {
+    const stat = fs.statSync(fullPath)
+    if (!stat.isFile()) return ''
+    const content = fs.readFileSync(fullPath, 'utf8')
+    const snippet = content.slice(0, maxChars)
+    return snippet + (content.length > maxChars ? '\n...[truncated]' : '')
+  } catch {
+    return ''
+  }
+}
+
+function buildRepositoryContext(payload, route) {
+  if (!shouldIncludeRepositoryContext(payload, route)) return ''
+  const effectiveRoute = route === 'instant' && isCodeRepairPayload(payload) ? 'standard' : route
+  const maxChars = REPO_CONTEXT_MAX_CHARS[effectiveRoute] || REPO_CONTEXT_MAX_CHARS.standard
+  const selectedFiles = selectRepoContextFiles(payload, effectiveRoute)
+  if (!selectedFiles.length) return ''
+  const status = gitOutput(['status', '--short'], 4000) || 'clean-or-no-git-status'
+  const branch = gitOutput(['rev-parse', '--abbrev-ref', 'HEAD'], 200) || 'unknown'
+  const lastCommit = gitOutput(['log', '-1', '--oneline'], 500) || 'unknown'
+  const remote = gitOutput(['remote', 'get-url', 'origin'], 500) || 'unknown'
+  const header = [
+    'Lokalny snapshot repo launchera/stacji do analizy zadania:',
+    `Root: ${ROOT_DIR}`,
+    `Remote: ${remote}`,
+    `Branch: ${branch}`,
+    `Last commit: ${lastCommit}`,
+    `Git status: ${status}`,
+    `Wybrane pliki: ${selectedFiles.join(', ')}`,
+  ].join('\n')
+  const sections = [header]
+  let remaining = Math.max(0, maxChars - header.length)
+  for (const relativePath of selectedFiles) {
+    if (remaining <= 300) break
+    const snippet = readRepoFileSnippet(relativePath, Math.min(REPO_CONTEXT_FILE_CHARS, remaining))
+    if (!snippet) continue
+    const section = `\n--- ${relativePath} ---\n${snippet}`
+    sections.push(section)
+    remaining -= section.length
+  }
+  return sections.join('\n').slice(0, maxChars)
+}
+
+function hasInsufficientRepositoryContextResponse(text) {
+  const normalized = normalizeSearchText(text)
+  return /nie mam( bezposredniego)? dostepu do (kodu|repo|repozytorium|plikow)/.test(normalized)
+    || /nie moge (otworzyc|sprawdzic|przejrzec|zobaczyc) (kodu|repo|repozytorium|plikow)/.test(normalized)
+    || /jako model jezykowy.*nie mam dostepu/.test(normalized)
+}
+
 function buildJobPrompt(job) {
   const payload = job.payload || {}
   const context = payload.context || {}
   const routing = payload.routing || context.raw?.routing || {}
   const route = String(routing.route || 'standard')
   const contextLimit = route === 'instant' ? 0 : route === 'fast' ? 600 : route === 'standard' ? 1200 : 2400
+  const repositoryContext = buildRepositoryContext(payload, route)
   const metadata = [
     payload.git_repo ? `Repo: ${payload.git_repo}` : '',
     contextLimit && context.raw ? `Kontekst JSON: ${JSON.stringify(context.raw).slice(0, contextLimit)}` : '',
+    repositoryContext ? `Snapshot repo do uzycia przez model:\n${repositoryContext}` : '',
   ].filter(Boolean).join('\n')
   return [
     'Jestes agentem AI na szkolnej stacji roboczej. Masz wykonac zadanie i zwrocic sam wynik pracy.',
+    repositoryContext ? 'Masz ponizej lokalny snapshot repo. Uzyj go; nie odpowiadaj, ze nie masz dostepu do kodu.' : '',
     'Nie przepisuj w odpowiedzi naglowkow ani pol technicznych takich jak Tytul, Opis, Repo, Kontekst, routing lub payload.',
     `Tryb zadania: ${route}. ${payload.generation?.workflowMode ? `Workflow: ${payload.generation.workflowMode}.` : ''}`,
     payload.generation?.outputContract ? `Kontrakt odpowiedzi: ${payload.generation.outputContract}` : '',
@@ -843,7 +1030,7 @@ async function markJobFailure(cfg, session, job, error) {
     lease_owner: null,
     lease_expires_at: canRetry ? new Date(Date.now() + retryBackoffMs(job)).toISOString() : null,
     error_text: error.message,
-    last_error_code: error.message.includes('timeout') ? 'timeout' : 'proxy_or_model_error',
+    last_error_code: error.code || (error.message.includes('timeout') ? 'timeout' : 'proxy_or_model_error'),
     last_error_at: now,
     finished_at: canRetry ? null : now,
   })
@@ -891,6 +1078,11 @@ async function processJob(cfg, session, job) {
     })
     clearRuntimeBackoff()
     const output = result.text
+    if (isCodeRepairPayload(job.payload || {}) && hasInsufficientRepositoryContextResponse(output)) {
+      const contextError = new Error('Model odpowiedzial, ze nie ma dostepu do kodu mimo zadania naprawy programu; job wymaga ponownego uruchomienia z kontekstem repo.')
+      contextError.code = 'insufficient_repo_context'
+      throw contextError
+    }
     recordJobMetric({ ok: true, tokensPerSecond: result.tokensPerSecond || null })
     const latestJob = await fetchJobStatus(cfg, session, job.id).catch((statusError) => {
       log('fetchJobStatus failed:', statusError.message)

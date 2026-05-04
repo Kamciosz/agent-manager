@@ -120,6 +120,10 @@ export function classifyTask(input = {}) {
   if (words > 250) { score += 2; reason.push('words_gt_250') }
   if (/analiza|research|architektura|rls|bezpiecze|migrac|benchmark|audyt|produkcyj/.test(text)) { score += 2; reason.push('deep_keyword') }
   if (/testy|e2e|playwright|supabase|migrac|edge function|kolejk|lease|retry/.test(text)) { score += 1; reason.push('engineering_keyword') }
+  const bugFixTemplate = input.template === 'bug-fix'
+  const repairIntent = bugFixTemplate || /napraw|fix|bug|debug|awari|regresj|błąd|blad|nie działa|nie dziala/.test(text)
+  const codeIntent = /program|aplikacj|launcher|luncher|kod|repo|github|supabase|migrac|ui|frontend|backend|test/.test(text)
+  if (repairIntent) { score += bugFixTemplate || codeIntent ? 2 : 1; reason.push(bugFixTemplate || codeIntent ? 'code_repair_keyword' : 'repair_keyword') }
   if (input.template === HERMES_LABYRINTH_TEMPLATE_ID || input.workflow?.id === HERMES_LABYRINTH_TEMPLATE_ID) { score += 1; reason.push('hermes_template') }
   const route = words < 25 && score === 0 ? TASK_ROUTE.INSTANT : score <= 1 ? TASK_ROUTE.FAST : score <= 3 ? TASK_ROUTE.STANDARD : TASK_ROUTE.DEEP
   const cfg = TASK_ROUTE_CONFIG[route]
@@ -141,7 +145,13 @@ export function classifyTask(input = {}) {
 export function taskRouting(task) {
   const context = task?.context || {}
   const raw = context.raw || context
-  if (raw?.routing?.route && TASK_ROUTE_CONFIG[raw.routing.route]) return raw.routing
+  if (raw?.routing?.route && TASK_ROUTE_CONFIG[raw.routing.route]) {
+    const fresh = classifyTask({ title: task?.title, description: task?.description, template: context.template || raw.template })
+    if (raw.routing.route === TASK_ROUTE.INSTANT && fresh.route !== TASK_ROUTE.INSTANT) {
+      return { ...fresh, reason: ['upgraded_saved_instant', ...fresh.reason] }
+    }
+    return raw.routing
+  }
   if (raw?.workflow?.mode && TASK_ROUTE_CONFIG[raw.workflow.mode]) {
     const cfg = TASK_ROUTE_CONFIG[raw.workflow.mode]
     return { route: raw.workflow.mode, reason: ['workflow_mode'], modelProfile: raw.routing?.modelProfile || 'code-executor', maxOutputTokens: cfg.maxTokens, timeoutMs: cfg.timeoutMs, contextTokens: cfg.contextTokens }
