@@ -537,6 +537,10 @@ async function handleGenerate(cfg, req, res) {
   const requestId = String(body.requestId || req.headers['x-request-id'] || randomUUID())
   const workflowMode = String(body.workflowMode || req.headers['x-workflow-mode'] || 'standard')
   const role = String(body.role || req.headers['x-agent-role'] || 'shared')
+  const requestedTimeoutMs = Number(body.timeoutMs) || cfg.generationTimeoutMs
+  const timeoutMs = role === 'station'
+    ? Math.min(Math.max(requestedTimeoutMs, cfg.generationTimeoutMs, DEFAULTS.TIMEOUT_MS), 1800000)
+    : Math.min(requestedTimeoutMs, cfg.generationTimeoutMs)
   const promptChars = body.prompt.length
   const estimatedInputTokens = estimateTokens(body.prompt)
   const controller = new AbortController()
@@ -551,7 +555,7 @@ async function handleGenerate(cfg, req, res) {
           body.prompt,
           { maxTokens: body.maxTokens, temperature: body.temperature },
           cfg.llamaUrl,
-          Math.min(Number(body.timeoutMs) || cfg.generationTimeoutMs, cfg.generationTimeoutMs),
+          timeoutMs,
           controller,
         )),
       }),

@@ -65,6 +65,7 @@ const DELAY = {
 }
 
 const WORKSTATION_STALE_MS = 2 * 60 * 1000
+const WORKSTATION_MIN_TIMEOUT_MS = 10 * 60 * 1000
 
 // ============================================================================
 // STAN MODUŁU
@@ -333,6 +334,7 @@ async function createWorkstationJob(task, instructions, target) {
   const modelName = task.requested_model_name || workstation?.current_model_name || firstWorkstationModel(workstation)
   const routing = taskRouting(task)
   const budget = taskRouteConfig(task)
+  const timeoutMs = Math.max(Number(budget.timeoutMs) || 0, WORKSTATION_MIN_TIMEOUT_MS)
   try {
     if (!workstationId) throw new Error('Brak ID stacji roboczej dla jobu')
     const attempt = Number(task.retry_count || 0)
@@ -365,7 +367,7 @@ async function createWorkstationJob(task, instructions, target) {
           generation: {
             maxTokens: budget.maxTokens,
             temperature: budget.temperature,
-            timeoutMs: budget.timeoutMs,
+            timeoutMs,
             workflowMode: routing.route,
             modelProfile: routing.modelProfile,
             outputContract: budget.outputContract,
