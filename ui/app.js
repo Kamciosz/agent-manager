@@ -2603,7 +2603,7 @@ function runTraceJobHtml(job, index) {
           <div class="rounded bg-slate-50 p-2"><dt class="text-slate-500">Próba</dt><dd class="font-medium text-slate-900">${Number(job.retry_count || 0) + 1}/${Number(job.max_attempts || 3)}</dd></div>
           <div class="rounded bg-slate-50 p-2"><dt class="text-slate-500">Czas</dt><dd class="font-medium text-slate-900">${escapeHtml(duration)}</dd></div>
         </dl>
-        <div class="mt-3 text-xs text-slate-500">Routing: ${escapeHtml(payload.routing || '—')}</div>
+        <div class="mt-3 text-xs text-slate-500">Routing: ${escapeHtml(formatRouting(payload.routing))}</div>
         ${job.error_text ? `<pre class="mt-2 whitespace-pre-wrap break-words rounded bg-red-50 p-2 text-xs text-red-700">${escapeHtml(job.error_text)}</pre>` : ''}
         ${job.result_summary ? `<pre class="mt-2 whitespace-pre-wrap break-words rounded bg-emerald-50 p-2 text-xs text-emerald-800">${escapeHtml(job.result_summary)}</pre>` : ''}
       </div>
@@ -4312,6 +4312,20 @@ function escapeHtml(str) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;')
+}
+
+function formatRouting(value) {
+  if (!value) return '—'
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return value.map(formatRouting).filter(Boolean).join(', ')
+  if (typeof value === 'object') {
+    const route = value.route || value.mode || 'standard'
+    const profile = value.modelProfile ? ` · ${value.modelProfile}` : ''
+    const target = value.target ? ` · ${value.target}` : ''
+    const reason = Array.isArray(value.reason) ? value.reason.join(', ') : value.reason
+    return `${route}${profile}${target}${reason ? ` · powody: ${reason}` : ''}`
+  }
+  return String(value)
 }
 
 /**

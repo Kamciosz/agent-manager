@@ -634,6 +634,8 @@ function buildJobPrompt(job) {
 }
 
 async function callLocalProxy(cfg, prompt, generation = {}) {
+  const requestedTimeoutMs = Number(generation.timeoutMs) || 0
+  const timeoutMs = Math.max(requestedTimeoutMs, cfg.generationTimeoutMs)
   const response = await fetch(`http://127.0.0.1:${cfg.proxyPort}/generate`, {
     method: 'POST',
     headers: {
@@ -646,7 +648,7 @@ async function callLocalProxy(cfg, prompt, generation = {}) {
       prompt,
       maxTokens: generation.maxTokens || 600,
       temperature: generation.temperature ?? 0.4,
-      timeoutMs: generation.timeoutMs || cfg.generationTimeoutMs,
+      timeoutMs,
       workflowMode: generation.workflowMode || 'standard',
       role: generation.role || 'station',
     }),
