@@ -66,6 +66,15 @@ const DELAY = {
 
 const WORKSTATION_STALE_MS = 2 * 60 * 1000
 const WORKSTATION_MIN_TIMEOUT_MS = 10 * 60 * 1000
+const WORKSTATION_RUNTIME_QUARANTINE_MS = 10 * 60 * 1000
+const WORKSTATION_RUNTIME_FAILURE_STATUSES = ['retrying', 'failed', 'dead_letter']
+const WORKSTATION_RUNTIME_FAILURE_CODES = new Set(['runtime_unavailable'])
+const WORKSTATION_RUNTIME_FAILURE_TEXT = [
+  'local proxy http 502',
+  'llama-server unreachable',
+  'llama-server timeout',
+  'proxy http 502',
+]
 
 // ============================================================================
 // STAN MODUŁU
@@ -368,6 +377,7 @@ async function createWorkstationJob(task, instructions, target) {
             maxTokens: budget.maxTokens,
             temperature: budget.temperature,
             timeoutMs,
+            role: 'station',
             workflowMode: routing.route,
             modelProfile: routing.modelProfile,
             outputContract: budget.outputContract,
@@ -393,7 +403,9 @@ async function createWorkstationJob(task, instructions, target) {
 async function resolveExecutionTarget(task) {
   if (task.requested_workstation_id) {
     const workstation = await getWorkstationById(task.requested_workstation_id)
-    if (workstation && isRunnableWorkstation(workstation)) {
+    const [annotatedWorkstation] = await applyRuntimeFailureQuarantine(workstation ? [workstation] : [])
+    if (annotatedWorkstation && isRunnableWorkstation(annotatedWorkstation)) {
+      const workstation = annotatedWorkstation
       return { kind: 'workstation', workstation, reason: 'explicit-workstation' }
     }
     return { kind: 'browser', reason: 'requested-workstation-unavailable' }
@@ -438,7 +450,8 @@ async function getRunnableWorkstations() {
       .eq('accepts_jobs', true)
       .in('status', [WORKSTATION_STATUS.ONLINE, WORKSTATION_STATUS.BUSY])
     if (error) throw error
-    return (data || []).filter(isRunnableWorkstation)
+    const workstations = await applyRuntimeFailureQuarantine(data || [])
+    return workstations.filter(isRunnableWorkstation)
   } catch (error) {
     console.error('[manager.js] getRunnableWorkstations failed:', error)
     return []
@@ -454,10 +467,84 @@ function isRunnableWorkstation(workstation) {
   const metadata = workstation.metadata || {}
   const stationKind = String(metadata.stationKind || metadata.stationRole || '').toLowerCase()
   if (stationKind === 'operator' || workstation.accepts_jobs === false) return false
+  if (workstationRuntimeBlockedUntil(workstation) > Date.now()) return false
   if (!workstation.last_seen_at) return false
   const ageMs = Date.now() - new Date(workstation.last_seen_at).getTime()
   if (!Number.isFinite(ageMs) || ageMs > WORKSTATION_STALE_MS) return false
   return workstationAvailableSlots(workstation) > 0
+}
+
+async function applyRuntimeFailureQuarantine(workstations) {
+  const ids = [...new Set((workstations || []).map((workstation) => workstation?.id).filter(Boolean))]
+  if (!ids.length) return workstations || []
+  const failures = await loadRecentRuntimeFailures(ids)
+  if (!failures.size) return workstations || []
+  return (workstations || []).map((workstation) => {
+    const failure = failures.get(workstation.id)
+    if (!failure) return workstation
+    const metadata = workstation.metadata || {}
+    return {
+      ...workstation,
+      metadata: {
+        ...metadata,
+        runtimeBackoffUntil: new Date(failure.blockedUntil).toISOString(),
+        runtimeBackoffReason: failure.reason,
+        availableSlots: 0,
+      },
+      _runtimeBlockedUntil: failure.blockedUntil,
+      _runtimeBlockReason: failure.reason,
+    }
+  })
+}
+
+async function loadRecentRuntimeFailures(workstationIds) {
+  const byStation = new Map()
+  try {
+    const { data, error } = await supabaseClient
+      .from('workstation_jobs')
+      .select('id,workstation_id,status,error_text,last_error_code,last_error_at,updated_at,created_at')
+      .in('workstation_id', workstationIds)
+      .in('status', WORKSTATION_RUNTIME_FAILURE_STATUSES)
+      .order('updated_at', { ascending: false })
+      .limit(Math.min(200, Math.max(20, workstationIds.length * 10)))
+    if (error) throw error
+    const now = Date.now()
+    for (const job of data || []) {
+      if (!isRuntimeFailureJob(job)) continue
+      const failedAt = runtimeFailureTime(job)
+      const blockedUntil = failedAt + WORKSTATION_RUNTIME_QUARANTINE_MS
+      if (!Number.isFinite(failedAt) || blockedUntil <= now) continue
+      const current = byStation.get(job.workstation_id)
+      if (!current || blockedUntil > current.blockedUntil) {
+        byStation.set(job.workstation_id, {
+          blockedUntil,
+          reason: String(job.error_text || job.last_error_code || 'runtime_unavailable').slice(0, 500),
+        })
+      }
+    }
+  } catch (error) {
+    console.error('[manager.js] loadRecentRuntimeFailures failed:', error)
+  }
+  return byStation
+}
+
+function workstationRuntimeBlockedUntil(workstation) {
+  const metadata = workstation?.metadata || {}
+  const direct = Number(workstation?._runtimeBlockedUntil || 0)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  const fromMetadata = Date.parse(metadata.runtimeBackoffUntil || metadata.runtimeBlockedUntil || '')
+  return Number.isFinite(fromMetadata) ? fromMetadata : 0
+}
+
+function isRuntimeFailureJob(job) {
+  const code = String(job?.last_error_code || '').toLowerCase()
+  if (WORKSTATION_RUNTIME_FAILURE_CODES.has(code)) return true
+  const text = String(job?.error_text || '').toLowerCase()
+  return WORKSTATION_RUNTIME_FAILURE_TEXT.some((needle) => text.includes(needle))
+}
+
+function runtimeFailureTime(job) {
+  return Date.parse(job?.last_error_at || job?.updated_at || job?.created_at || '')
 }
 
 /**
