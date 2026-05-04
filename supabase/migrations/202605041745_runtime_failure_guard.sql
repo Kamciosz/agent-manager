@@ -148,7 +148,7 @@ begin
     select 1
     from public.workstation_jobs j
     where j.workstation_id = p_workstation_id
-      and j.status in ('retrying', 'failed', 'dead_letter')
+      and j.status in ('retrying', 'failed', 'dead_letter', 'cancelled')
       and public.is_workstation_runtime_failure(j.error_text, j.last_error_code)
       and coalesce(j.last_error_at, j.updated_at, j.created_at) > now() - interval '10 minutes'
   ) then

@@ -67,7 +67,8 @@ const DELAY = {
 const WORKSTATION_STALE_MS = 2 * 60 * 1000
 const WORKSTATION_MIN_TIMEOUT_MS = 10 * 60 * 1000
 const WORKSTATION_RUNTIME_QUARANTINE_MS = 10 * 60 * 1000
-const WORKSTATION_RUNTIME_FAILURE_STATUSES = ['retrying', 'failed', 'dead_letter']
+const WORKSTATION_RUNTIME_FAILURE_STATUSES = ['retrying', 'failed', 'dead_letter', 'cancelled']
+const WORKSTATION_RUNTIME_RESCUE_STATUSES = ['retrying', 'failed', 'dead_letter']
 const WORKSTATION_RUNTIME_FAILURE_CODES = new Set(['runtime_unavailable'])
 const WORKSTATION_RUNTIME_FAILURE_TEXT = [
   'local proxy http 502',
@@ -84,6 +85,8 @@ let supabaseClient = null
 let initialized = false
 let tasksSubscription = null
 let messagesSubscription = null
+let workstationJobsSubscription = null
+const rescuedRuntimeJobKeys = new Set()
 
 // ============================================================================
 // PUBLIC API
@@ -103,6 +106,7 @@ export function initManager(supabase) {
 
   tasksSubscription = subscribeToNewTasks()
   messagesSubscription = subscribeToManagerMessages()
+  workstationJobsSubscription = subscribeToWorkstationJobs()
 
   console.log('[manager.js] AI kierownik uruchomiony.')
 }
@@ -115,8 +119,10 @@ export function stopManager() {
   if (!supabaseClient) return
   if (tasksSubscription) supabaseClient.removeChannel(tasksSubscription)
   if (messagesSubscription) supabaseClient.removeChannel(messagesSubscription)
+  if (workstationJobsSubscription) supabaseClient.removeChannel(workstationJobsSubscription)
   tasksSubscription = null
   messagesSubscription = null
+  workstationJobsSubscription = null
   initialized = false
 }
 
@@ -157,6 +163,20 @@ function subscribeToManagerMessages() {
       filter: `to_agent=eq.${AGENT.MANAGER}`,
     }, (payload) => {
       handleManagerMessage(payload.new)
+    })
+    .subscribe()
+}
+
+function subscribeToWorkstationJobs() {
+  return supabaseClient
+    .channel('manager-workstation-jobs')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'workstation_jobs',
+    }, (payload) => {
+      if (!payload.new) return
+      handleWorkstationJobChange(payload.new)
     })
     .subscribe()
 }
@@ -248,6 +268,17 @@ async function handleManagerMessage(message) {
   await sendAnswer(message)
 }
 
+async function handleWorkstationJobChange(job) {
+  if (!job?.task_id) return
+  if (!WORKSTATION_RUNTIME_RESCUE_STATUSES.includes(job.status)) return
+  if (!isRuntimeFailureJob(job)) return
+  const key = `${job.id}:${job.updated_at || job.last_error_at || job.status}`
+  if (rescuedRuntimeJobKeys.has(key)) return
+  rescuedRuntimeJobKeys.add(key)
+  if (rescuedRuntimeJobKeys.size > 200) rescuedRuntimeJobKeys.clear()
+  await rescueRuntimeFailedWorkstationJob(job)
+}
+
 // ============================================================================
 // OPERACJE NA BAZIE
 // ============================================================================
@@ -284,6 +315,21 @@ async function isTaskCancelled(taskId) {
   } catch (error) {
     console.error('[manager.js] isTaskCancelled failed:', error)
     return false
+  }
+
+  async function getTaskById(taskId) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('tasks')
+        .select('*')
+        .eq('id', taskId)
+        .maybeSingle()
+      if (error) throw error
+      return data || null
+    } catch (error) {
+      console.error('[manager.js] getTaskById failed:', error)
+      return null
+    }
   }
 }
 
@@ -324,10 +370,56 @@ function assignmentDecisionText(reason) {
   if (reason === 'workstation-job-failed') {
     return 'Nie udało się zakolejkować jobu na stację, więc wykonawca przeglądarkowy przejmuje rolę pracownika.'
   }
+  if (reason === 'runtime-station-unavailable') {
+    return 'Stacja robocza zgłosiła awarię lokalnego runtime, więc wykonawca przeglądarkowy przejmuje zadanie bez spalania prób.'
+  }
   if (reason === 'requested-workstation-unavailable') {
     return 'Wskazana stacja jest niedostępna, wstrzymana albo jest operatorem, więc wykonawca przeglądarkowy przejmuje zadanie.'
   }
   return 'Brak aktywnej stacji z wolnym slotem, więc wykonawca przeglądarkowy obsłuży zadanie jako pracownik.'
+}
+
+async function rescueRuntimeFailedWorkstationJob(job) {
+  try {
+    const task = await getTaskById(job.task_id)
+    if (!task || task.status === STATUS.CANCELLED || task.status === STATUS.DONE) return
+    const now = new Date().toISOString()
+    const { error: cancelError } = await supabaseClient
+      .from('workstation_jobs')
+      .update({
+        status: 'cancelled',
+        lease_owner: null,
+        lease_expires_at: null,
+        cancel_requested_at: now,
+        cancelled_by_user_id: task.user_id || null,
+        finished_at: now,
+        last_error_code: 'runtime_unavailable',
+      })
+      .eq('id', job.id)
+      .in('status', WORKSTATION_RUNTIME_FAILURE_STATUSES)
+    if (cancelError) throw cancelError
+
+    const reroutedTask = {
+      ...task,
+      requested_workstation_id: null,
+      requested_model_name: null,
+    }
+    const { error: clearError } = await supabaseClient
+      .from('tasks')
+      .update({ requested_workstation_id: null, requested_model_name: null, last_error: null })
+      .eq('id', task.id)
+    if (clearError) throw clearError
+
+    const instructions = await generateInstructions(reroutedTask)
+    const target = await resolveExecutionTarget(reroutedTask)
+    const assigned = target.kind === 'workstation'
+      ? await createWorkstationJob(reroutedTask, instructions, target)
+      : await createAssignment(reroutedTask, instructions, 'runtime-station-unavailable')
+    await updateTaskStatus(task.id, assigned ? STATUS.IN_PROGRESS : STATUS.FAILED)
+    console.log('[manager.js] Runtime failure rescue for workstation job:', job.id, 'assigned=', assigned)
+  } catch (error) {
+    console.error('[manager.js] rescueRuntimeFailedWorkstationJob failed:', error)
+  }
 }
 
 /**
